@@ -3,7 +3,7 @@ name: bootstrap
 description: Set up a new (or nearly-empty) project repository with standard conventions — .worktrees/, .gitignore, CLAUDE.md, README.md, docs/BEST_PRACTICES.md, docs/CONTRIBUTING.md, docs/ARCHITECTURE.md, docs/guide/, optional docs/project-brief.md, .claude/settings.json, .claude/settings.local.json, language tooling, GitHub CI/PR/issue templates, and RFC process. Triggered by "/bootstrap".
 ---
 
-<!-- bootstrap-content-version: 2026-05-09-init01 -->
+<!-- bootstrap-content-version: 2026-05-09-init02 -->
 
 # Bootstrap
 
@@ -296,6 +296,15 @@ Create with the following template, filling in the placeholders:
 
 <TOOL_USAGE_SECTION — see table below>
 
+## RFC Process
+
+**Only applies to projects set up with `/rfc-install`.** Check for `docs/rfc-process.md` before following any RFC guidance.
+
+- **File exists:** read it (self-contained — full process + any project extensions). Use RFC skills for all design and implementation work.
+- **File absent:** RFC process does not apply. Do not follow the RFC workflow.
+
+RFCs live in `docs/rfcs/`; filename format `NNN-<kebab-title>.md`. Lifecycle: `Draft → Approved → Done | Dropped`. Skills: `/rfc-new`, `/rfc-approve`, `/rfc-implement`, `/rfc-drop`, `/rfc-braindump`, `/rfc-read-feedback`, `/rfc-consensus-review`.
+
 ## Evidence-Based Development
 
 Every claim, diagnosis, and recommendation must be grounded in evidence — not assumption, intuition, or training knowledge.
@@ -413,7 +422,7 @@ A mixed project like Rust + Svelte frontend + Terraform infra gets the Rust, JS/
 ```markdown
 # Best Practices
 
-<!-- bootstrap-content-version: 2026-05-09-init01 -->
+<!-- bootstrap-content-version: 2026-05-09-init02 -->
 
 Accumulated non-obvious learnings from development sessions.
 

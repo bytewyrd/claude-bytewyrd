@@ -45,6 +45,15 @@ Mandatory before writing code that uses an external library, framework, or CLI t
 
 Required before reporting any UI or frontend change done. The dev server must already be running (never start long-running processes yourself — ask the user). Standard flow: `list_pages` → `screenshot_page` → interact with the feature → `list_console_messages` → `screenshot_page` to confirm result. Use `take_snapshot` for accessibility tree inspection.
 
+## RFC Process
+
+**Only applies to projects set up with `/rfc-install`.** Check for `docs/rfc-process.md` before following any RFC guidance.
+
+- **File exists:** read it (self-contained — full process + any project extensions). Use RFC skills for all design and implementation work.
+- **File absent:** RFC process does not apply. Do not follow the RFC workflow.
+
+RFCs live in `docs/rfcs/`; filename format `NNN-<kebab-title>.md`. Lifecycle: `Draft → Approved → Done | Dropped`. Skills: `/rfc-new`, `/rfc-approve`, `/rfc-implement`, `/rfc-drop`, `/rfc-braindump`, `/rfc-read-feedback`, `/rfc-consensus-review`.
+
 ## Evidence-Based Development
 
 Every claim, diagnosis, and recommendation must be grounded in evidence — not assumption, intuition, or training knowledge.
