@@ -29,3 +29,16 @@ Use `/best-practices-extract` at the end of a session to add new entries.
 ## Architecture
 
 - **[2026-05-09]** _Architecture_: Instrument every component with structured tracing from day one — `tracing` + `tracing-subscriber` (Rust), OpenTelemetry SDK (JS/TS, Go, Python). Binaries initialize with an env-filter (`RUST_LOG`, `OTEL_LOG_LEVEL`) so log verbosity is controlled at runtime without recompilation. Functions that perform I/O or cross a subsystem boundary get a span (`#[instrument]`, `trace.startActiveSpan`). Never use `println!` / `console.log` for diagnostic output in production code.
+- **[2026-05-09]** _Architecture_: Design at the boundary level first — define what crosses a boundary (data formats, error contracts, interfaces) before writing implementation. Changing a boundary is expensive; changing internals is cheap.
+- **[2026-05-09]** _Architecture_: Separate domain logic from infrastructure from day one. Business rules must not import database drivers, HTTP clients, or framework types. This boundary makes unit testing cheap and technology migrations possible.
+- **[2026-05-09]** _Architecture_: Prefer boring technology that the whole team can reason about over sophisticated patterns that only their author understands. Complexity is a liability unless it solves an equally complex problem.
+- **[2026-05-09]** _Architecture_: Keep coupling explicit and directional — draw the dependency graph and verify it is a DAG. Circular dependencies are a sign that boundaries are wrong, not that more interfaces are needed.
+- **[2026-05-09]** _Architecture_: Add abstraction only when you have at least two concrete cases that actually need it. One use case is not a pattern; it is premature generalization.
+
+## Refactoring
+
+- **[2026-05-09]** _Refactoring_: Never mix refactoring with behavior changes in the same commit. A refactor commit should have a trivially passing review — "structure changed, nothing else." This constraint also forces you to understand the code before changing it.
+- **[2026-05-09]** _Refactoring_: Before refactoring, establish a test that pins the current behavior. If no test exists, write one first. Refactoring without a safety net is rewriting with hope.
+- **[2026-05-09]** _Refactoring_: Prefer small, surgical refactors over large "cleanup" PRs. A 5-line rename is reviewable in minutes; a 500-line restructure takes hours and hides bugs inside the noise.
+- **[2026-05-09]** _Refactoring_: Rename aggressively. Wrong names compound — they mislead future readers and spawn more wrong names. A precise rename is one of the highest-ROI refactors available.
+- **[2026-05-09]** _Refactoring_: Refactor toward the problem domain, not toward patterns. "This should be a Strategy" is a weak reason; "this switch will gain a fourth case next sprint" is a strong one.
