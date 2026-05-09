@@ -33,7 +33,7 @@ claude plugin install bytewyrd-workflow --scope local
 
 Then restart Claude Code. The plugin is now active in all your sessions from this directory.
 
-You can also clean up the stale `.claude/skills/` directory left over from bootstrapping:
+You can also clean up the stale `.claude/skills/` directory left over from initial setup:
 
 ```bash
 rm -rf .claude/skills/
@@ -56,6 +56,10 @@ To pull upstream updates (new agents, changed definitions):
 ```
 
 The skill fetches the upstream file tree, shows what changed, and lets you approve updates before writing. It never commits — review the diff and commit manually. Run this periodically (e.g., when the upstream repo has new releases) to keep bundled agents current.
+
+## Sync
+
+Run `/sync` in any project to set up or refresh the Claude Code environment — CLAUDE.md, BEST_PRACTICES.md, CI, RFC process, and all. The skill is idempotent: existing files are skipped, missing files are created, name/description are kept in sync. Re-run after the plugin updates to pick up new best-practice entries.
 
 To add a custom agent that is not in the upstream repo, create `agents/{name}.md` directly and commit it. Custom agents are not affected by `/agents-update` as long as their filename doesn't collide with an upstream agent.
 

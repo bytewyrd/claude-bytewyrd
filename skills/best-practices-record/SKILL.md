@@ -7,7 +7,7 @@ description: Use when the user wants to capture a single best practice into the 
 
 ## Overview
 
-Append a single, user-confirmed best-practice entry to the **global** `~/.claude/BEST_PRACTICES.md`. This file is the cross-project pool — it accumulates lessons that future projects should ship with from day one. Entries from here are reviewed and pulled into the plugin's `bootstrap/SKILL.md` via `/best-practices-sync`; once promoted, they are removed from the global file by the sync skill.
+Append a single, user-confirmed best-practice entry to the **global** `~/.claude/BEST_PRACTICES.md`. This file is the cross-project pool — it accumulates lessons that future projects should ship with from day one. Entries from here are reviewed and pulled into the plugin's `sync/SKILL.md` via `/best-practices-sync`; once promoted, they are removed from the global file by the sync skill.
 
 This is the counterpart to `/best-practices-extract`:
 
@@ -24,7 +24,7 @@ The user invokes this skill with a single sentence or short paragraph stating th
 
 ## Categorization Step
 
-Determine the section the entry belongs in. The global file uses the same section headers as `bootstrap/SKILL.md`. The categorization also decides whether the entry will eventually land in a *general* (always-emitted) bootstrap section, or a *stack-specific* (detection-gated) section — this matters for promotion: stack-specific entries only ship to projects that use the matching tooling.
+Determine the section the entry belongs in. The global file uses the same section headers as `sync/SKILL.md`. The categorization also decides whether the entry will eventually land in a *general* (always-emitted) sync section, or a *stack-specific* (detection-gated) section — this matters for promotion: stack-specific entries only ship to projects that use the matching tooling.
 
 | Header | Kind | Use for |
 |---|---|---|
@@ -87,7 +87,7 @@ Format matches `best-practices-extract`:
 | `## Kubernetes / CUE / kapply` | `_K8s_`, `_K8s/CUE_`, or `_kapply_` (use `_K8s_` for general Kubernetes best-practices — scheduling, security, probes, namespaces; use `_K8s/CUE_` for CUE-schema and manifest-rendering topics; use `_kapply_` for kapply-tool-specific behavior) |
 | `## Terraform / Terragrunt` | `_Terraform_` or `_Terragrunt_` (use the specific tool the entry applies to) |
 
-Using the verbatim header (e.g., `_JavaScript / TypeScript_`) instead of the canonical abbreviation (`_JS/TS_`) breaks the dedup logic in `best-practices-sync` — the existing bootstrap entries use the abbreviated forms.
+Using the verbatim header (e.g., `_JavaScript / TypeScript_`) instead of the canonical abbreviation (`_JS/TS_`) breaks the dedup logic in `best-practices-sync` — the existing sync entries use the abbreviated forms.
 
 ## File Bootstrap
 
@@ -96,7 +96,7 @@ If `~/.claude/BEST_PRACTICES.md` does not exist, create it with this header befo
 ```markdown
 # Global Best Practices
 
-Cross-project accumulator. Entries here are candidates for promotion into the bytewyrd-workflow plugin's bootstrap content via `/best-practices-sync`. Once promoted, sync removes them from this file.
+Cross-project accumulator. Entries here are candidates for promotion into the bytewyrd-workflow plugin's sync content via `/best-practices-sync`. Once promoted, sync removes them from this file.
 
 Format: **[YYYY-MM-DD]** _Category_: Concise statement (1–2 sentences max).
 ```

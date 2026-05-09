@@ -4,7 +4,7 @@ Claude plugin containing a set of skills, agents, hooks and MCP servers for work
 
 ## Toolchain
 
-No language-specific toolchain detected. Add source code and re-run `/bootstrap` to pick up language tooling.
+No language-specific toolchain detected. Add source code and re-run `/sync` to pick up language tooling.
 
 ## File structure
 
@@ -91,6 +91,37 @@ Claude Code's Linux sandbox uses bwrap (bubblewrap). When bwrap is not installed
 Use `"./run *"` (with wildcard), not `"./run"`. Keep in `settings.local.json` (gitignored), not `settings.json`.
 
 **What does NOT work:** `enableWeakerNestedSandbox: true`, `sandbox.filesystem.allowWrite` paths, or adding `podman` directly to `excludedCommands`.
+
+## Security
+
+- Never expose tokens, credentials, or API keys in committed code, logs, or environment variable dumps.
+- Never make secrets available to the browser or frontend, even temporarily.
+- **Never paste secret values, `.env` files, or credential files into the conversation.** If you need to reference a secret, use a placeholder (e.g. `$DATABASE_URL`) and describe where it is stored — Claude does not need to see the value to help you.
+- If asked to read a file that may contain secrets (`.env`, `credentials.json`, `*.pem`, `~/.aws/credentials`, etc.) — refuse and ask for a sanitized version or structural description instead.
+- Validate and sanitize all external input at system boundaries before it enters domain logic.
+- Use a secret manager or environment variables at runtime; never hardcode secret values in source files, config templates, or test fixtures.
+
+## Workflow
+
+### Session start
+
+1. Run `git worktree list` and `git branch --show-current`. Surface active feature-branch worktrees and ask: resume or start new?
+2. Run `git fetch --all` before creating branches or worktrees.
+3. On `main` with new work: `git worktree add .worktrees/<branch> -b <branch>`.
+
+### During work
+
+- Use the RFC process (`/rfc-new`) for changes requiring design decisions — check for `docs/rfc-process.md` first.
+- Prefer specialized agents over direct implementation in the main context.
+- Each parallel agent needs its own worktree. Sub-agents share the parent worktree.
+- Never start long-running processes — ask the user to run in a separate terminal.
+
+### Session end
+
+- Run `/best-practices-extract` if non-obvious learnings emerged.
+- Update `docs/ARCHITECTURE.md` if components changed.
+- Update `docs/CONTRIBUTING.md` if dev workflow or quality gates changed.
+- Commit with Conventional Commits: `type(scope): message`.
 
 ## Conventions
 

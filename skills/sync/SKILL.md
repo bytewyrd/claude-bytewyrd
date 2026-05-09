@@ -1,17 +1,17 @@
 ---
-name: bootstrap
-description: Set up a new (or nearly-empty) project repository with standard conventions — .worktrees/, .gitignore, CLAUDE.md, README.md, docs/BEST_PRACTICES.md, docs/CONTRIBUTING.md, docs/ARCHITECTURE.md, docs/guide/, optional docs/project-brief.md, .claude/settings.json, .claude/settings.local.json, language tooling, GitHub CI/PR/issue templates, and RFC process. Triggered by "/bootstrap".
+name: sync
+description: Set up or refresh a project repository with all standard conventions — idempotent, safe to re-run whenever the plugin updates. Triggered by "/sync".
 ---
 
-<!-- bootstrap-content-version: 2026-05-09-init02 -->
+<!-- bootstrap-content-version: 2026-05-09-init03 -->
 
-# Bootstrap
+# Sync
 
-Sets up a new project repository with all standard conventions.
+Sets up or refreshes a project repository with all standard conventions. Idempotent — safe to re-run whenever the plugin updates; existing files are skipped, missing files are created.
 
 ## Interaction model
 
-Bootstrap runs almost entirely autonomously. There are exactly **two points** where user input is collected:
+Sync runs almost entirely autonomously. There are exactly **two points** where user input is collected:
 
 1. **Step 2** — Two AskUserQuestion calls: project brief preference, then display name and description.
 2. **Step 5** (only if `brief_mode = "help"`) — One AskUserQuestion call with 4 project-brief questions.
@@ -28,7 +28,7 @@ git config user.name
 
 If either fails, stop with a clear error message.
 
-If the repo already has substantial committed content (more than a LICENSE/README), note: "This repo already has content — bootstrap will skip any files that already exist and only create the ones that are missing."
+If the repo already has substantial committed content (more than a LICENSE/README), note: "This repo already has content — sync will skip any files that already exist and only create the ones that are missing."
 
 **Derive `project_slug`** — the repo/package identity name:
 
@@ -83,8 +83,8 @@ This step uses **two sequential AskUserQuestion calls**: brief first, then name 
 If the file does not exist, ask one question:
 
 **"Do you have a project brief?"** — a short document capturing what the project is for, who it serves, and what's in/out of scope
-- Option 1: `Help me create one` — bootstrap will ask you 4 questions after setup and fill in `docs/project-brief.md`
-- Option 2: `I've added the file to docs/project-brief.md` — bootstrap reads it and uses it to pre-populate name and description
+- Option 1: `Help me create one` — sync will ask you 4 questions after setup and fill in `docs/project-brief.md`
+- Option 2: `I've added the file to docs/project-brief.md` — sync reads it and uses it to pre-populate name and description
 - Auto-added `Other` text input: anything entered is treated as skip (store `null`)
 
 Store `brief_mode`:
@@ -119,7 +119,7 @@ Store answers as:
 - `has_github` — derived from Step 1: `true` if a `github.com` remote was detected, `false` otherwise. Never asked.
 - `brief_mode` — `"help"`, `"added"`, or `null`
 
-**Languages are not asked** — they are detected automatically in Step 3 by scanning manifest files. Bootstrap is idempotent: re-run it after adding source code to pick up new languages and fill in any missing language-specific files.
+**Languages are not asked** — they are detected automatically in Step 3 by scanning manifest files. Sync is idempotent: re-run it after adding source code to pick up new languages and fill in any missing language-specific files.
 
 ---
 
@@ -172,9 +172,9 @@ find . -name "terragrunt.hcl" | head -1
 - `has_k8s_cue = true` if any `*.cue` file under `k8s/` is found OR `kapply` appears in a CI workflow or `Dockerfile`.
 - `has_terraform = true` if any `*.tf` file is found OR any `terragrunt.hcl` is found.
 
-These flags are consumed by Step 5's `docs/BEST_PRACTICES.md` creation policy: bootstrap appends the matching addition block only when its flag is true (e.g., the Svelte block only when `has_svelte`, the Rails block only when `has_rails` and after the Ruby block since Rails depends on Ruby being present).
+These flags are consumed by Step 5's `docs/BEST_PRACTICES.md` creation policy: sync appends the matching addition block only when its flag is true (e.g., the Svelte block only when `has_svelte`, the Rails block only when `has_rails` and after the Ruby block since Rails depends on Ruby being present).
 
-Since bootstrap is idempotent, re-running it after adding new components will detect them and fill in any missing config.
+Since sync is idempotent, re-running it after adding new components will detect them and fill in any missing config.
 
 ---
 
@@ -343,6 +343,15 @@ Use `"./run *"` (with wildcard), not `"./run"`. Keep in `settings.local.json` (g
 
 **What does NOT work:** `enableWeakerNestedSandbox: true`, `sandbox.filesystem.allowWrite` paths, or adding `podman` directly to `excludedCommands`.
 
+## Security
+
+- Never expose tokens, credentials, or API keys in committed code, logs, or environment variable dumps.
+- Never make secrets available to the browser or frontend, even temporarily.
+- **Never paste secret values, `.env` files, or credential files into the conversation.** If you need to reference a secret, use a placeholder (e.g. `$DATABASE_URL`) and describe where it is stored — Claude does not need to see the value to help you.
+- If asked to read a file that may contain secrets (`.env`, `credentials.json`, `*.pem`, `~/.aws/credentials`, etc.) — refuse and ask for a sanitized version or structural description instead.
+- Validate and sanitize all external input at system boundaries before it enters domain logic.
+- Use a secret manager or environment variables at runtime; never hardcode secret values in source files, config templates, or test fixtures.
+
 ## Conventions
 
 Commit messages follow Conventional Commits with a scope: `feat(scope): message`.
@@ -359,6 +368,8 @@ For accumulated session learnings, see [docs/BEST_PRACTICES.md](docs/BEST_PRACTI
 | Go | `Go — see \`mise.toml\` for Go version. Build: \`go build ./...\`. Test: \`go test ./...\`.` |
 | Python | `Python — see \`mise.toml\` for Python version. Install: \`uv sync\`. Test: \`uv run pytest\`.` |
 | Shell/Infra | `Infrastructure — see \`mise.toml\` for tool versions. Deploy: \`./deploy <env>\`.` |
+
+If no languages are detected, write: `No language-specific toolchain detected. Add source code and re-run \`/sync\` to pick up language tooling.`
 
 **Agent delegation table:** Merge rows from all detected languages; deduplicate shared agents (feature-engineer, code-reviewer, rfc-architect, documentation-writer, debugger appear once regardless of how many languages are detected):
 
@@ -422,7 +433,7 @@ A mixed project like Rust + Svelte frontend + Terraform infra gets the Rust, JS/
 ```markdown
 # Best Practices
 
-<!-- bootstrap-content-version: 2026-05-09-init02 -->
+<!-- bootstrap-content-version: 2026-05-09-init03 -->
 
 Accumulated non-obvious learnings from development sessions.
 

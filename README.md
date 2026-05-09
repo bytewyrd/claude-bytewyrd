@@ -4,11 +4,11 @@
 
 ## Why Claude Bytewyrd Workflow
 
-Setting up Claude Code consistently across projects takes significant manual effort — configuring skills, agent delegation patterns, hooks, MCP servers, and quality gates from scratch each time. Claude Bytewyrd Workflow packages all of that into a single installable plugin with proven defaults, so any project can get the full setup instantly via `/bootstrap`.
+Setting up Claude Code consistently across projects takes significant manual effort — configuring skills, agent delegation patterns, hooks, MCP servers, and quality gates from scratch each time. Claude Bytewyrd Workflow packages all of that into a single installable plugin with proven defaults, so any project can get the full setup instantly via `/sync`.
 
 ## How It Works
 
-The plugin provides a curated collection of Claude Code skills (like `/bootstrap`, `/rfc-new`, `/rfc-implement`), opinionated agent delegation tables, pre-push quality gate hooks, and MCP server permissions. Install it once, then run `/bootstrap` in any project to get a fully-configured Claude Code environment — RFC process, best-practices tracking, CI, and all.
+The plugin provides a curated collection of Claude Code skills (like `/sync`, `/rfc-new`, `/rfc-implement`), opinionated agent delegation tables, pre-push quality gate hooks, and MCP server permissions. Install it once, then run `/sync` in any project to get a fully-configured Claude Code environment — RFC process, best-practices tracking, CI, and all.
 
 ## Getting Started
 

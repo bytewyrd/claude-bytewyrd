@@ -41,7 +41,7 @@ Skills are organized by noun-first naming convention (e.g., `best-practices-extr
 **Key interfaces:** Same `SKILL.md` discovery as `skills/`, but these are not exported in `plugin.json` and are therefore invisible to consumers.
 
 Current plugin-local skills:
-- `best-practices-sync` — promotes entries from the global `~/.claude/BEST_PRACTICES.md` into `skills/bootstrap/SKILL.md`
+- `best-practices-sync` — promotes entries from the global `~/.claude/BEST_PRACTICES.md` into `skills/sync/SKILL.md`
 - `agents-update` — syncs `agents/` with the latest upstream versions from VoltAgent/awesome-claude-code-subagents
 
 ### Hooks (`.claude-plugin/hooks/`)
@@ -63,7 +63,7 @@ Agents → spawned as subtask processes. Receive a goal and a tool allow-list fr
 
 Hooks → run as shell commands at lifecycle events. Side effects are advisory echoes only (no writes).
 
-`best-practices-record` (skill) → `~/.claude/BEST_PRACTICES.md` (user-global file) → `best-practices-sync` (plugin-local skill) → `skills/bootstrap/SKILL.md` → future `/bootstrap` runs in consumer projects.
+`best-practices-record` (skill) → `~/.claude/BEST_PRACTICES.md` (user-global file) → `best-practices-sync` (plugin-local skill) → `skills/sync/SKILL.md` → future `/sync` runs in consumer projects.
 
 `agents-update` (skill) → VoltAgent/awesome-claude-code-subagents (GitHub) → `agents/*.md` (local vendor copy).
 
@@ -74,7 +74,7 @@ Hooks → run as shell commands at lifecycle events. Side effects are advisory e
 | Agent source | Vendor from awesome-claude-code-subagents into `agents/` | Consumers get agents without a network call at install time; `agents-update` is the explicit update gate |
 | Skill naming | Noun-first (`rfc-new`, `best-practices-extract`) | Groups related skills alphabetically; matches `rfc-*` family already established |
 | Plugin-local vs exported skills | Plugin-local in `.claude/skills/`, exported in `skills/` | Keeps maintenance tools out of consumer installs; plugin.json is the explicit export declaration |
-| Best-practices flow | Record → global file → manual sync to bootstrap | Puts human review between personal capture and distribution; prevents one user's project-specific notes from polluting the bootstrap of every future project |
+| Best-practices flow | Record → global file → manual sync to `/sync` content | Puts human review between personal capture and distribution; prevents one user's project-specific notes from polluting the sync content of every future project |
 
 ## Dependencies
 

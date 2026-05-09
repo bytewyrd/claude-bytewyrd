@@ -10,7 +10,7 @@
   "skills": [
     "./skills/best-practices-extract",
     "./skills/best-practices-record",
-    "./skills/bootstrap",
+    "./skills/sync",
     "./skills/git-branch-cleanup",
     "./skills/rfc-approve",
     "./skills/rfc-braindump",
