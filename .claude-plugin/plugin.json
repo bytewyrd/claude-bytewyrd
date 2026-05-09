@@ -8,6 +8,7 @@
   },
   "hooks": "./.claude-plugin/hooks/hooks.json",
   "skills": [
+    "./skills/agents-update",
     "./skills/best-practices-extract",
     "./skills/best-practices-record",
     "./skills/bootstrap",

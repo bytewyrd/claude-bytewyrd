@@ -49,6 +49,21 @@ claude plugin update bytewyrd-workflow
 # restart Claude Code to pick up the changes
 ```
 
+## Agents
+
+Agent definitions in `agents/` are vendored from [VoltAgent/awesome-claude-code-subagents](https://github.com/VoltAgent/awesome-claude-code-subagents). The upstream repository organizes agents by category; this plugin flattens them into a single directory.
+
+To pull upstream updates (new agents, changed definitions):
+
+```bash
+# inside the plugin checkout, invoke the skill:
+/agents-update
+```
+
+The skill fetches the upstream file tree, shows what changed, and lets you approve updates before writing. It never commits — review the diff and commit manually. Run this periodically (e.g., when the upstream repo has new releases) to keep bundled agents current.
+
+To add a custom agent that is not in the upstream repo, create `agents/{name}.md` directly and commit it. Custom agents are not affected by `/agents-update` as long as their filename doesn't collide with an upstream agent.
+
 ## Development Workflow
 
 All work happens on feature branches. Use the [git worktree](https://git-scm.com/docs/git-worktree) workflow for parallel tasks:
