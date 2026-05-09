@@ -23,7 +23,13 @@ If the file does not exist: stop and suggest `/rfc-install`.
 
 ### 2. Sync `docs/rfc-process.md`
 
-Read `~/.claude/rfc-process.md` (upstream) and `docs/rfc-process.md` (project file) in full.
+Determine the upstream source root:
+
+```bash
+echo "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}"
+```
+
+Use the printed path as `PLUGIN_ROOT`. Read `$PLUGIN_ROOT/rfc-process.md` (upstream) and `docs/rfc-process.md` (project file) in full.
 
 Find `<!-- END_UPSTREAM_CONTENT -->` in the project file:
 - Everything before = core section (to be replaced)
@@ -33,14 +39,14 @@ Extract the raw RFC process text from the core section (strip sync header lines 
 
 **If identical:** note "docs/rfc-process.md already up to date."
 
-**If different:** summarize what changed (added/removed sections, updated wording — no full diff). Rebuild:
+**If different:** summarize what changed (added/removed sections, updated wording — no full diff). Rebuild (substitute the literal `$PLUGIN_ROOT` path in the header):
 
 ```
-<!-- UPSTREAM: ~/.claude/rfc-process.md -->
+<!-- UPSTREAM: <$PLUGIN_ROOT>/rfc-process.md -->
 <!-- LAST_SYNCED: <today's date as YYYY-MM-DD> -->
 <!-- /rfc-update replaces everything before END_UPSTREAM_CONTENT when upstream changes. -->
 
-<full verbatim content of ~/.claude/rfc-process.md>
+<full verbatim content of $PLUGIN_ROOT/rfc-process.md>
 
 <!-- END_UPSTREAM_CONTENT -->
 
@@ -81,14 +87,14 @@ mkdir -p .claude/skills/_probe && rm -d .claude/skills/_probe && echo "OK" || ec
 
 **If `OK`:** for each skill:
 
-1. Check whether `~/.claude/skills/<skill>/SKILL.md` exists. If not, skip (upstream missing — no-op).
+1. Check whether `$PLUGIN_ROOT/skills/<skill>/SKILL.md` exists. If not, skip (upstream missing — no-op).
 2. Check whether `.claude/skills/<skill>/SKILL.md` exists in the project. If not, create the directory and copy.
 3. If both exist: compare content. If identical, skip. If different, copy the upstream version and note the update.
 
-**If `SANDBOXED`:** write the following script to `/tmp/claude/rfc-update.sh`, then tell the user:
+**If `SANDBOXED`:** export `BYTEWYRD_PLUGIN_ROOT` and write the following script to `$TMPDIR/rfc-update.sh`, then tell the user:
 
 > The sandbox prevented writing to `.claude/skills/`. Run this to complete the update:
-> `bash /tmp/claude/rfc-update.sh`
+> `BYTEWYRD_PLUGIN_ROOT="<printed PLUGIN_ROOT>" bash $TMPDIR/rfc-update.sh`
 
 Script contents:
 
@@ -96,11 +102,11 @@ Script contents:
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Syncs RFC skills from the global Claude install into this project.
+# Syncs RFC skills from the bytewyrd-workflow plugin (or global Claude install) into this project.
 # Skips skills that are already up to date.
-# Run from the project root: bash /tmp/claude/rfc-update.sh
+# Run from the project root: BYTEWYRD_PLUGIN_ROOT="<plugin-path>" bash /tmp/rfc-update.sh
 
-readonly GLOBAL_SKILLS="${HOME}/.claude/skills"
+readonly GLOBAL_SKILLS="${BYTEWYRD_PLUGIN_ROOT:-${HOME}/.claude}/skills"
 readonly PROJECT_SKILLS=".claude/skills"
 
 readonly SKILLS=(

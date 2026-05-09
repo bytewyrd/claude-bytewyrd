@@ -21,18 +21,24 @@ If the file exists: stop and tell the user — the RFC process is already instal
 
 ### 2. Read upstream process
 
-Read `~/.claude/rfc-process.md` in full.
+Determine the upstream source root:
+
+```bash
+echo "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}"
+```
+
+Use the printed path as `PLUGIN_ROOT`. Read `$PLUGIN_ROOT/rfc-process.md` in full.
 
 ### 3. Write `docs/rfc-process.md`
 
-Write the project file with this exact structure:
+Write the project file with this exact structure (substitute the literal `$PLUGIN_ROOT` path in the header):
 
 ```
-<!-- UPSTREAM: ~/.claude/rfc-process.md -->
+<!-- UPSTREAM: <$PLUGIN_ROOT>/rfc-process.md -->
 <!-- LAST_SYNCED: <today's date as YYYY-MM-DD> -->
 <!-- /rfc-update replaces everything before END_UPSTREAM_CONTENT when upstream changes. -->
 
-<full verbatim content of ~/.claude/rfc-process.md>
+<full verbatim content of $PLUGIN_ROOT/rfc-process.md>
 
 <!-- END_UPSTREAM_CONTENT -->
 
@@ -75,18 +81,19 @@ mkdir -p .claude/skills/rfc-braindump \
          .claude/skills/rfc-consensus-review
 ```
 
-For each skill: read `~/.claude/skills/<skill-name>/SKILL.md` and write it verbatim to `.claude/skills/<skill-name>/SKILL.md`.
+For each skill: read `$PLUGIN_ROOT/skills/<skill-name>/SKILL.md` and write it verbatim to `.claude/skills/<skill-name>/SKILL.md`.
 
-**If `SANDBOXED`:** copy the bundled script to `$TMPDIR/rfc-install.sh` and tell the user:
+**If `SANDBOXED`:** export `BYTEWYRD_PLUGIN_ROOT` and copy the bundled script, then tell the user:
 
 ```bash
-cp ~/.claude/skills/rfc-install/install-skills.sh $TMPDIR/rfc-install.sh
+BYTEWYRD_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}" \
+  cp "$BYTEWYRD_PLUGIN_ROOT/skills/rfc-install/install-skills.sh" $TMPDIR/rfc-install.sh
 ```
 
 > The sandbox prevented writing to `.claude/skills/`. Run this to complete the install:
-> `bash $TMPDIR/rfc-install.sh`
+> `BYTEWYRD_PLUGIN_ROOT="<printed PLUGIN_ROOT>" bash $TMPDIR/rfc-install.sh`
 
-The script lives at `~/.claude/skills/rfc-install/install-skills.sh` — it is never regenerated inline.
+The script lives at `$PLUGIN_ROOT/skills/rfc-install/install-skills.sh` — it is never regenerated inline.
 
 ### 6. Report
 

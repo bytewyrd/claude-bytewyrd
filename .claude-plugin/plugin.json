@@ -1,0 +1,24 @@
+{
+  "name": "bytewyrd-workflow",
+  "description": "Opinionated Claude Code workflow for Bytewyrd projects and teams: skills, agents, hooks, and operating principles for evidence-based development with RFC-driven design.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Bytewyrd",
+    "email": "divoxx@gmail.com"
+  },
+  "hooks": "./.claude-plugin/hooks/hooks.json",
+  "skills": [
+    "./skills/bootstrap",
+    "./skills/extract-best-practices",
+    "./skills/git-branch-cleanup",
+    "./skills/rfc-approve",
+    "./skills/rfc-braindump",
+    "./skills/rfc-consensus-review",
+    "./skills/rfc-drop",
+    "./skills/rfc-implement",
+    "./skills/rfc-install",
+    "./skills/rfc-new",
+    "./skills/rfc-read-feedback",
+    "./skills/rfc-update"
+  ]
+}

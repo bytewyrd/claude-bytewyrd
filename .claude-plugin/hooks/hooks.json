@@ -1,0 +1,36 @@
+{
+  "hooks": {
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'PreCompact: context is about to be compacted — run /extract-best-practices now to preserve non-obvious learnings before they are lost.'"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git commit*)",
+            "command": "echo 'Post-commit: does this change component structure → ARCHITECTURE.md; dev workflow or quality gate → CONTRIBUTING.md; user-facing behavior or install method → README.md; product scope, audience, or core model → docs/project-brief.md? Update before pushing if so.'"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Session ending: (1) /extract-best-practices — if non-obvious learnings were not yet captured. (2) ARCHITECTURE.md — if a component was added/removed or data flow changed. (3) CONTRIBUTING.md — if dev workflow or quality gate changed. (4) README.md — if user-facing behavior changed. (5) docs/project-brief.md — if product scope or audience changed.'"
+          }
+        ]
+      }
+    ]
+  }
+}
