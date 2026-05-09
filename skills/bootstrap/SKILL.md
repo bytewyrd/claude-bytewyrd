@@ -312,8 +312,8 @@ Every claim, diagnosis, and recommendation must be grounded in evidence — not 
 
 When spawning subagents, use the cheapest model that fits the task:
 - **`model: "haiku"`** — exploration, file search, simple lookups, routine checks, formatting
-- **`model: "sonnet"`** — code review, moderate refactoring, implementation of well-defined tasks
-- **`model: "opus"`** — complex architectural reasoning, multi-step problem solving, ambiguous or novel tasks
+- **`model: "sonnet"`** — routine code review (correctness, conventions, security), refactoring, implementation of well-defined tasks
+- **`model: "opus"`** — RFC and architectural review, complex multi-step problem solving, ambiguous or novel tasks where the problem space itself is unclear
 
 Default to `haiku` unless the task clearly requires more. Err on the side of cheaper models.
 
