@@ -45,6 +45,44 @@ Mandatory before writing code that uses an external library, framework, or CLI t
 
 Required before reporting any UI or frontend change done. The dev server must already be running (never start long-running processes yourself — ask the user). Standard flow: `list_pages` → `screenshot_page` → interact with the feature → `list_console_messages` → `screenshot_page` to confirm result. Use `take_snapshot` for accessibility tree inspection.
 
+## Evidence-Based Development
+
+Every claim, diagnosis, and recommendation must be grounded in evidence — not assumption, intuition, or training knowledge.
+
+**Gather symptoms before diagnosing.** Collect actual errors first: check logs, examine observable state, reproduce the problem. Read code to understand a known problem — not to find an unknown one.
+
+**Distinguish hypothesis from conclusion.** Say "I think X might be causing Y" — don't compress a hypothesis into a stated fact. Verify before acting.
+
+**Verify what you test.** Trace the exact execution path a verification step exercises. Ask: does this actually trigger the specific change I made, or is it a false positive?
+
+**Training knowledge is a search query, not a source of truth.** For any external API, cloud service, library, or tool — look it up with Exa or Context7 before asserting behavior. If no authoritative source is found, say so explicitly.
+
+## Model Usage Optimization
+
+When spawning subagents, use the cheapest model that fits the task:
+- **`model: "haiku"`** — exploration, file search, simple lookups, routine checks, formatting
+- **`model: "sonnet"`** — code review, moderate refactoring, implementation of well-defined tasks
+- **`model: "opus"`** — complex architectural reasoning, multi-step problem solving, ambiguous or novel tasks
+
+Default to `haiku` unless the task clearly requires more. Err on the side of cheaper models.
+
+## Claude Code Sandbox — Container Tool Compatibility
+
+Claude Code's Linux sandbox uses bwrap (bubblewrap). When bwrap is not installed setuid, rootless container tools (podman, docker) fail inside the sandbox because `newuidmap` sees the process as owned by UID 65534 (nobody).
+
+**The fix:** add wrapper scripts to `sandbox.excludedCommands` in `.claude/settings.local.json`:
+
+```json
+{
+  "permissions": { "allow": ["Bash(./run *)", "Bash(./deploy *)"] },
+  "sandbox": { "excludedCommands": ["./run *", "./deploy *"] }
+}
+```
+
+Use `"./run *"` (with wildcard), not `"./run"`. Keep in `settings.local.json` (gitignored), not `settings.json`.
+
+**What does NOT work:** `enableWeakerNestedSandbox: true`, `sandbox.filesystem.allowWrite` paths, or adding `podman` directly to `excludedCommands`.
+
 ## Conventions
 
 Commit messages follow Conventional Commits with a scope: `feat(scope): message`.
