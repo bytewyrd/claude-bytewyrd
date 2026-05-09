@@ -1,5 +1,5 @@
 ---
-name: extract-best-practices
+name: best-practices-extract
 description: Use when a session contained design decisions, architectural choices, discovered pitfalls, or established patterns worth preserving — triggered automatically before compaction, manually at any time, or at the end of a development branch.
 ---
 

@@ -3,6 +3,8 @@ name: bootstrap
 description: Set up a new (or nearly-empty) project repository with standard conventions — .worktrees/, .gitignore, CLAUDE.md, README.md, docs/BEST_PRACTICES.md, docs/CONTRIBUTING.md, docs/ARCHITECTURE.md, docs/guide/, optional docs/project-brief.md, .claude/settings.json, .claude/settings.local.json, language tooling, GitHub CI/PR/issue templates, and RFC process. Triggered by "/bootstrap".
 ---
 
+<!-- bootstrap-content-version: 2026-05-09-init00 -->
+
 # Bootstrap
 
 Sets up a new project repository with all standard conventions.
@@ -137,6 +139,21 @@ find . -name "go.mod" | sort
 
 # Python
 find . -name "pyproject.toml" -o -name "setup.py" | grep -v "*/node_modules/*" | sort
+
+# Svelte
+find . -name "*.svelte" -not -path "*/node_modules/*" | head -1
+
+# Ruby / Rails
+find . -name "Gemfile" -not -path "*/vendor/*" | head -1
+find . -name "config/application.rb" | head -1
+
+# Kubernetes / CUE / kapply
+find . -name "*.cue" -path "*/k8s/*" | head -1
+grep -rl "kapply" .github/ Dockerfile* Makefile 2>/dev/null | head -1
+
+# Terraform / Terragrunt
+find . -name "*.tf" -not -path "*/.terraform/*" | head -1
+find . -name "terragrunt.hcl" | head -1
 ```
 
 **Build `component_roots`** — a list of `{ language, path, name }` entries:
@@ -146,6 +163,16 @@ find . -name "pyproject.toml" -o -name "setup.py" | grep -v "*/node_modules/*" |
 - **Go**: Each directory containing a `go.mod` is a module/component.
 - **Python**: Each directory containing `pyproject.toml` or `setup.py` is a component.
 - **If nothing is found for a language**: default to a single component at `.`.
+
+**Derive stack-detection flags** — independent of component roots, the following booleans gate the stack-specific best-practice sections appended in Step 5:
+
+- `has_svelte = true` if any `*.svelte` file is found OR `"svelte"` appears in any `package.json` `dependencies` or `devDependencies` field.
+- `has_ruby = true` if a `Gemfile` is found.
+- `has_rails = true` if `config/application.rb` is found OR `"rails"` gem is listed in the `Gemfile`.
+- `has_k8s_cue = true` if any `*.cue` file under `k8s/` is found OR `kapply` appears in a CI workflow or `Dockerfile`.
+- `has_terraform = true` if any `*.tf` file is found OR any `terragrunt.hcl` is found.
+
+These flags are consumed by Step 5's `docs/BEST_PRACTICES.md` creation policy: bootstrap appends the matching addition block only when its flag is true (e.g., the Svelte block only when `has_svelte`, the Rails block only when `has_rails` and after the Ruby block since Rails depends on Ruby being present).
 
 Since bootstrap is idempotent, re-running it after adding new components will detect them and fill in any missing config.
 
@@ -325,18 +352,36 @@ If none of the above tools are installed, omit the `## Tool Usage` section entir
 
 ### `docs/BEST_PRACTICES.md`
 
-Create with the base content below, substituting `<TODAY>` with today's date in `YYYY-MM-DD` format. Then append every language-specific section that applies (a mixed project like Rust + JS frontend gets both).
+Create with the base content below, substituting `<TODAY>` with today's date in `YYYY-MM-DD` format. Then append every applicable section.
+
+**Append order:**
+1. **Architecture addition** — always.
+2. **Universal additions** (Testing, Documentation, Security, Error Handling) — always.
+3. **Language additions** — append every language-specific block that matches a detected component:
+   - **Rust** — if Rust is detected.
+   - **JS/TS** — if JS/TS is detected.
+   - **Python** — if Python is detected.
+   - **Go** — if Go is detected.
+   - **Svelte** — if `has_svelte` is true (Step 3).
+   - **Ruby** — if `has_ruby` is true (Step 3).
+   - **Rails** — if `has_rails` is true; appended after the Ruby block.
+   - **Kubernetes / CUE / kapply** — if `has_k8s_cue` is true (Step 3).
+   - **Terraform / Terragrunt** — if `has_terraform` is true (Step 3).
+
+A mixed project like Rust + Svelte frontend + Terraform infra gets the Rust, JS/TS, Svelte, and Terraform blocks (Svelte implies the underlying JS/TS also applies).
 
 **Base content (all projects):**
 
 ```markdown
 # Best Practices
 
+<!-- bootstrap-content-version: 2026-05-09-init00 -->
+
 Accumulated non-obvious learnings from development sessions.
 
 Format: **[YYYY-MM-DD]** _Category_: Concise statement (1–2 sentences max).
 
-Use `/extract-best-practices` at the end of a session to add new entries.
+Use `/best-practices-extract` at the end of a session to add new entries.
 
 ## Pitfall
 
@@ -364,10 +409,62 @@ Use `/extract-best-practices` at the end of a session to add new entries.
 ```markdown
 ## Architecture
 
-- **[<TODAY>]** _Architecture_: Instrument every component with structured tracing from day one — `tracing` + `tracing-subscriber` (Rust), OpenTelemetry SDK (JS/TS, Go, Python). Binaries initialize with an env-filter (`RUST_LOG`, `OTEL_LOG_LEVEL`) so log verbosity is controlled at runtime without recompilation. Functions that perform I/O or cross a subsystem boundary get a span (`#[instrument]`, `trace.startActiveSpan`). Never use `println!` / `console.log` for diagnostic output in production code.
+- **[<TODAY>]** _Architecture_: Use structured tracing (`tracing` in Rust, OpenTelemetry-compatible libraries elsewhere) from day one. Adding spans retroactively is far more painful than instrumenting as you write the code.
+- **[<TODAY>]** _Architecture_: Single Responsibility — a module/struct/class has one reason to change. Two reasons (e.g., "user persistence" and "user authorization") means two collaborators should split the work, not one monolith.
+- **[<TODAY>]** _Architecture_: Open/Closed — extend behavior through new types or strategies, not by editing branches in the existing path. Adding a new payment provider should add a file, not add a `case` to a switch in five files.
+- **[<TODAY>]** _Architecture_: Liskov Substitution — a subtype must accept everything its supertype accepts and produce nothing its supertype wouldn't. Violating this turns "polymorphism" into "if statement spread across types."
+- **[<TODAY>]** _Architecture_: Interface Segregation — clients depend on the methods they actually use, not a kitchen-sink interface. A 20-method interface that callers use 3 of is 17 methods of false coupling.
+- **[<TODAY>]** _Architecture_: Dependency Inversion — high-level policy depends on abstractions; low-level mechanism implements them. The abstraction lives with the policy (it captures what the policy needs), not with the mechanism (which would invert the dependency the wrong way).
+- **[<TODAY>]** _Architecture_: Favor composition over inheritance even in OO languages. Inheritance ties two types together at compile time; composition lets you swap collaborators in tests, at runtime, or per environment.
+- **[<TODAY>]** _Architecture_: Make illegal states unrepresentable. If a value can only be in one of three modes, model that as a sum type (enum / tagged union / sealed class) rather than three booleans, of which seven of the eight combinations are bugs waiting to happen.
+- **[<TODAY>]** _Architecture_: Module boundaries follow change axes. Code that changes together belongs together; code that changes for different reasons belongs apart. Folders organized by technical layer (`controllers/`, `services/`, `models/`) often violate this — group by feature first, by layer second.
+- **[<TODAY>]** _Architecture_: A module's public API is a contract; its internals are not. Mark internals as such (private modules / unexported names / `internal/` directory) and resist the pressure to widen the API surface for one-off needs.
+- **[<TODAY>]** _Architecture_: Direction of dependency flows from outer (concrete: HTTP, DB, queue) to inner (abstract: domain logic). Domain code never imports adapter code; adapters import the ports the domain defines. This is what hexagonal / clean / onion architecture all boil down to.
+- **[<TODAY>]** _Architecture_: Cross-cutting concerns (logging, metrics, auth) belong at the edge, not threaded through domain calls. The domain says what happened; middleware/decorators/aspects observe it.
+- **[<TODAY>]** _Architecture_: When a third-party library leaks into a domain type, wrap it. Importing `mongodb::ObjectId` into your `User` struct couples your domain to that driver — when you migrate, every call site changes. A thin adapter type insulates you.
 ```
 
-**Rust addition** (append after the Architecture section):
+**Universal additions** (append after the Architecture section, all projects):
+
+```markdown
+## Testing
+
+- **[<TODAY>]** _Testing_: Tests are non-negotiable — a feature without tests is incomplete. The question is not *whether* to test but *at what level*: pure logic gets unit tests, subsystem boundaries get integration tests, full user flows get end-to-end tests.
+- **[<TODAY>]** _Testing_: Practice TDD on pure logic — Red (failing test that captures the requirement) → Green (smallest change that passes) → Refactor (improve structure with the test as a safety net). The cycle prevents over-engineering: code exists only to pass a stated test, not to satisfy an imagined future.
+- **[<TODAY>]** _Testing_: TDD-produced tests are documentation of intended usage. Because the test is written before the implementation, it must show how a caller invokes the component — its shape, inputs, and outputs — making the test a worked example a reader can study to understand the design. This is especially valuable when discussing architectural decisions, because the tests demonstrate the interface in action rather than describing it abstractly.
+- **[<TODAY>]** _Testing_: TDD applies cleanly to algorithmic and decision-logic code (parsers, business rules, state machines). For integration plumbing — code whose entire job is to wire HTTP handlers to a service or shuttle bytes between systems — exercise it via a small integration test that uses the real wire format, not unit tests with mocks of every collaborator.
+- **[<TODAY>]** _Testing_: Default to the testing pyramid: many fast unit tests of pure logic, fewer integration tests of subsystem boundaries, fewest end-to-end tests of full user flows. Inverting the pyramid (mostly e2e) makes the suite slow, flaky, and expensive to debug.
+- **[<TODAY>]** _Testing_: Use property-based testing (`proptest` in Rust, `fast-check` in TS, `hypothesis` in Python) for code with algebraic invariants — round-tripping serializers, idempotent operations, sort/parse/normalize functions. Hand-written cases miss adversarial inputs that generators surface in seconds.
+- **[<TODAY>]** _Testing_: Mock at architectural boundaries (network, filesystem, clock, randomness), not at module boundaries inside your own code. Mocking your own collaborators couples tests to implementation details and makes refactoring expensive.
+- **[<TODAY>]** _Testing_: A flaky test is a broken test — quarantine or fix it the same day, never the same week. Flaky tests train the team to ignore CI failures, which lets a real failure slip through unnoticed.
+
+## Documentation
+
+- **[<TODAY>]** _Documentation_: Documentation is a first-class deliverable, not a chore. A feature that ships without docs is incomplete in the same way as one without tests — the code may run, but no one outside its author can use, review, or evolve it confidently.
+- **[<TODAY>]** _Documentation_: Three audiences, three files: `README.md` (users — what is this and how do I run it), `docs/CONTRIBUTING.md` (developers — how do I work on it), `docs/ARCHITECTURE.md` (system designers — how is it built and why). Mixing audiences forces every reader through irrelevant content.
+- **[<TODAY>]** _Documentation_: Write docs for the *next* developer (often you in six months), not for the current one. Explain *why* a decision was made, not just what was decided — the diff already shows the what.
+- **[<TODAY>]** _Documentation_: Keep docs adjacent to the code they describe. Library-level docs in module headers (`//!` in Rust, `/** */` package docs in Java/TS); function-level docs on the function. Out-of-band docs drift; in-tree docs travel with the code.
+- **[<TODAY>]** _Documentation_: Examples are the highest-density docs. A working example beats a paragraph of prose — copy-paste-ability is what real users need. Keep examples in `examples/` and run them in CI so they cannot rot silently.
+- **[<TODAY>]** _Documentation_: Code comments explain *why* and *what for*, not *what*. The code already shows what it does; a comment that paraphrases the code adds noise. A comment that captures the constraint, the trade-off, or the reason for an apparent contradiction is gold.
+- **[<TODAY>]** _Documentation_: Architecture decision records (ADRs / RFCs) are how you preserve the *why* across years. When you reverse a past decision, link the new RFC to the old one — the historical context is part of the explanation.
+
+## Security
+
+- **[<TODAY>]** _Security_: Never expose tokens, credentials, or secrets in committed code, in client-side bundles, or in logs. Pull secrets from a secret manager at runtime; redact known-secret keys from log output unconditionally.
+- **[<TODAY>]** _Security_: Validate input at the boundary, then trust it inside. A request enters validation once (at the HTTP layer, message boundary, etc.) and emerges as a typed domain value — no defensive re-validation throughout the stack, no reaching back to "what was the raw string."
+- **[<TODAY>]** _Security_: Run with the lowest privilege required. Service accounts get the narrowest IAM role; container processes run as non-root; database users get only the schemas they need. Privileges are a one-way ratchet — easy to grant, painful to revoke.
+- **[<TODAY>]** _Security_: Pin and audit dependencies. Lockfiles (`Cargo.lock`, `bun.lockb`, `go.sum`, `uv.lock`) commit the exact versions you tested; an automated audit step (`cargo audit`, `bun audit`, `govulncheck`, `pip-audit`) catches CVEs in CI rather than in the wild.
+- **[<TODAY>]** _Security_: Treat AuthN and AuthZ as separate concerns. Authentication answers "who is this"; authorization answers "may they do this". Conflating them is how systems end up with `if user.is_admin` checks scattered through business logic.
+
+## Error Handling
+
+- **[<TODAY>]** _Error Handling_: Distinguish recoverable errors (return them) from programmer errors (panic / abort). A failed network call is recoverable; a violated invariant inside your own code is not — recovering from it produces zombie state.
+- **[<TODAY>]** _Error Handling_: Errors carry context. The error returned three layers up should tell the operator what the system was trying to do, what failed, and what input was involved — not just the leaf cause. `anyhow::Context`, error wrapping, `Error.cause`, all serve the same goal.
+- **[<TODAY>]** _Error Handling_: Errors should be observable before they are user-visible. Structured logs and metrics catch the error trend (rising 500s, retry exhaustion) before the user reports the symptom.
+- **[<TODAY>]** _Error Handling_: Retries belong at the edge of an idempotent operation. Wrapping a non-idempotent call in retry logic doubles the transactions and corrupts state. If the operation isn't idempotent, make it idempotent (request IDs, conditional updates) before retrying.
+```
+
+**Rust addition** (append after the Universal block):
 
 ```markdown
 ## Rust
@@ -375,18 +472,33 @@ Use `/extract-best-practices` at the end of a session to add new entries.
 - **[<TODAY>]** _Rust_: Do not manage the Rust toolchain with mise — use `rust-toolchain.toml` + rustup instead. mise has a cargo PATH conflict that breaks toolchain resolution.
 - **[<TODAY>]** _Rust_: Use `thiserror` for error types in library crates, `anyhow` in binary/application crates. Mixing them forces consumers to unwrap opaque errors.
 - **[<TODAY>]** _Rust_: `cargo check` is significantly faster than `cargo build` for iteration — use it to validate compilation without producing artifacts.
+- **[<TODAY>]** _Rust_: Prefer `Result<T, E>` over `panic!` for any error a caller might reasonably handle. `panic!` is for broken invariants (programmer error); `Result` is for runtime conditions (network, IO, parse).
+- **[<TODAY>]** _Rust_: Make illegal states unrepresentable with enums — model "loading | loaded(T) | failed(E)" as one enum with three variants, not three booleans plus an `Option<T>` and an `Option<E>`.
+- **[<TODAY>]** _Rust_: Lifetimes flow with ownership; if elision struggles, the structure is wrong, not the annotations. Reach for `Arc`/`Rc` only when shared ownership is genuinely required, not as a borrow-checker escape hatch.
+- **[<TODAY>]** _Rust_: Use `#[derive(Debug)]` on every public type. Debug output is what shows up in error messages and logs — types without it cripple operability.
+- **[<TODAY>]** _Rust_: For async work, prefer `tokio` and instrument long-running futures with `tracing::Instrument` so spans propagate across `.await` points. Untraced async code is invisible in production.
+- **[<TODAY>]** _Rust_: Run `cargo clippy --workspace -- -D warnings` and `cargo fmt --all --check` in CI. Clippy catches real bugs (`needless_collect`, `redundant_clone`); fmt removes the entire class of style PR comments.
+- **[<TODAY>]** _Rust_: Use `cargo deny` (or `cargo audit`) in CI to flag advisories, banned licenses, and duplicate dependencies. Each is a security or supply-chain signal you want to see immediately.
 ```
 
-**JS/TS addition** (append after the Claude Code section):
+**JS/TS addition** (append after the Universal block):
 
 ```markdown
 ## JavaScript / TypeScript
 
+- **[<TODAY>]** _JS/TS_: Use `bun` as the JS/TS runtime and package manager — it replaces `node` + `npm`/`yarn`/`pnpm` with a single fast tool. Day-to-day commands: `bun install` for dependencies, `bun run <script>` for package scripts, `bun test` for tests, `bun <file.ts>` to execute TypeScript directly without a separate build step.
 - **[<TODAY>]** _JS/TS_: Use `bun install --frozen-lockfile` in CI to catch accidental lockfile drift. Without this flag, bun silently updates the lockfile on install and masks dependency mismatches.
 - **[<TODAY>]** _JS/TS_: Enable `"strict": true` in `tsconfig.json` from day one. Retrofitting strict TypeScript into a loose codebase is far more expensive than writing strict types up front.
+- **[<TODAY>]** _JS/TS_: Treat `any` as a code smell, not an escape hatch. If the type genuinely is unknown at the boundary, use `unknown` and narrow it with a type guard — `unknown` forces the narrowing; `any` silently disables every check downstream.
+- **[<TODAY>]** _JS/TS_: Validate external data at the boundary with a schema library (`zod`, `valibot`, `arktype`). The TypeScript type system has no presence at runtime; without runtime validation, your typed function will happily process malformed JSON until it crashes deep in the call stack.
+- **[<TODAY>]** _JS/TS_: Prefer named exports over default exports. Default exports break tree-shaking heuristics, fight refactor tools (default symbols are renamed inconsistently across files), and lose the export name in the import statement.
+- **[<TODAY>]** _JS/TS_: Use ESM (`import`/`export`) throughout the codebase, not a CommonJS/ESM mix. Mixing the two creates dual-package hazards and inconsistent module resolution.
+- **[<TODAY>]** _JS/TS_: Configure path aliases in `tsconfig.json` (`@/foo`) and bundler config together. Using one without the other ships code that compiles but cannot resolve at runtime.
+- **[<TODAY>]** _JS/TS_: Prefer `Date.now()` and explicit timezone handling (e.g., `Intl.DateTimeFormat`) over `new Date(string)` parsing. JavaScript date parsing is locale-dependent and silently wrong for ambiguous formats.
+- **[<TODAY>]** _JS/TS_: Use `eslint` with `@typescript-eslint` rules and run it in CI. Pair it with `prettier` (formatting only — let eslint handle correctness rules).
 ```
 
-**Python addition** (append after the Claude Code section):
+**Python addition** (append after the Universal block):
 
 ```markdown
 ## Python
@@ -395,13 +507,102 @@ Use `/extract-best-practices` at the end of a session to add new entries.
 - **[<TODAY>]** _Python_: Use `uv` for dependency management (`mise.toml` pins the Python version; `uv sync` manages the venv). Mixing pip, venv, and pyenv leads to environment drift across machines.
 ```
 
-**Go addition** (append after the Claude Code section):
+**Go addition** (append after the Universal block):
 
 ```markdown
 ## Go
 
 - **[<TODAY>]** _Go_: Handle every error explicitly — assigning to `_` is almost always a latent bug. If an error genuinely can't happen, document why with a comment rather than silently discarding it.
 - **[<TODAY>]** _Go_: Run `go vet ./...` and `golangci-lint run` before pushing. `go vet` catches common correctness issues; `golangci-lint` catches style and performance issues that reviewers would flag.
+- **[<TODAY>]** _Go_: Pass `context.Context` as the first argument to any function that does I/O, blocks, or might cancel. Goroutines without a context are zombies waiting to leak; once you forget the context at one layer, every layer above forgets it too.
+- **[<TODAY>]** _Go_: Wrap errors with `fmt.Errorf("doing X: %w", err)` so callers can `errors.Is` / `errors.As` up the chain. Bare `return err` loses the call-site context that operators need to debug.
+- **[<TODAY>]** _Go_: Prefer small interfaces defined where they are used (consumer-side), not where they are implemented. The standard library's `io.Reader` works because every consumer can declare its own narrow read-only need.
+- **[<TODAY>]** _Go_: Avoid empty interfaces (`interface{}` / `any`) at API boundaries. They turn the type system off. If you need a sum type, use a sealed interface (unexported method) or a tagged struct.
+- **[<TODAY>]** _Go_: Run goroutines with explicit lifetime control — `errgroup.Group`, `sync.WaitGroup`, or a context-cancelled worker pool. Naked `go func() { ... }()` calls are how production hangs and panics with no stack you can find.
+- **[<TODAY>]** _Go_: Build for the linker — keep packages small and the dependency graph shallow. Cyclic imports are forbidden by the compiler; near-cyclic imports (A → B → C → A-via-interface) signal a missing third package.
+- **[<TODAY>]** _Go_: Use table-driven tests for any function with multiple input shapes. The pattern (`for _, tc := range cases { t.Run(tc.name, ...) }`) makes adding a case a one-line change and surfaces coverage gaps visually.
+```
+
+**Svelte addition** (append after the Universal block, when Svelte is detected — heuristic: any `*.svelte` file or `svelte` in `package.json` dependencies):
+
+```markdown
+## Svelte
+
+- **[<TODAY>]** _Svelte_: Use Svelte 5 runes (`$state`, `$derived`, `$effect`, `$props`) for new components. Runes are explicit about reactivity boundaries; the legacy `let` + `$:` pattern works but obscures whether a value is reactive or not.
+- **[<TODAY>]** _Svelte_: `$effect` is for side effects (DOM, network, timers), not for deriving values. If you find yourself writing `$effect(() => { derived = a + b })`, replace it with `let derived = $derived(a + b)` — the compiler builds a smaller, more correct dependency graph.
+- **[<TODAY>]** _Svelte_: Co-locate component-scoped styles in `<style>` blocks; reach for global stylesheets only for tokens (color/spacing variables) and resets. Scoped styles let you delete a component without orphaning its CSS.
+- **[<TODAY>]** _Svelte_: Use SvelteKit's load functions (`+page.ts`, `+page.server.ts`) for data fetching, not `onMount`. Load functions run during SSR, integrate with the router's loading state, and avoid the "blank page → flash of content" pattern.
+- **[<TODAY>]** _Svelte_: Type `$props` explicitly with a `Props` interface. Untyped props lose autocomplete in consumers and silently accept misspelled prop names.
+- **[<TODAY>]** _Svelte_: Prefer the `bind:` directive over manual two-way state plumbing for form inputs and component-shared state. Custom plumbing reinvents what `bind:value` already does and gets it wrong on edge cases (composition events, paste, etc.).
+- **[<TODAY>]** _Svelte_: Server-only code goes in `+*.server.ts` files; never import server modules from client code. The bundler can usually catch this, but a server import inside a `$lib` shared module sneaks past — check both ends of every shared module.
+```
+
+**Ruby addition** (append after the Universal block, when Ruby is detected — heuristic: any `Gemfile`, `*.gemspec`, or `*.rb` source file):
+
+```markdown
+## Ruby
+
+- **[<TODAY>]** _Ruby_: Pin Ruby version in `.ruby-version` and lock dependencies in `Gemfile.lock`; install via `mise` (or `rbenv` / `chruby`). Mixed Ruby installations across machines produce silent gem-load mismatches.
+- **[<TODAY>]** _Ruby_: Run `bundle exec` for project commands (`bundle exec rake`, `bundle exec rspec`) — it pins binaries to the bundle. Direct `rspec` invocations pick up the system gem version and produce results that don't match CI.
+- **[<TODAY>]** _Ruby_: Prefer keyword arguments over positional hashes for any method with more than two parameters. Keyword args are self-documenting at the call site and produce clear errors on missing/extra keys.
+- **[<TODAY>]** _Ruby_: Treat `nil` checks as a smell. Ruby's null object pattern, `&.` (safe navigation), or `Array(maybe_nil_array)` produce more readable code than `if foo.nil? ...` ladders.
+- **[<TODAY>]** _Ruby_: Run `rubocop` and `standard` (pick one) in CI. Both enforce style consistency that reviewers would otherwise spend energy on.
+- **[<TODAY>]** _Ruby_: Use `rspec` or `minitest` consistently — don't mix. Each has its own conventions for fixtures, doubles, and matchers; mixing forces every contributor to context-switch between them.
+- **[<TODAY>]** _Ruby_: Prefer immutable data classes (`Data.define`, structs frozen on creation) over mutable hashes for typed records. Mutability is the fastest path to spooky-action-at-a-distance bugs.
+```
+
+**Rails addition** (append after the Ruby section, when Rails is detected — heuristic: a `config/application.rb` file or `rails` in `Gemfile`):
+
+```markdown
+## Rails
+
+- **[<TODAY>]** _Rails_: Fat controllers and fat models are both anti-patterns. Push business logic into plain Ruby objects (services, form objects, query objects) under `app/services/`, `app/queries/`, etc. The model owns persistence; the controller owns request/response shape; the rest is its own concern.
+- **[<TODAY>]** _Rails_: Use strong parameters at the controller boundary, but parse them into a typed object (form object, dry-struct, ActiveModel) before passing to services. Services that take raw params couple to the HTTP shape.
+- **[<TODAY>]** _Rails_: Database migrations are append-only history. Never edit a merged migration; add a new one. Rolling back in production is risky enough that you want an explicit reverse migration, not a silent "rerun this".
+- **[<TODAY>]** _Rails_: Use `find_each` (or `in_batches`) for any query over more than a few hundred records. `User.all.each` loads the entire table into memory and OOMs the dyno on first real-world data.
+- **[<TODAY>]** _Rails_: Wrap multi-record writes in `ActiveRecord::Base.transaction`. Without one, a partial failure (network blip on the second `INSERT`, validation error on the fifth row) leaves the database in a state nobody designed for.
+- **[<TODAY>]** _Rails_: Background jobs are at-least-once by default — make them idempotent. The worker that received a job once will receive it twice when the queue retries; if the job mutates state without a unique-key guard, you've created duplicates.
+- **[<TODAY>]** _Rails_: Use `bin/rails credentials:edit --environment <env>` for secrets in committed config; never commit secrets in plaintext. The Rails master key goes in your secret manager and into the deploy pipeline as an env var.
+- **[<TODAY>]** _Rails_: Eager-load associations in any list view (`includes(:author, :tags)`). N+1 queries pass tests on three rows and crash on three thousand. Add `bullet` (or the `prosopite` gem) in development so they fail loudly during development.
+- **[<TODAY>]** _Rails_: Prefer `where.missing(:association)` and Active Record query methods over raw SQL. When raw SQL is necessary, sanitize with bind parameters — never interpolate strings into a query.
+```
+
+**Kubernetes / CUE / kapply addition** (append after the Universal block, when k8s tooling is detected — heuristic: any `*.cue` file under `k8s/`, or `kapply` listed in CI / Dockerfile):
+
+```markdown
+## Kubernetes / CUE / kapply
+
+- **[<TODAY>]** _K8s/CUE_: Render manifests with CUE, not Helm templating or YAML anchors. CUE constraints catch invalid shapes (missing `resources.limits`, malformed selectors) at build time; Helm catches them at apply time, sometimes after partial application has already happened.
+- **[<TODAY>]** _K8s/CUE_: Pipeline shape is `cue export --out yaml -e resources ./k8s/clusters/<env> | kapply -n <env> -`. CUE produces the desired stream; kapply tracks the inventory and prunes anything that left the desired set. Never apply YAML directly with `kubectl apply` from a render — you lose the prune story.
+- **[<TODAY>]** _kapply_: kapply tracks the applied set in a ConfigMap inventory and refuses to run on an empty input stream — that guard is what prevents an accidental "prune everything" when the render layer fails or emits nothing. Do not work around it; fix the render.
+- **[<TODAY>]** _kapply_: kapply exit codes have meaning: `0` = no changes, `2` = changes applied successfully, `1` = error/conflict. Deploy scripts should treat both `0` and `2` as success and only fail on `1`.
+- **[<TODAY>]** _kapply_: kapply uses server-side apply with `force-conflicts` and a per-distribution field manager. If two distributions try to manage the same field, kapply refuses to take over — fix ownership in CUE rather than working around the conflict.
+- **[<TODAY>]** _K8s/CUE_: Pin the API version of every manifest (`apiVersion: apps/v1`, not the latest implicit). Cluster upgrades occasionally remove old API versions; pinning surfaces the migration as a CUE compile error rather than a silent runtime regression.
+- **[<TODAY>]** _K8s_: Set `resources.requests` and `resources.limits` on every container. Without requests, the scheduler treats the pod as best-effort; without limits, a noisy neighbor can starve the node.
+- **[<TODAY>]** _K8s_: Use `readinessProbe` and `livenessProbe` thoughtfully — readiness gates traffic, liveness restarts pods. A liveness probe that's too aggressive on a slow-starting service crashes a healthy pod; a readiness probe missing on a slow-starting service routes traffic to a not-ready container.
+- **[<TODAY>]** _K8s_: Don't set `spec.replicas` on a Deployment that has an HPA — they fight. Either set replicas (no HPA) or set HPA bounds (no static replicas).
+- **[<TODAY>]** _K8s_: Run with the lowest privilege necessary: drop all capabilities except those required, run as non-root, set `readOnlyRootFilesystem: true` where the workload allows. PodSecurityPolicy / Pod Security Admission catches the rest.
+- **[<TODAY>]** _K8s_: Namespace everything. The default namespace is fine for one-off tools; production workloads belong in named namespaces so RBAC, NetworkPolicies, and resource quotas can be applied.
+- **[<TODAY>]** _kapply_: Use `kapply verify` after a deploy to confirm every inventoried resource is still present and stamped. A passing deploy that subsequently drifts (manual edit, garbage collector reaping a parent) is invisible without the verify pass.
+```
+
+**Terraform / Terragrunt addition** (append after the Universal block, when Terraform is detected — heuristic: any `*.tf` file or `terragrunt.hcl`):
+
+```markdown
+## Terraform / Terragrunt
+
+- **[<TODAY>]** _Terraform_: Pin provider versions in every module (`required_providers { aws = { source = "hashicorp/aws", version = "~> 5.0" } }`). An unpinned provider can change resource schema between plan and apply, producing destructive diffs nobody asked for.
+- **[<TODAY>]** _Terraform_: Pin Terraform itself with `required_version = ">= 1.6.0, < 2.0.0"` in every module. Across-major upgrades deprecate behavior; pinning forces a deliberate upgrade path.
+- **[<TODAY>]** _Terraform_: Remote state with locking is non-negotiable for any shared environment. S3 + DynamoDB or GCS + native locks. Local state is fine for a single-author personal stack and disastrous for a team.
+- **[<TODAY>]** _Terraform_: Run `terraform plan` in CI on every PR and require the plan output as a review artifact. A merged PR whose plan was never inspected is a merge to production by-accident.
+- **[<TODAY>]** _Terraform_: Treat `terraform apply` as a privileged operation. Apply happens through CI on a protected branch, never from a developer's laptop in a shared environment.
+- **[<TODAY>]** _Terragrunt_: Use Terragrunt to orchestrate multiple Terraform modules with shared inputs. The DRY pattern (`terragrunt.hcl` per environment, generating provider/backend blocks) is what Terragrunt is for; treat the per-env files as configuration, not code.
+- **[<TODAY>]** _Terragrunt_: Run `terragrunt run-all plan` from the root only when you genuinely need to plan everything. For day-to-day work, `cd` into the affected module and run `terragrunt plan` there — it's faster and the blast radius is one module.
+- **[<TODAY>]** _Terraform_: Module inputs must be typed (`variable "x" { type = string }`). An untyped variable accepts anything and surfaces type errors deep in the resource block instead of at the boundary.
+- **[<TODAY>]** _Terraform_: Don't use `null_resource` + `local-exec` to glue together what providers can do natively. Glue scripts have no dependency graph, no idempotency, and no rollback — they're the easiest way to make a deterministic system non-deterministic.
+- **[<TODAY>]** _Terraform_: Tag every resource with a standard set (owner, environment, cost-center, managed-by-terraform=true). Tags are the only path from "what is this resource?" to an answer the cost-management and audit teams can use.
+- **[<TODAY>]** _Terraform_: Run `tflint` and `tfsec` (or `checkov`) in CI. tflint catches style and provider-specific issues; tfsec/checkov catches security misconfigurations (public S3 buckets, unencrypted volumes) before they're applied.
+- **[<TODAY>]** _Terraform_: Refactor with `moved` blocks, not `terraform state rm` + `terraform import`. `moved` is reversible, declarative, and reviewable; manual state surgery is none of those.
 ```
 
 ### `README.md`
@@ -628,7 +829,7 @@ Example for a Rust project with all plugins installed:
         "hooks": [
           {
             "type": "command",
-            "command": "echo 'PreCompact: context is about to be compacted — run /extract-best-practices now to preserve non-obvious learnings before they are lost.'"
+            "command": "echo 'PreCompact: context is about to be compacted — run /best-practices-extract now to preserve non-obvious learnings before they are lost.'"
           }
         ]
       }
@@ -668,7 +869,7 @@ Example for a Rust project with all plugins installed:
         "hooks": [
           {
             "type": "command",
-            "command": "echo 'Session ending: (1) /extract-best-practices — if non-obvious learnings were not yet captured. (2) ARCHITECTURE.md — if a component was added/removed, renamed, or data flow changed. (3) CONTRIBUTING.md — if dev workflow, quality gate, or prerequisites changed. (4) README.md — if user-facing behavior or install method changed. (5) docs/project-brief.md — if product scope, audience, or core model changed.'"
+            "command": "echo 'Session ending: (1) /best-practices-extract — if non-obvious learnings were not yet captured. (2) ARCHITECTURE.md — if a component was added/removed, renamed, or data flow changed. (3) CONTRIBUTING.md — if dev workflow, quality gate, or prerequisites changed. (4) README.md — if user-facing behavior or install method changed. (5) docs/project-brief.md — if product scope, audience, or core model changed.'"
           }
         ]
       }
@@ -1040,4 +1241,4 @@ If Exa is not yet set up globally, configure it as an MCP server in Claude Code 
 Remind the user of follow-up tasks:
 - Edit `CLAUDE.md` to fill in the actual file structure once source code is added
 - Fill in `docs/ARCHITECTURE.md` once the system design is settled
-- Run `/extract-best-practices` at the end of meaningful sessions
+- Run `/best-practices-extract` at the end of meaningful sessions

@@ -5,12 +5,22 @@
     "code-review@claude-plugins-official": true
   },
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f docs/BEST_PRACTICES.md ] && [ -f skills/bootstrap/SKILL.md ]; then PROJECT_VER=$(grep -m1 'bootstrap-content-version:' docs/BEST_PRACTICES.md 2>/dev/null | sed -E 's/.*bootstrap-content-version: ([^ ]+).*/\\1/'); PLUGIN_VER=$(grep -m1 'bootstrap-content-version:' skills/bootstrap/SKILL.md 2>/dev/null | sed -E 's/.*bootstrap-content-version: ([^ ]+).*/\\1/'); if [ -n \"$PLUGIN_VER\" ] && [ \"$PROJECT_VER\" != \"$PLUGIN_VER\" ]; then echo \"SessionStart: bootstrap content has new entries (project=$PROJECT_VER, plugin=$PLUGIN_VER). Consider running /bootstrap to refresh docs/BEST_PRACTICES.md.\"; fi; fi"
+          }
+        ]
+      }
+    ],
     "PreCompact": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "echo 'PreCompact: context is about to be compacted — run /extract-best-practices now to preserve non-obvious learnings before they are lost.'"
+            "command": "echo 'PreCompact: context is about to be compacted — run /best-practices-extract now to preserve non-obvious learnings before they are lost.'"
           }
         ]
       }
@@ -50,7 +60,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo 'Session ending: (1) /extract-best-practices — if non-obvious learnings were not yet captured. (2) ARCHITECTURE.md — if a component was added/removed, renamed, or data flow changed. (3) CONTRIBUTING.md — if dev workflow, quality gate, or prerequisites changed. (4) README.md — if user-facing behavior or install method changed. (5) docs/project-brief.md — if product scope, audience, or core model changed.'"
+            "command": "echo 'Session ending: (1) /best-practices-extract — if non-obvious learnings were not yet captured. (2) ARCHITECTURE.md — if a component was added/removed, renamed, or data flow changed. (3) CONTRIBUTING.md — if dev workflow, quality gate, or prerequisites changed. (4) README.md — if user-facing behavior or install method changed. (5) docs/project-brief.md — if product scope, audience, or core model changed.'"
+          },
+          {
+            "type": "command",
+            "command": "if [ -f .claude-plugin/plugin.json ] && grep -q '\"name\": \"bytewyrd-workflow\"' .claude-plugin/plugin.json 2>/dev/null && [ -s \"$HOME/.claude/BEST_PRACTICES.md\" ]; then echo 'Session ending (plugin checkout): ~/.claude/BEST_PRACTICES.md has pending entries — consider running /best-practices-sync to promote vetted entries into bootstrap content.'; fi"
           }
         ]
       }

@@ -2,7 +2,7 @@
 rfc: "2026-05-09-best-practices-content-and-tooling"
 title: "Best Practices: Content Library and Tooling Improvements"
 author: "Rodrigo Kochenburger"
-status: "Approved"
+status: "Done"
 created: "2026-05-09"
 drop_reason: ~
 ---

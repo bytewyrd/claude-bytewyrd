@@ -4,7 +4,7 @@ Accumulated non-obvious learnings from development sessions.
 
 Format: **[YYYY-MM-DD]** _Category_: Concise statement (1–2 sentences max).
 
-Use `/extract-best-practices` at the end of a session to add new entries.
+Use `/best-practices-extract` at the end of a session to add new entries.
 
 ## Pitfall
 
