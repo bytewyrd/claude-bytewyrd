@@ -42,6 +42,7 @@ Skills are organized by noun-first naming convention (e.g., `best-practices-extr
 
 Current plugin-local skills:
 - `best-practices-sync` — promotes entries from the global `~/.claude/BEST_PRACTICES.md` into `skills/bootstrap/SKILL.md`
+- `agents-update` — syncs `agents/` with the latest upstream versions from VoltAgent/awesome-claude-code-subagents
 
 ### Hooks (`.claude-plugin/hooks/`)
 
