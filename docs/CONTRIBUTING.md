@@ -22,6 +22,33 @@ git clone <repo-url>
 cd claude-bytewyrd-workflow
 ```
 
+## Plugin Setup (one-time)
+
+This project is both the definition of the Bytewyrd workflow and a live instance of it. To test changes as you make them, install the plugin from your local checkout rather than from GitHub. This way you experience exactly what a consumer gets, with no separate test repo needed.
+
+```bash
+claude plugin marketplace add ./ --scope local
+claude plugin install bytewyrd-workflow --scope local
+```
+
+Then restart Claude Code. The plugin is now active in all your sessions from this directory.
+
+You can also clean up the stale `.claude/skills/` directory left over from bootstrapping:
+
+```bash
+rm -rf .claude/skills/
+```
+
+**Why local install over other approaches:**
+Skills in `skills/` are not auto-loaded as slash commands by Claude Code — only `.claude/skills/` and installed plugins are loaded. Options considered: keeping a manual copy in `.claude/skills/` (friction, two copies to sync), symlinking (sandbox may not follow symlinks), or a sync script (must remember to run it). Local install is the only option that tests the exact consumer experience with no duplication.
+
+**Edit cycle:** change anything in `skills/`, `agents/`, `.claude-plugin/`, or `rfc-process.md` → then:
+
+```bash
+claude plugin update bytewyrd-workflow
+# restart Claude Code to pick up the changes
+```
+
 ## Development Workflow
 
 All work happens on feature branches. Use the [git worktree](https://git-scm.com/docs/git-worktree) workflow for parallel tasks:
