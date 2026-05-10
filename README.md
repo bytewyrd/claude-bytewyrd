@@ -12,7 +12,25 @@ The plugin provides a curated collection of Claude Code skills (like `/sync`, `/
 
 ## Getting Started
 
-Claude Bytewyrd Workflow is under active development — no pre-packaged binaries or installers yet. For now, build from source by following the [build instructions](docs/CONTRIBUTING.md#development-setup).
+Add the Bytewyrd marketplace to your Claude Code settings (`~/.claude/settings.json` for all projects, or `.claude/settings.json` for a single project):
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "bytewyrd": {
+      "source": { "source": "github", "repo": "bytewyrd/claude-bytewyrd" }
+    }
+  }
+}
+```
+
+Then install and restart Claude Code:
+
+```bash
+claude plugin install bytewyrd
+```
+
+Once installed, run `/bytewyrd:sync` in any project to bootstrap it with the full Claude Code setup — RFC process, best-practices tracking, CI, agent delegation, and all.
 
 ## Documentation
 
