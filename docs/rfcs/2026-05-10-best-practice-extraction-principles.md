@@ -2,7 +2,7 @@
 rfc: "2026-05-10-best-practice-extraction-principles"
 title: "Best-Practice Extraction: Triage and Lift Principles"
 author: "Rodrigo Kochenburger"
-status: "Draft"
+status: "Approved"
 created: "2026-05-10"
 drop_reason: ~
 ---
