@@ -3,7 +3,7 @@ name: sync
 description: Set up or refresh a project repository with all standard conventions — idempotent, safe to re-run whenever the plugin updates. Triggered by "/sync".
 ---
 
-<!-- bootstrap-content-version: 2026-05-10-a7b5e4f -->
+<!-- bootstrap-content-version: 2026-05-10-f7d5384 -->
 
 # Sync
 
@@ -86,7 +86,7 @@ If `docs/project-brief.md` exists, parse it (parser rules are documented in the 
 
 - `brief_name` — string from the H1 (regex `/^#\s+(.+?)\s*$/m`), or `None` if no H1 is present
 - `brief_description` — string from the first non-blank paragraph of the `## Description` section, or `None` if the section is absent or its body is empty after trimming
-- `brief_problem`, `brief_goals`, `brief_nongoals`, `brief_constraints` — body of each named section, plus a `<section>_is_placeholder` flag set to `true` when the section is absent, empty after trimming, or contains a recognized placeholder (the literal `<...>`, `—`, `TBD`, `TODO`, etc.)
+- `brief_problem`, `brief_goals`, `brief_nongoals`, `brief_constraints` — body of each named section, plus a `<section>_is_placeholder` flag set to `true` when the section is absent, empty after trimming, or its body (after trimming) is exactly one of these recognized placeholder strings: the literal `<...>`, `—`, `TBD`, or `TODO` (case-insensitive). Any other content — including a single real sentence — is treated as non-placeholder.
 
 Resolve `project_name`:
 1. If `brief_name` is non-`None` and non-empty AND not equal to `"Project Brief"` (case-insensitive — the literal placeholder from older brief templates) → `project_name = brief_name`.
@@ -112,7 +112,7 @@ After answering, set `project_name` and `description` from the answers. The coll
 
 #### 2a.ii — Optional body-fill for the four narrative sections
 
-After the identity gap-fill (or directly, if no identity gap-fill was needed but the brief is being touched at all in this run), inspect the four narrative sections. Compute `body_has_placeholders = brief_problem_is_placeholder OR brief_goals_is_placeholder OR brief_nongoals_is_placeholder OR brief_constraints_is_placeholder`.
+After the identity gap-fill (or directly, if no identity gap-fill was needed because both `project_name` and `description` were already resolved from the brief), inspect the four narrative sections. Compute `body_has_placeholders = brief_problem_is_placeholder OR brief_goals_is_placeholder OR brief_nongoals_is_placeholder OR brief_constraints_is_placeholder`.
 
 If `body_has_placeholders = false` (every narrative section already has real, non-placeholder content), skip this sub-step entirely — no prompt, no rewrite. Proceed to Step 3.
 
@@ -506,7 +506,7 @@ A mixed project like Rust + Svelte frontend + Terraform infra gets the Rust, JS/
 ```markdown
 # Best Practices
 
-<!-- bootstrap-content-version: 2026-05-10-a7b5e4f -->
+<!-- bootstrap-content-version: 2026-05-10-f7d5384 -->
 
 Accumulated non-obvious learnings from development sessions.
 
