@@ -46,22 +46,23 @@ Skills in `skills/` are not auto-loaded as slash commands by Claude Code — onl
 
 ## Agents
 
-Agent definitions in `agents/` are vendored from [VoltAgent/awesome-claude-code-subagents](https://github.com/VoltAgent/awesome-claude-code-subagents). The upstream repository organizes agents by category; this plugin flattens them into a single directory.
+Agent definitions in `agents/` originated from [VoltAgent/awesome-claude-code-subagents](https://github.com/VoltAgent/awesome-claude-code-subagents) (MIT) and are now permanently locally owned. Each customized file carries an attribution comment near the top.
 
-To pull upstream updates (new agents, changed definitions):
+To pull in upstream improvements manually:
 
-```bash
-# inside the plugin checkout, invoke the skill:
-/agents-update
-```
+1. Find the file in the upstream repo at `categories/{category}/{agent-name}.md`.
+2. Diff it against the local copy.
+3. Apply changes you want to keep; skip changes that conflict with local customizations.
+4. Commit with a message like `chore(agents): pull upstream improvements to {agent-name}`.
 
-The skill fetches the upstream file tree, shows what changed, and lets you approve updates before writing. It never commits — review the diff and commit manually. Run this periodically (e.g., when the upstream repo has new releases) to keep bundled agents current.
+Never overwrite a local file wholesale — the upstream file won't have the attribution comment or any local customizations. Pull selectively.
+
+To add a new agent not yet in the plugin, copy it from upstream into `agents/`, add the attribution comment after the frontmatter closing `---`, and commit.
 
 ## Sync
 
 Run `/sync` in any project to set up or refresh the Claude Code environment — CLAUDE.md, BEST_PRACTICES.md, CI, RFC process, and all. The skill is idempotent: existing files are skipped, missing files are created, name/description are kept in sync. Re-run after the plugin updates to pick up new best-practice entries.
 
-To add a custom agent that is not in the upstream repo, create `agents/{name}.md` directly and commit it. Custom agents are not affected by `/agents-update` as long as their filename doesn't collide with an upstream agent.
 
 ## Development Workflow
 

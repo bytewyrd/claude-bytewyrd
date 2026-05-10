@@ -11,7 +11,7 @@ No language-specific toolchain detected. Add source code and re-run `/sync` to p
 ```
 claude-bytewyrd/
 ├── CLAUDE.md                    — this file
-├── agents/                      — vendored subagent definitions (from VoltAgent/awesome-claude-code-subagents)
+├── agents/                      — subagent definitions (originally from VoltAgent/awesome-claude-code-subagents, MIT; now locally owned)
 ├── skills/                      — exported plugin skills (auto-discovered by Claude Code)
 ├── .claude-plugin/
 │   └── plugin.json              — plugin identity and metadata
@@ -32,6 +32,7 @@ claude-bytewyrd/
 |------|-------|
 | New features | feature-engineer |
 | Code reviews | code-reviewer |
+| Refactoring (deliberate) | refactoring-specialist (via `/refactor`) |
 | Architecture / RFCs | rfc-architect |
 | Documentation | documentation-writer |
 | Debugging | debugger |
@@ -121,6 +122,18 @@ Use `"./run *"` (with wildcard), not `"./run"`. Keep in `settings.local.json` (g
 - Each parallel agent needs its own worktree. Sub-agents share the parent worktree.
 - Never start long-running processes — ask the user to run in a separate terminal.
 - **Always write to the current working directory** — if invoked from a worktree, write there. Never use `git rev-parse --git-common-dir` to find the "main" repo root and redirect writes to it. A worktree is the intended branch context; files written there are committed on the branch and reviewed via PR.
+
+### Considering /refactor
+
+Before extending or modifying existing code, consider whether a deliberate refactoring pass would make the upcoming change cleaner. Run `/refactor <scope-hint>` when:
+
+- The area you are about to touch has thin test coverage, and adding characterization tests now will protect both the refactor and the subsequent feature work.
+- A structural smell (long method, fat conditional, primitive obsession, divergent change) will be amplified by the upcoming feature; refactor first so the new code has a clean place to land.
+- A recent PR you are about to merge has cleanup that was deferred because the diff was already large.
+
+`/refactor` instructs the main agent to spawn the `refactoring-specialist` subagent on Opus with `max` effort. It is deliberately expensive — use it for genuine refactoring passes, not for tiny renames (just edit the files for those).
+
+The skill enforces a six-phase protocol: pre-flight (resolve scope, discover test command) → analyze → characterization tests → plan → **approval gate** → apply → report. The approval gate stops the subagent before any mutation; review the plan, approve specific steps, and the subagent applies them one commit at a time.
 
 ### Session end
 
