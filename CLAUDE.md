@@ -11,7 +11,7 @@ No language-specific toolchain detected. Add source code and re-run `/sync` to p
 ```
 claude-bytewyrd/
 ├── CLAUDE.md                    — this file
-├── agents/                      — vendored subagent definitions (from VoltAgent/awesome-claude-code-subagents)
+├── agents/                      — subagent definitions (originally from VoltAgent/awesome-claude-code-subagents, MIT; now locally owned)
 ├── skills/                      — exported plugin skills (auto-discovered by Claude Code)
 ├── .claude-plugin/
 │   └── plugin.json              — plugin identity and metadata

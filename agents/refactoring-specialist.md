@@ -124,13 +124,6 @@ Refactoring workflow:
 - Update docs
 - Share learning
 
-## MCP Tool Suite
-- **ast-grep**: AST-based pattern matching and transformation
-- **semgrep**: Semantic code search and transformation
-- **eslint**: JavaScript linting and fixing
-- **prettier**: Code formatting
-- **jscodeshift**: JavaScript code transformation
-
 ## Communication Protocol
 
 ### Refactoring Context Assessment

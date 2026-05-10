@@ -26,7 +26,7 @@ Use the Agent tool to spawn a `bytewyrd:refactoring-specialist` agent with:
 
 - `model: "opus"`
 - `effort: "max"`
-- Prompt: the entire **Refactoring protocol** section below, with the scope hint substituted into the Scope block
+- Prompt: the entire **Refactoring protocol** section below, with the literal string `<SCOPE HINT FROM $ARGUMENTS>` in the Scope block replaced with the actual scope hint captured in Step 1
 
 The protocol is the agent's prompt. The agent definition supplies the domain knowledge — code-smell detection, refactoring catalog, safety practices, test-driven refactoring, code metrics. The protocol below tells the agent how to apply that knowledge for this specific invocation.
 
@@ -82,6 +82,8 @@ The scope hint includes any non-obvious context from the parent conversation. Yo
 - `go.mod` presence — `go test ./...`
 - `pyproject.toml` / `setup.py` — typically `pytest` or `python -m pytest`
 - `Gemfile` — `bundle exec rspec` or `bundle exec rake test`
+- `Taskfile.yml` presence — `task test`
+- `deno.json` / `deno.jsonc` presence — `deno test`
 
 Pick the first match. If multiple plausible commands exist, ask the parent: "I see candidates X, Y, Z for the test command — which is the canonical one to run between refactoring steps?" If no test command is discoverable, ask the parent what command to use; do not invent one.
 
@@ -103,7 +105,7 @@ Refactoring is behavior-preserving by definition. Behavior preservation requires
 
 1. Write a characterization test that exercises the current behavior, including the parts you intend to keep and the parts you intend to refactor.
 2. Run the test suite (using the command discovered in phase 0) and confirm the new tests pass against the *current* code. If a new test fails on current code, the test does not yet capture the current behavior — fix the test, not the code (the code's behavior is, by definition, the spec at this point).
-3. Commit the new tests as a separate commit so the refactor commits can be reviewed against a known-green baseline. Use a Conventional Commits message: `test(<scope>): add characterization tests for <area>`, where `<scope>` is a short identifier for the affected component or module (e.g., `auth`, `parser`, `payments`) and `<area>` names what the tests cover.
+3. Commit the new tests as a separate commit so the refactor commits can be reviewed against a known-green baseline. Use a Conventional Commits message: `test(<scope>): add characterization tests for <area>`, where `<scope>` is a short identifier for the affected component or module (e.g., `auth`, `parser`, `payments`) and `<area>` names what the tests cover. If the pass spans multiple unrelated modules, use an enclosing directory or cross-cutting concern as the scope token (e.g., `user-flow`, `api-layer`) rather than a single module name.
 
 If the scope already has comprehensive test coverage, note that in your report and skip to phase 3.
 
@@ -139,7 +141,7 @@ Return the plan to the parent and stop. The parent (the main agent or the user) 
 
 - `apply all` — proceed with every step in order
 - `apply 1, 3, 5` — proceed with the listed step numbers in order (grouped steps like `1a, 1b` apply together when the group number is listed)
-- `cancel` — stop; the characterization tests from phase 2 stay committed (they are a standalone improvement) and proceed to phase 6 to report
+- `cancel` — stop; the characterization tests from phase 2 stay committed (they are a standalone improvement) and proceed to phase 6 to report. In the report, `Steps applied` should read "none — cancelled at approval gate" and `Steps skipped` should list all plan steps with reason "user cancelled"
 
 If the parent asks clarifying questions, answer them. If the parent requests changes to the plan ("merge steps 2 and 3", "skip step 4", "add a step that does X"), revise the numbered list and re-present the full updated plan, then wait for a new approval response. Do not start applying based on partial approval mixed with revision requests.
 
@@ -154,7 +156,7 @@ For each approved step, in the order the parent listed them:
    - **All tests pass** — proceed to step 3.
    - **A characterization test fails** — your refactor changed observable behavior. Revert this step's changes and surface the failing test to the parent: "Step N broke characterization test X. The refactor changed behavior; reverting and pausing." Do not attempt to fix the test by adjusting expectations — the test is the spec.
    - **A non-characterization test fails (a pre-existing test that was depending on the implementation detail you just changed)** — this is the legitimate "test was coupled to implementation, not behavior" case. Stop, surface the failure to the parent with the failing test name and the implementation detail it was coupled to, and wait for the parent to decide: revert the refactor, or update the test to depend on behavior instead of implementation. Do not unilaterally rewrite tests.
-3. Commit the step. Use a Conventional Commits message: `refactor(<scope>): <step description>`, where `<scope>` is the same short component identifier used in phase 2 — one commit per approved step (or per approved group, when steps were bundled as `1a, 1b, 1c`).
+3. Commit the step. Use a Conventional Commits message: `refactor(<scope>): <step description>`, where `<scope>` is the same short component identifier used in phase 2 (including the cross-cutting token if the pass spans multiple modules) — one commit per approved step (or per approved group, when steps were bundled as `1a, 1b, 1c`).
 4. Move to the next approved step.
 
 If a step turns out to be larger or riskier than the plan estimated (the apply phase reveals coupling not visible in analysis), stop and re-present the revised step to the parent before continuing.

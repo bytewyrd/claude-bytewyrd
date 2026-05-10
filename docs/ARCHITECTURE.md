@@ -30,9 +30,9 @@ Skills are organized by noun-first naming convention (e.g., `best-practices-extr
 
 **Purpose:** Specialized subagent definitions that Claude Code can spawn as subtasks. Agents are role-specific — each carries a focused system prompt, a tool allow-list, and a model preference.
 **Location:** `agents/`
-**Key interfaces:** Each agent is a single `.md` file with YAML frontmatter (`name`, `description`, `tools`, optional `model`). Claude Code discovers agents in this directory and makes them available as subagent targets.
+**Key interfaces:** Each agent is a single `.md` file with YAML frontmatter (`name`, `description`, optional `model`). Claude Code discovers agents in this directory and makes them available as subagent targets.
 
-**Source:** Agent definitions are vendored from [VoltAgent/awesome-claude-code-subagents](https://github.com/VoltAgent/awesome-claude-code-subagents). The upstream repository is organized by category (`categories/{category}/{agent-name}.md`); this plugin flattens them into a single `agents/` directory for simpler discovery. Use `/agents-update` to pull the latest upstream versions.
+**Source:** Agent definitions originated from [VoltAgent/awesome-claude-code-subagents](https://github.com/VoltAgent/awesome-claude-code-subagents) (MIT) and are now permanently locally owned. The upstream repository is organized by category (`categories/{category}/{agent-name}.md`); this plugin flattens them into a single `agents/` directory for simpler discovery. Each locally modified file carries an attribution comment. Future upstream improvements are pulled manually, file by file, when a maintainer judges them worth applying.
 
 ### Plugin-local skills (`.claude/skills/`)
 
@@ -42,7 +42,6 @@ Skills are organized by noun-first naming convention (e.g., `best-practices-extr
 
 Current plugin-local skills:
 - `best-practices-sync` — promotes entries from the global `~/.claude/BEST_PRACTICES.md` into `skills/sync/SKILL.md`
-- `agents-update` — syncs `agents/` with the latest upstream versions from VoltAgent/awesome-claude-code-subagents
 
 ### Plugin manifest (`.claude-plugin/`)
 
@@ -57,15 +56,13 @@ Agents → spawned as subtask processes. Receive a goal and a tool allow-list fr
 
 `best-practices-record` (skill) → `~/.claude/BEST_PRACTICES.md` (user-global file) → `best-practices-sync` (plugin-local skill) → `skills/sync/SKILL.md` → future `/sync` runs in consumer projects.
 
-`agents-update` (skill) → VoltAgent/awesome-claude-code-subagents (GitHub) → `agents/*.md` (local vendor copy).
-
 `/sync` (skill) → `$CLAUDE_PLUGIN_ROOT/rfc-process.md` (canonical template) → `docs/rfc-process.md` in consumer project (created or updated with upstream sync markers).
 
 ## Design Decisions
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Agent source | Vendor from awesome-claude-code-subagents into `agents/` | Consumers get agents without a network call at install time; `agents-update` is the explicit update gate |
+| Agent source | Permanently local copies in `agents/`, originally from awesome-claude-code-subagents (MIT) | Consumers get agents without a network call at install time; local ownership prevents silent upstream clobber of customizations; upstream improvements pulled manually when desired |
 | Skill naming | Noun-first (`rfc-new`, `best-practices-extract`) | Groups related skills alphabetically; matches `rfc-*` family already established |
 | Plugin-local vs exported skills | Plugin-local in `.claude/skills/`, exported in `skills/` | Keeps maintenance tools out of consumer installs; plugin.json is the explicit export declaration |
 | Best-practices flow | Record → global file → manual sync to `/sync` content | Puts human review between personal capture and distribution; prevents one user's project-specific notes from polluting the sync content of every future project |
@@ -75,6 +72,5 @@ Agents → spawned as subtask processes. Receive a goal and a tool allow-list fr
 
 | Dependency | Purpose |
 |------------|---------|
-| [VoltAgent/awesome-claude-code-subagents](https://github.com/VoltAgent/awesome-claude-code-subagents) | Source of agent definitions vendored into `agents/`. Updated via `/agents-update`. |
+| [VoltAgent/awesome-claude-code-subagents](https://github.com/VoltAgent/awesome-claude-code-subagents) | Historical source of agent definitions (MIT). Files are now locally owned; no active sync dependency. |
 | Claude Code plugin system | Runtime host — discovers skills and agents |
-| GitHub API (`api.github.com`) | Used by `agents-update` to check upstream for new/changed agents |
