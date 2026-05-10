@@ -21,14 +21,18 @@ If the idea is unclear — too vague to distill, references something ambiguous,
 
 If the idea is clear enough to write a short paragraph, skip clarification.
 
-### 3. Write a short paragraph
+### 3. Distill the entry via Opus + extended thinking
 
-Write a **bold title** followed by a concise paragraph (2–4 sentences). Keep it under ~150 words. Cover:
+Spawn an Agent with `model: "opus"` and pass the raw idea (plus any clarification from step 2) as context. Instruct it to use extended thinking to preserve the important nuance and intent from the user's input, then compress it into:
+
+`* **<Title>.** <paragraph>` — bold title, 2–4 sentences, under ~150 words, covering:
 - What would change or be built
 - What problem it solves
 - Any key constraints or approach hints worth capturing
 
-Do not design or spec the solution — just enough to remember the idea and give it a head start when promoted to a full RFC.
+The goal is **fidelity without verbosity**: nothing important from the user's idea should be lost, but the output must remain a tight paragraph — not a design doc. Do not design or spec the solution.
+
+Instruct the agent to return **only** the `* **Title.** paragraph` bullet — nothing else. Use the agent's output verbatim as the entry.
 
 ### 4. Append to `docs/rfc-braindump.md`
 

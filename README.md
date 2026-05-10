@@ -1,6 +1,6 @@
 # Claude Bytewyrd Workflow
 
-> Claude plugin containing a set of skills, agents, hooks and MCP servers for working on bytewyrd projects, or projects wanting to follow the same workflow.
+> Provides a standardized, opinionated Claude Code setup — skills, agents, hooks, and MCP configs — for Bytewyrd projects and teams who want to adopt the same workflow, eliminating the manual work of configuring Claude Code from scratch on each project.
 
 ## Why Claude Bytewyrd Workflow
 
