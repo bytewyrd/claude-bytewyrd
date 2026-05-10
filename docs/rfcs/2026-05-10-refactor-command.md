@@ -9,11 +9,11 @@ drop_reason: ~
 
 ## Summary
 
-Add a `/refactor` slash command (implemented as a plugin skill) that spawns a dedicated refactoring subagent running on Opus with `effort: max`. The skill runs `context: fork` against the existing `refactoring-specialist` agent so refactoring work happens in an isolated context window driven by a structured, multi-phase prompt rather than the parent conversation. The main agent — or the user — invokes `/refactor` with a scope hint (recent PR diff, files about to be touched by an in-flight RFC implementation, a specific module path) and the subagent produces a refactoring plan first, applies safe transformations only after approval, and reports back what changed and what tests now cover. The intent is to make refactoring a first-class, deliberately-invoked step rather than something that gets tacked onto feature work, while keeping the heavyweight model and `max` effort reserved for genuine refactor passes.
+Add a `/refactor` slash command (implemented as a plugin skill) that instructs the main agent to spawn a dedicated `refactoring-specialist` subagent running on Opus with `effort: max`. The skill body contains the structured, multi-phase refactoring protocol; the main agent invokes the subagent via the Agent tool — the same pattern `/rfc-new` and `/rfc-consensus-review` already use — so the protocol drives the specialist directly. The main agent — or the user — invokes `/refactor` with a scope hint (recent PR diff, files about to be touched by an in-flight RFC implementation, a specific module path) and the subagent produces a refactoring plan first, applies safe transformations only after approval, and reports back what changed and what tests now cover. The intent is to make refactoring a first-class, deliberately-invoked step rather than something that gets tacked onto feature work, while keeping the heavyweight model and `max` effort reserved for genuine refactor passes.
 
 ## Should we do this?
 
-**Yes.** Refactoring quality is bimodal: ad-hoc cleanup tacked onto a feature commit consistently misses the structural problems that motivated the cleanup in the first place, while a deliberate "today I am refactoring" pass — with characterization tests, small steps, and behavior-preservation checks — produces lasting improvements. The plugin already ships the `refactoring-specialist` agent (vendored from VoltAgent), but it has no skill front door, no opinionated trigger, and no documented protocol for "main agent decided this code needs work before we touch it for a feature." A thin skill wrapper that (1) makes the trigger one keystroke (`/refactor`), (2) pins Opus + `max` effort exactly when needed (and *only* when needed), (3) forks into the specialist's own context so the parent conversation isn't flooded with characterization-test noise, and (4) enforces a plan-then-apply protocol with explicit user approval before mutations is the missing piece that turns the existing agent into a usable workflow. Cost is one new skill file plus one plugin-manifest edit; payoff is making refactoring an option the main agent actually reaches for during feature planning instead of an afterthought during code review.
+**Yes.** Refactoring quality is bimodal: ad-hoc cleanup tacked onto a feature commit consistently misses the structural problems that motivated the cleanup in the first place, while a deliberate "today I am refactoring" pass — with characterization tests, small steps, and behavior-preservation checks — produces lasting improvements. The plugin already ships the `refactoring-specialist` agent (originally from VoltAgent, now owned locally), but it has no skill front door, no opinionated trigger, and no documented protocol for "main agent decided this code needs work before we touch it for a feature." A thin skill wrapper that (1) makes the trigger one keystroke (`/refactor`), (2) pins Opus + `max` effort exactly when needed (and *only* when needed), (3) directs the main agent to spawn the specialist subagent so the protocol is the prompt, and (4) enforces a plan-then-apply protocol with explicit user approval before mutations is the missing piece that turns the existing agent into a usable workflow. Cost is one new skill file plus one plugin-manifest edit; payoff is making refactoring an option the main agent actually reaches for during feature planning instead of an afterthought during code review.
 
 ## Current state
 
@@ -21,23 +21,22 @@ The plugin currently exposes refactoring capability through one piece — the `r
 
 **What exists today:**
 
-- `agents/refactoring-specialist.md` — a 293-line agent definition vendored from VoltAgent's `awesome-claude-code-subagents` library. It has comprehensive domain coverage (smell detection catalog, refactoring catalog, advanced patterns, safety practices, automated refactoring with `ast-grep` / `semgrep`, test-driven refactoring, performance refactoring, architecture refactoring, code metrics, legacy-code handling). Its `tools:` field lists `ast-grep, semgrep, eslint, prettier, jscodeshift` — an aspirational set that does not match the tools Claude Code actually surfaces in this plugin's environment. The agent has no `model:` or `effort:` fields, so it inherits whatever the parent session is using — typically Sonnet at the default effort, which is the wrong default for a structural refactoring pass that needs deep reasoning about cross-cutting changes.
-- `agents/code-reviewer.md` — adjacent agent for code review, also vendored from the same upstream. Used today as the default reviewer in the RFC consensus pipeline.
+- `agents/refactoring-specialist.md` — a 293-line agent definition originally from VoltAgent's `awesome-claude-code-subagents` library (MIT). It has comprehensive domain coverage (smell detection catalog, refactoring catalog, advanced patterns, safety practices, automated refactoring with `ast-grep` / `semgrep`, test-driven refactoring, performance refactoring, architecture refactoring, code metrics, legacy-code handling). Its `tools:` field lists `ast-grep, semgrep, eslint, prettier, jscodeshift` — an aspirational set that does not match the tools Claude Code actually surfaces in this plugin's environment. The agent has no `model:` or `effort:` fields, so it inherits whatever the parent session is using — typically Sonnet at the default effort, which is the wrong default for a structural refactoring pass that needs deep reasoning about cross-cutting changes.
+- `agents/code-reviewer.md` — adjacent agent for code review, also originally from the same upstream. Used today as the default reviewer in the RFC consensus pipeline.
 - `agents/feature-engineer.md` — the agent that implements approved RFCs. It practices TDD and SOLID but does not own the "refactor before touching this code" workflow as a distinct phase.
-- `skills/` — twelve skills exist today, all noun-first by convention (`best-practices-extract`, `best-practices-record`, `git-branch-cleanup`, `rfc-approve`, `rfc-braindump`, `rfc-consensus-review`, `rfc-drop`, `rfc-implement`, `rfc-new`, `rfc-read-feedback`, `rfc-update`, `sync`). None target refactoring. None spawn a subagent via `context: fork` (the closest pattern is `rfc-consensus-review`, which spawns five `code-reviewer` agents in parallel via the Task tool from inside the main conversation).
+- `skills/` — twelve skills exist today, all noun-first by convention (`best-practices-extract`, `best-practices-record`, `git-branch-cleanup`, `rfc-approve`, `rfc-braindump`, `rfc-consensus-review`, `rfc-drop`, `rfc-implement`, `rfc-new`, `rfc-read-feedback`, `rfc-update`, `sync`). None target refactoring. All existing skills follow the same pattern: the skill body instructs the main agent to spawn a specialist subagent via the Agent tool. `/rfc-new` spawns `rfc-architect`; `/rfc-consensus-review` spawns five `code-reviewer` agents in parallel; `/rfc-implement` spawns `feature-engineer`. There is no precedent in this plugin for `context: fork` or any other forked-subagent mechanism.
 - `.claude-plugin/plugin.json` — registers the twelve skills under `skills:`. No registration for any refactoring entry point.
 - `CLAUDE.md` "Agent delegation" table maps task → agent. The current row for refactoring-adjacent work routes through `feature-engineer` for new features and `code-reviewer` for reviews; there is no explicit "refactoring → refactoring-specialist" row, even though that agent is shipped in the plugin. The Model Usage Optimization section says `opus` is for "complex multi-step problem solving, ambiguous or novel tasks where the problem space itself is unclear" — refactoring fits that bucket but has no skill-level opinion forcing the upgrade.
-- `README.md` — install and usage entry point. Does not currently document any version requirement related to forked subagents (`context: fork` is a Claude Code v2.1.117+ feature, currently flagged experimental).
+- `.claude/skills/agents-update/SKILL.md` — a plugin-local skill that pulls upstream agent definitions from `VoltAgent/awesome-claude-code-subagents` and overwrites the local `agents/` directory. This RFC removes that skill (see Decision 5) so the project owns its agent customizations permanently rather than having them silently reverted by an upstream sync.
 
 **What is broken or missing:**
 
 1. **No discovery surface.** A user (or the main agent) reading the available `/`-commands sees `/rfc-new`, `/rfc-implement`, etc., but nothing that names refactoring. The agent file exists but there is no UX path that says "run a refactoring pass." Without a slash command, the agent only gets used when the main conversation's heuristics happen to match the agent's autoload `description` — unreliable.
 2. **No opinionated model/effort pinning.** Refactoring needs Opus + high or max effort. The current agent inherits whatever model the session is on, which is typically Sonnet during feature work. This silently downgrades the quality of refactoring proposals to "things Sonnet noticed in two paragraphs of context" rather than "structural improvements Opus reasoned through with extended thinking on the full module."
-3. **No context isolation.** When refactoring is folded into a feature session, the parent conversation accumulates characterization-test output, candidate refactor diffs, and rollback discussion — context that is irrelevant once the refactor is done. A subagent context that returns only the structured summary keeps the parent conversation focused on the feature.
-4. **No phase discipline.** The vendored agent's prompt describes a workflow ("Code Analysis → Implementation Phase → Code Excellence") but does not enforce a "produce plan, get approval, then apply" gate. Without the gate, a `/refactor` invocation can immediately start mutating files, which is the opposite of what a deliberate refactoring pass requires.
-5. **No proactive trigger guidance.** The current architecture has nothing that nudges the main agent to consider running a refactoring pass *before* a feature implementation begins. The braindump entry calls this out explicitly: refactoring should be something the main agent can pre-emptively invoke when it would be beneficial — e.g., "the area I'm about to touch has thin test coverage, let me run `/refactor` to add characterization tests first" or "the module I'm about to extend has a fat conditional that the new behavior will make worse, let me refactor that first." Today there is no skill or convention for this.
+3. **No phase discipline.** The agent's prompt describes a workflow ("Code Analysis → Implementation Phase → Code Excellence") but does not enforce a "produce plan, get approval, then apply" gate. Without the gate, a `/refactor` invocation can immediately start mutating files, which is the opposite of what a deliberate refactoring pass requires.
+4. **No proactive trigger guidance.** The current architecture has nothing that nudges the main agent to consider running a refactoring pass *before* a feature implementation begins. The braindump entry calls this out explicitly: refactoring should be something the main agent can pre-emptively invoke when it would be beneficial — e.g., "the area I'm about to touch has thin test coverage, let me run `/refactor` to add characterization tests first" or "the module I'm about to extend has a fat conditional that the new behavior will make worse, let me refactor that first." Today there is no skill or convention for this.
 
-The plugin's other workflow skills demonstrate the pattern this RFC follows: opinionated, small-surface skills that pin model/effort, fork into a specialist agent's context, and enforce a multi-step protocol. `/refactor` fills the same shape for refactoring work.
+The plugin's other workflow skills demonstrate the pattern this RFC follows: opinionated, small-surface skills that pin model/effort and instruct the main agent to spawn a specialist subagent via the Agent tool with a structured prompt. `/refactor` fills the same shape for refactoring work.
 
 ## Analysis / Options
 
@@ -45,28 +44,16 @@ There are three coupled decisions: how to expose the refactoring entry point, ho
 
 ### Decision 1 — How is `/refactor` implemented?
 
-**Option A — Skill with `context: fork` against `refactoring-specialist` (recommended).**
-Add `skills/refactor/SKILL.md` with `context: fork`, `agent: refactoring-specialist`, `model: opus`, `effort: max`, `disable-model-invocation: true`. The skill body is the structured refactoring protocol (analysis → characterization tests → plan → approval gate → apply → report). Claude Code injects the skill body as the prompt that drives the forked subagent, which uses the `refactoring-specialist` agent definition as its system prompt.
+**Option A — Skill that instructs the main agent to spawn `refactoring-specialist` via the Agent tool (recommended).**
+Add `skills/refactor/SKILL.md`. The skill body instructs the main agent to spawn a `bytewyrd:refactoring-specialist` agent with `model: opus` and `effort: max`, passing the structured refactoring protocol (analysis → characterization tests → plan → approval gate → apply → report) as the agent prompt. This matches every other skill in the plugin: `/rfc-new` spawns `rfc-architect`, `/rfc-consensus-review` spawns five `code-reviewer` agents, `/rfc-implement` spawns `feature-engineer`. The skill itself does not declare a forked context, an `agent:` binding, or `disable-model-invocation`; those concepts do not apply when the spawning is done explicitly by the main agent via the Agent tool.
 
-**Option B — Skill that uses the Task tool to spawn `refactoring-specialist`.**
-The skill body runs in the main conversation and uses the Task tool to invoke the `refactoring-specialist` agent with a constructed prompt. This is the pattern used by `rfc-consensus-review`. It works but has two costs: (1) the protocol prompt and the agent's response live in the parent context window — the very thing we want to keep out — and (2) the model/effort settings come from the Task invocation, which is more verbose and easier to forget than skill frontmatter.
+**Option B — Skill body runs in the main conversation, no subagent.**
+The skill body executes directly as the main-agent's prompt; there is no subagent at all. Rejected because it consumes the parent context window with the entire refactoring protocol (analysis output, plan, characterization-test scaffolding, per-step verification logs) — exactly the noise that the plugin's "delegate to a specialist" pattern is designed to keep out. It also gives up the model/effort pinning, since the main conversation runs on whatever model the user is currently using.
 
 **Option C — Slash command file under `commands/` (legacy path).**
-Custom commands in `.claude/commands/` and skills are now unified — both produce a `/<name>` invocation. The skills path supports `model:`, `effort:`, and `context: fork`; the commands path is simpler but does not support those fields. Since we explicitly need model/effort pinning and context forking, this option is rejected.
+Custom commands in `.claude/commands/` and skills are now unified — both produce a `/<name>` invocation. The skills path is the project standard; the commands path is not used elsewhere in the plugin. Rejected on consistency grounds — every other entry point in this plugin is a skill.
 
-**Recommendation: Option A.** `context: fork` is the documented mechanism for "skill content drives a subagent in its own context." It directly supports model and effort overrides via skill frontmatter. The parent conversation receives only the subagent's final summary (the structured report), which keeps the feature-implementation context clean. The agent file already exists and does not need to change for this RFC except for one orthogonal cleanup (see Decision 5).
-
-The skill frontmatter combination this RFC pins is:
-
-```yaml
-context: fork
-agent: refactoring-specialist
-model: opus
-effort: max
-disable-model-invocation: true
-```
-
-`disable-model-invocation: true` makes `/refactor` a deliberately user-invoked (or main-agent-invoked) action rather than something Claude triggers automatically based on description matching. The combination of "expensive model" and "mutates code" should never be auto-loaded.
+**Recommendation: Option A.** This is the established plugin pattern. It requires no experimental Claude Code features, keeps model/effort pinning in the skill (the spawn instruction includes `model: opus` and `effort: max`), and reuses the same Agent-tool mechanism the user and the main agent already understand from `/rfc-new` and `/rfc-consensus-review`. The deciding factor is consistency with the rest of the plugin: a single new pattern for one skill would be friction for both readers of the codebase and contributors who want to follow precedent.
 
 ### Decision 2 — How is the scope passed to the subagent?
 
@@ -100,43 +87,39 @@ The subagent produces a plan and stops; applying the plan is left to a separate 
 The plugin's `CLAUDE.md` ships with Bytewyrd projects (it's the seed for project `CLAUDE.md`s). Adding a "Refactoring (deliberate)" row to the Agent delegation table and a short "When to consider /refactor" paragraph in the workflow section gives the main agent a documented prompt to consider `/refactor` before starting work that touches existing code. Since the plugin's `CLAUDE.md` is the source of truth for the agent's behavior in any Bytewyrd project, adding the heuristic there propagates naturally.
 
 **Option B — Auto-invoke heuristics.**
-Have the skill be auto-invokable (drop `disable-model-invocation: true`) so Claude can decide to trigger refactoring on its own when it senses a smell. Rejected: the combination of expensive model, `max` effort, and code mutation is too costly to delegate to model autonomy. False positives (Claude refactors code that does not need it) are expensive in tokens and in churn.
+Have the skill be auto-invokable so Claude can decide to trigger refactoring on its own when it senses a smell. Rejected: the combination of expensive model, `max` effort, and code mutation is too costly to delegate to model autonomy. False positives (Claude refactors code that does not need it) are expensive in tokens and in churn. The skill description is written so the main agent knows to consider it but only invokes it explicitly via the slash command.
 
 **Option C — No documentation; rely on the skill's existence.**
 Users discover `/refactor` via the `/` menu and the main agent never proactively suggests it. Rejected: the braindump explicitly calls out the proactive case ("expand test coverage on areas about to change, or to improve architecture ahead of a new feature"); a skill that only fires on user typing leaves that case on the table.
 
 **Recommendation: Option A.** The CLAUDE.md updates are the discoverability mechanism. The skill body itself remains user/main-agent-invoked; the documentation tells the main agent *when* to consider invoking it.
 
-### Decision 5 — How is the unavailable `tools:` claim on `refactoring-specialist` cleaned up?
+### Decision 5 — How is the unavailable `tools:` claim on `refactoring-specialist` cleaned up, and what is the long-term ownership story for the agent file?
 
-**Option A — Remove the field entirely; rely on tool inheritance (recommended).**
-The current `tools: ast-grep, semgrep, eslint, prettier, jscodeshift` line on the vendored agent silently restricts the subagent to a tool set Claude Code does not surface in this plugin's environment. Per the Claude Code subagent docs ("Tools the subagent can use. Inherits all tools if omitted"), removing the field gives the subagent the standard tool set the rest of the plugin's agents inherit — Read, Grep, Glob, Edit, Write, Bash, TodoWrite, etc. — which is what is actually needed to read and edit source files.
+**Option A — Remove the `tools:` field, own the agent locally, retire `/agents-update` (recommended).**
+The current `tools: ast-grep, semgrep, eslint, prettier, jscodeshift` line on the agent silently restricts the subagent to a tool set Claude Code does not surface in this plugin's environment. Per the Claude Code subagent docs ("Tools the subagent can use. Inherits all tools if omitted"), removing the field gives the subagent the standard tool set the rest of the plugin's agents inherit — Read, Grep, Glob, Edit, Write, Bash, TodoWrite, etc. — which is what is actually needed to read and edit source files.
 
-**Option B — Replace the list with the explicit-correct list (`Read, Grep, Glob, Edit, Write, Bash, TodoWrite`).**
-More explicit but more brittle: any future tool added by Claude Code that this skill needs would silently not be available until the list is updated. The subagent docs explicitly recommend omission for "all tools" semantics.
+The upstream `VoltAgent/awesome-claude-code-subagents` repository is MIT licensed. Rather than continuing to track upstream and risk a sync silently reverting local customizations (the `tools:` removal here is the first such customization), this RFC switches the project's posture: the agent file becomes a permanent local copy, attributed to its MIT origin via a header comment. The `/agents-update` skill — which pulls upstream and overwrites local files — is removed so there is no mechanism that can clobber local edits.
+
+**Option B — Replace the `tools:` list with the explicit-correct list (`Read, Grep, Glob, Edit, Write, Bash, TodoWrite`), keep upstream sync.**
+More explicit but more brittle: any future tool added by Claude Code that this skill needs would silently not be available until the list is updated. The subagent docs explicitly recommend omission for "all tools" semantics. Also leaves the upstream-sync risk in place — the next sync still reverts the change.
 
 **Option C — Leave the field; have the skill body work around the absent tools.**
 Rejected: the subagent cannot edit files at all without `Edit`/`Write` in the inherited tool set, so this is non-viable.
 
-**Recommendation: Option A.** Removal is the upstream-default form (many sibling agents in the same VoltAgent library have no `tools:` field). The diff against upstream is minimal — just a removal — making future re-syncs easier to merge.
+**Recommendation: Option A.** Removal is the upstream-default form (many sibling agents in the same VoltAgent library have no `tools:` field). Combined with retiring `/agents-update`, the project gets a clean ownership boundary: the agent file is local, customizable, and not at risk of silent regressions from an upstream pull. Attribution is preserved via a header comment so the MIT origin is clear.
 
 ## Drawbacks
 
-- **Cost.** A `/refactor` invocation runs Opus at `effort: max` over a forked subagent that may take many turns (analysis, characterization tests, plan, apply, verify). The token spend per invocation is high. **Mitigation:** the skill is `disable-model-invocation: true`, so it only runs when explicitly triggered. The CLAUDE.md heuristic frames `/refactor` as "deliberate, before-touching-this-code" work — not something to run on every PR. Users and the main agent retain full control over when the cost is paid.
+- **Cost.** A `/refactor` invocation runs Opus at `effort: max` over a subagent that may take many turns (analysis, characterization tests, plan, apply, verify). The token spend per invocation is high. **Mitigation:** the skill is invoked explicitly via the slash command, never auto-triggered. The CLAUDE.md heuristic frames `/refactor` as "deliberate, before-touching-this-code" work — not something to run on every PR. Users and the main agent retain full control over when the cost is paid.
 
 - **`max` effort can over-think and produce diminishing returns.** The model-config docs explicitly warn that `max` "may show diminishing returns and is prone to overthinking" and recommend testing before adopting broadly. **Mitigation:** the protocol's plan-then-approval gate is a forcing function for the user to evaluate whether the analysis and plan are proportionate to the scope. If `max` overthinks a small scope, the user can cancel before the apply phase and the wasted reasoning is bounded to the analysis turn. The frontmatter value is also straightforward to dial down to `xhigh` in a follow-up if real-world use shows `max` is consistently overkill — that change is one line in `skills/refactor/SKILL.md`.
 
-- **Forked subagent loses parent conversation context.** The forked subagent does not see the parent conversation's history. Any context the main agent has built up about the codebase ("we discovered earlier that this module has a circular dep with X") is not visible to the refactoring-specialist. **Mitigation:** the scope hint passed in `$ARGUMENTS` is the primary channel for context; the main agent is responsible for including any non-obvious context in the hint. The skill body documents this: "Scope hint must include any non-obvious context from the parent conversation that the refactoring pass needs (e.g., 'this module has a known circular dep with X — do not break that further')."
-
-- **`refactoring-specialist` agent's `tools:` field claims tools that are not present in this environment.** The vendored agent lists `ast-grep, semgrep, eslint, prettier, jscodeshift`. If those tools are absent, the agent inherits the parent's tool list (per the subagent docs: "Inherits all tools if omitted") only when the field is omitted — a non-empty list silently restricts the subagent to those listed tools. **Mitigation:** the RFC explicitly calls out updating the `tools:` field on `refactoring-specialist` to remove the unavailable entries and rely on Claude Code's default tool inheritance, which gives the subagent the same standard tools (Read, Grep, Glob, Edit, Write, Bash, etc.) the rest of the plugin's agents use. This is a one-line change but is essential for the skill to work; without it, the subagent cannot edit files. The change is captured in the implementation spec.
-
-- **The agent file is vendored from upstream (`VoltAgent/awesome-claude-code-subagents`).** Editing the `tools:` field on the agent file means the next vendor-update run pulls the upstream version and silently re-introduces the wrong tool list. **Mitigation:** the implementation spec routes the model/effort settings entirely through the *skill* frontmatter (which overrides the agent's defaults during the forked invocation), and changes the agent's `tools:` field to be empty (omitted) — relying on inheritance. An empty/omitted `tools:` field is the upstream default for many agents in the same library, so the local diff against upstream is minimal: just removing a stale claim. If the next vendor-update re-adds the original `tools:` list, the verification step in this RFC's Step 6 catches it (`grep -c '^tools:' agents/refactoring-specialist.md` → expects `0`); a follow-up RFC can introduce a vendor-patch mechanism (overlay file that merges on top of the upstream pull) if this regression starts happening in practice. Logged as an open question.
+- **Subagent does not see parent conversation context.** The spawned subagent receives only the prompt the main agent constructs; any context the main agent has built up about the codebase ("we discovered earlier that this module has a circular dep with X") must be explicitly passed in the prompt. **Mitigation:** the scope hint passed in `$ARGUMENTS` is the primary channel for context; the main agent is responsible for including any non-obvious context in the hint. The skill body documents this: "Scope hint must include any non-obvious context from the parent conversation that the refactoring pass needs (e.g., 'this module has a known circular dep with X — do not break that further')." This is the same constraint that applies to every subagent spawned in the plugin and is well-understood.
 
 - **No automated way to know whether the refactor improved the code.** The skill reports "what changed" but does not run a metrics comparison (cyclomatic complexity before/after, duplicated-block count delta). **Mitigation:** the report is structured but qualitative; the user and the test suite are the gate. A future RFC can add an optional metrics capture step (`tokei` or similar) and fold it into the report. Out of scope here.
 
 - **Approval gate adds round-trip latency.** The six-phase protocol forces a stop-and-confirm between plan and apply. For genuinely tiny refactors (rename one variable across three files), this is friction that an "auto-apply small refactors" mode would eliminate. **Mitigation:** for tiny refactors, the user/main agent should not be invoking `/refactor` at all — they should just edit the files. `/refactor`'s positioning is "deliberate refactoring pass, large enough to warrant Opus + max"; the gate's value is in proportion to scope, and the scope where it adds friction is the scope where the skill is the wrong tool.
-
-- **`context: fork` is currently flagged experimental in Claude Code (v2.1.117+).** The forked-subagent feature requires `CLAUDE_CODE_FORK_SUBAGENT=1` to enable, and behavior may change in future releases per the docs. **Mitigation:** the README update in this RFC documents the version requirement and the env-var flag. If the experimental flag is dropped before the plugin's next major release, the README note becomes a no-op. If the feature is removed or changed, this RFC's implementation needs revision — but that is true of any feature that depends on an experimental flag, and the plugin's audience is small enough that a single follow-up RFC can absorb the change.
 
 ## Implementation spec
 
@@ -144,13 +127,13 @@ Rejected: the subagent cannot edit files at all without `Edit`/`Write` in the in
 
 | Action | Path | Responsibility |
 |--------|------|----------------|
-| Create | `skills/refactor/SKILL.md` | New skill: spawns a forked subagent against the `refactoring-specialist` agent with Opus + `max` effort; enforces the pre-flight → analysis → characterization tests → plan → approval → apply → report protocol; accepts a free-form scope hint via `$ARGUMENTS` |
-| Modify | `agents/refactoring-specialist.md` | Remove the unavailable `tools:` claim (`ast-grep, semgrep, eslint, prettier, jscodeshift`) so the subagent inherits the standard tool set. No other changes |
+| Create | `skills/refactor/SKILL.md` | New skill: instructs the main agent to spawn `bytewyrd:refactoring-specialist` via the Agent tool with `model: opus` and `effort: max`, passing the six-phase refactoring protocol (pre-flight → analysis → characterization tests → plan → approval → apply → report) as the agent prompt; accepts a free-form scope hint via `$ARGUMENTS` |
+| Modify | `agents/refactoring-specialist.md` | Remove the unavailable `tools:` claim (`ast-grep, semgrep, eslint, prettier, jscodeshift`) so the subagent inherits the standard tool set. Add an MIT-attribution comment near the top of the file noting the file is now a permanent local copy customized for this project |
+| Delete | `.claude/skills/agents-update/SKILL.md` | Remove the `/agents-update` skill. The project no longer syncs the `agents/` directory from upstream; the agent files are owned locally |
 | Modify | `.claude-plugin/plugin.json` | Add `./skills/refactor` to the `skills` array (alphabetically positioned) |
 | Modify | `CLAUDE.md` (plugin root) | (1) Add a "Refactoring (deliberate)" row to the Agent delegation table pointing to `refactoring-specialist`. (2) Add a short "Considering /refactor" subsection in the Workflow section explaining the proactive trigger heuristic |
-| Modify | `README.md` (plugin root) | Add one paragraph to the install/usage section noting the `context: fork` version requirement (Claude Code v2.1.117 or later) and the `CLAUDE_CODE_FORK_SUBAGENT=1` environment variable that enables forked subagents |
 
-No new agent files. No hook changes. No changes to existing skills. The vendored upstream agent file changes by exactly one line (removing the `tools:` field).
+No new agent files. No hook changes. No changes to existing skills other than the `/agents-update` removal.
 
 ### Steps
 
@@ -161,20 +144,15 @@ Create the file with this exact content:
 ````markdown
 ---
 name: refactor
-description: Run a deliberate refactoring pass on a scoped set of files using the refactoring-specialist agent on Opus with max effort. Use when about to extend code that has thin test coverage, when a structural smell will be amplified by an upcoming feature, when reviewing a recent PR for cleanup before merge, or any time refactoring should be a first-class step rather than tacked-on cleanup. Not for tiny renames — for those, just edit the files.
-context: fork
-agent: refactoring-specialist
-model: opus
-effort: max
-disable-model-invocation: true
+description: Run a deliberate refactoring pass on a scoped set of files. The skill instructs the main agent to spawn the refactoring-specialist subagent on Opus with max effort, with the six-phase protocol as the prompt. Use when about to extend code that has thin test coverage, when a structural smell will be amplified by an upcoming feature, when reviewing a recent PR for cleanup before merge, or any time refactoring should be a first-class step rather than tacked-on cleanup. Not for tiny renames — for those, just edit the files. Triggered by "/refactor [scope-hint]".
 argument-hint: "[scope-hint]"
 ---
 
 # /refactor — Deliberate Refactoring Pass
 
-You are running as the `refactoring-specialist` subagent in a forked context. Your system prompt (the agent definition) gives you the domain knowledge — code-smell detection, refactoring catalog, safety practices, test-driven refactoring, code metrics. This skill body is the *protocol* you follow for this specific invocation.
+This skill runs in the main conversation. Its job is to spawn a `bytewyrd:refactoring-specialist` subagent with the six-phase refactoring protocol below as the prompt, then relay the subagent's questions, plan, and final report back to the user.
 
-## Scope
+## Step 1 — Capture scope
 
 The invocation passed this scope hint:
 
@@ -182,9 +160,51 @@ The invocation passed this scope hint:
 $ARGUMENTS
 ```
 
-If the scope hint is empty, ask the parent (the agent or user that invoked you) one targeted question: "What scope should this refactoring pass cover? (a path, a PR reference, an RFC implementation, or a free-text description like 'the validation logic in user creation')." Do not proceed without a scope.
+If the scope hint is empty, ask the parent (the user or the agent that invoked this skill) one targeted question: "What scope should this refactoring pass cover? (a path, a PR reference, an RFC implementation, or a free-text description like 'the validation logic in user creation')." Do not spawn the subagent without a scope.
 
-The scope hint must also carry any non-obvious context from the parent conversation that the refactoring pass needs (e.g., "this module has a known circular dep with X — do not break that further"). The forked context does not see the parent's history; if the parent expects you to know something they discovered, they include it in the hint.
+The scope hint must also carry any non-obvious context from the parent conversation that the refactoring pass needs (e.g., "this module has a known circular dep with X — do not break that further"). The subagent does not see the parent's history; if the parent expects the subagent to know something they discussed earlier, they must include it in the hint.
+
+## Step 2 — Spawn the refactoring-specialist subagent
+
+Use the Agent tool to spawn a `bytewyrd:refactoring-specialist` agent with:
+
+- `model: "opus"`
+- `effort: "max"`
+- Prompt: the entire **Refactoring protocol** section below, with the scope hint substituted into the Scope block
+
+The protocol is the agent's prompt. The agent definition supplies the domain knowledge — code-smell detection, refactoring catalog, safety practices, test-driven refactoring, code metrics. The protocol below tells the agent how to apply that knowledge for this specific invocation.
+
+The skill itself does not run the protocol — the spawned subagent does. While the subagent runs, the main agent's job is to relay any questions the subagent surfaces back to the user (especially during the Phase 4 approval gate) and to deliver the final Phase 6 report.
+
+## Step 3 — Wait for the subagent's plan, get user approval, deliver to the subagent
+
+The subagent will return a plan (Phase 3) and stop. Present the plan to the user verbatim and ask for one of:
+
+- `apply all`
+- `apply 1, 3, 5` (or any subset; grouped steps like `1a, 1b` apply together)
+- `cancel`
+
+Pass the user's response back to the subagent (resume the agent task with the response as input). The subagent will then apply the approved steps (Phase 5) and return the final report (Phase 6).
+
+If the user requests changes to the plan instead of an approval ("merge steps 2 and 3", "skip step 4", "add a step that does X"), pass the request to the subagent — the subagent will revise and re-present the plan, and the approval cycle repeats.
+
+## Step 4 — Deliver the final report
+
+When the subagent finishes (Phase 6), present the structured report to the user verbatim. The report includes the scope, characterization tests added, applied steps with commit SHAs, deferred behavior changes, test suite status, and recommended follow-ups. The user decides what to do with the recommended follow-ups.
+
+---
+
+# Refactoring protocol (passed as the subagent's prompt)
+
+You are the `refactoring-specialist` subagent for a deliberate refactoring pass. Your system prompt (the agent definition) gives you the domain knowledge — code-smell detection, refactoring catalog, safety practices, test-driven refactoring, code metrics. This protocol is what you follow for this specific invocation.
+
+## Scope
+
+```
+<SCOPE HINT FROM $ARGUMENTS>
+```
+
+The scope hint includes any non-obvious context from the parent conversation. You do not see the parent's history; treat the scope hint as the complete brief.
 
 ## Protocol — six phases
 
@@ -319,11 +339,30 @@ Do not edit the report after returning it. The parent decides what to do with th
 - **Cross-cutting architectural changes** that span unbounded scope (e.g., "introduce hexagonal architecture across the whole codebase") — write an RFC first via `/rfc-new`; the RFC implementation phase can then invoke `/refactor` against each subset.
 ````
 
-The skill is `disable-model-invocation: true` so it only runs when invoked explicitly. The skill is `user-invocable` (default `true`) so users can type `/refactor`. The `argument-hint` shows up in the autocomplete menu so users see the expected scope-hint shape.
+The skill description tells the main agent (and the user, via autocomplete) what `/refactor` does and when to use it. The skill body itself is short — just the four orchestration steps the main agent runs — followed by the protocol that gets passed as the subagent's prompt.
 
 #### Step 2 — Update `agents/refactoring-specialist.md`
 
-Edit the frontmatter of `agents/refactoring-specialist.md`. The current frontmatter (lines 1–5) is:
+Two edits to `agents/refactoring-specialist.md`:
+
+**Edit 2a — Add MIT-attribution comment.**
+
+Insert a comment between the closing `---` of the frontmatter and the first line of the body. After this edit, the top of the file looks like:
+
+```
+---
+name: refactoring-specialist
+description: Expert refactoring specialist mastering safe code transformation techniques and design pattern application. Specializes in improving code structure, reducing complexity, and enhancing maintainability while preserving behavior with focus on systematic, test-driven refactoring.
+---
+
+<!-- Originally from VoltAgent/awesome-claude-code-subagents (MIT). Customized for this project. -->
+
+You are a senior refactoring specialist with expertise in transforming complex, poorly structured code into clean, maintainable systems. Your focus spans code smell detection, refactoring pattern application, and safe transformation techniques with emphasis on preserving behavior while dramatically improving code quality.
+```
+
+**Edit 2b — Remove the `tools:` line.**
+
+The current frontmatter (lines 1–5) is:
 
 ```
 ---
@@ -333,22 +372,35 @@ tools: ast-grep, semgrep, eslint, prettier, jscodeshift
 ---
 ```
 
-Remove the `tools:` line entirely so the frontmatter becomes:
+Remove the `tools:` line entirely. After both edits 2a and 2b, the frontmatter is:
 
 ```
 ---
 name: refactoring-specialist
 description: Expert refactoring specialist mastering safe code transformation techniques and design pattern application. Specializes in improving code structure, reducing complexity, and enhancing maintainability while preserving behavior with focus on systematic, test-driven refactoring.
 ---
+
+<!-- Originally from VoltAgent/awesome-claude-code-subagents (MIT). Customized for this project. -->
 ```
 
 Per the Claude Code subagent docs ("Tools the subagent can use. Inherits all tools if omitted"), removing the field gives the subagent the standard tool set the rest of the plugin's agents inherit (Read, Grep, Glob, Edit, Write, Bash, TodoWrite, etc.). The aspirational tool list (`ast-grep`, `semgrep`, `eslint`, `prettier`, `jscodeshift`) is removed because Claude Code does not surface those as named tools in this plugin's environment — listing them silently restricts the subagent to a tool set that does not exist, which would prevent the subagent from making any edits at all.
 
-The body of the file (line 6 onward) is unchanged. Do not edit the system-prompt content; only the frontmatter `tools:` line is removed.
+The body of the file (everything after the new attribution comment) is unchanged. The agent is now a permanent local copy; the attribution comment makes the MIT origin explicit for future readers.
 
-This change is the only modification this RFC makes to a vendored agent file. The risk that a future vendor-update reverts the change is logged in the Drawbacks section and tracked as an open question (see "Risks and open questions").
+#### Step 3 — Delete the `/agents-update` skill
 
-#### Step 3 — Register the skill in `.claude-plugin/plugin.json`
+Remove `.claude/skills/agents-update/SKILL.md`. The skill was the mechanism that synced the local `agents/` directory with upstream `VoltAgent/awesome-claude-code-subagents`. With the project switching to local ownership of the agent files, the sync mechanism becomes a hazard — running it would overwrite the customizations made in Step 2.
+
+```bash
+rm .claude/skills/agents-update/SKILL.md
+rmdir .claude/skills/agents-update
+```
+
+If `.claude/skills/agents-update/` has any other files (it should not, but verify with `ls .claude/skills/agents-update/` before the `rmdir`), surface the unexpected files to the user instead of deleting them.
+
+The `/agents-update` skill is registered nowhere outside its own directory (it lives under `.claude/`, not under the plugin's `skills/` registered in `plugin.json`), so no `plugin.json` edit is needed for the removal.
+
+#### Step 4 — Register the skill in `.claude-plugin/plugin.json`
 
 Open `.claude-plugin/plugin.json`. The current `skills` array is:
 
@@ -402,11 +454,11 @@ Insert `"./skills/refactor"` between `"./skills/git-branch-cleanup"` and `"./ski
 
 (The current order of the existing entries — `sync` appearing before `git-branch-cleanup` — is preserved as-is. This RFC does not re-sort the existing entries; alphabetizing the full list is a separate concern that can be a no-op cleanup PR if desired.)
 
-#### Step 4 — Update `CLAUDE.md`
+#### Step 5 — Update `CLAUDE.md`
 
 Two changes to `/home/divoxx/code/bytewyrd/claude-bytewyrd-workflow/CLAUDE.md`:
 
-**Change 4a — Agent delegation table.**
+**Change 5a — Agent delegation table.**
 
 The current table is:
 
@@ -435,7 +487,7 @@ Add a row for refactoring after the "Code reviews" row, so the order goes "build
 
 The `(via /refactor)` annotation tells the reader that the entry point is the skill, not direct agent delegation.
 
-**Change 4b — Workflow section.**
+**Change 5b — Workflow section.**
 
 Insert a new subsection in the "Workflow" block, between `### During work` and `### Session end`:
 
@@ -448,30 +500,12 @@ Before extending or modifying existing code, consider whether a deliberate refac
 - A structural smell (long method, fat conditional, primitive obsession, divergent change) will be amplified by the upcoming feature; refactor first so the new code has a clean place to land.
 - A recent PR you are about to merge has cleanup that was deferred because the diff was already large.
 
-`/refactor` runs the `refactoring-specialist` agent on Opus with `max` effort in a forked context. It is deliberately expensive and gated — use it for genuine refactoring passes, not for tiny renames (just edit the files for those).
+`/refactor` instructs the main agent to spawn the `refactoring-specialist` subagent on Opus with `max` effort. It is deliberately expensive — use it for genuine refactoring passes, not for tiny renames (just edit the files for those).
 
 The skill enforces a six-phase protocol: pre-flight (resolve scope, discover test command) → analyze → characterization tests → plan → **approval gate** → apply → report. The approval gate stops the subagent before any mutation; review the plan, approve specific steps, and the subagent applies them one commit at a time.
 ```
 
 The placement (between `### During work` and `### Session end`) matches the existing flow: workflow guidance for things that happen mid-session, before the wrap-up. The subsection heading uses `###` to match the level of `### During work` / `### Session end` siblings.
-
-#### Step 5 — Update `README.md`
-
-Add the following paragraph to `README.md` in the install/usage section, immediately before the "Configuration" or "Customization" section (whichever comes first), or at the end of the install section if neither exists. The exact insertion point is wherever version requirements would naturally live alongside other prerequisites:
-
-```markdown
-### Version requirements
-
-The `/refactor` skill uses Claude Code's forked-subagent feature (`context: fork`), which requires **Claude Code v2.1.117 or later** and is currently flagged experimental. Enable it by setting `CLAUDE_CODE_FORK_SUBAGENT=1` in your shell environment before starting Claude Code:
-
-```bash
-export CLAUDE_CODE_FORK_SUBAGENT=1
-```
-
-Add the export to your shell profile (`.bashrc`, `.zshrc`, etc.) to persist it across sessions. Other plugin skills do not depend on this flag and work without it.
-```
-
-If the README does not have an obvious section for prerequisites, add a `### Version requirements` subsection at the end of the existing install instructions. The exact placement within the README can be chosen at implementation time; the constraint is that it appears alongside the install instructions, not buried in an appendix.
 
 #### Step 6 — Verification
 
@@ -480,20 +514,15 @@ After all changes, run these checks:
 1. **Skill file exists and parses:**
 
    ```bash
-   test -f skills/refactor/SKILL.md && head -10 skills/refactor/SKILL.md
+   test -f skills/refactor/SKILL.md && head -5 skills/refactor/SKILL.md
    ```
 
-   Expected output (the first 10 lines, including the frontmatter):
+   Expected output (the first 5 lines, including the frontmatter):
 
    ```
    ---
    name: refactor
-   description: Run a deliberate refactoring pass on a scoped set of files using the refactoring-specialist agent on Opus with max effort. Use when about to extend code that has thin test coverage, when a structural smell will be amplified by an upcoming feature, when reviewing a recent PR for cleanup before merge, or any time refactoring should be a first-class step rather than tacked-on cleanup. Not for tiny renames — for those, just edit the files.
-   context: fork
-   agent: refactoring-specialist
-   model: opus
-   effort: max
-   disable-model-invocation: true
+   description: Run a deliberate refactoring pass on a scoped set of files. The skill instructs the main agent to spawn the refactoring-specialist subagent on Opus with max effort, with the six-phase protocol as the prompt. Use when about to extend code that has thin test coverage, when a structural smell will be amplified by an upcoming feature, when reviewing a recent PR for cleanup before merge, or any time refactoring should be a first-class step rather than tacked-on cleanup. Not for tiny renames — for those, just edit the files. Triggered by "/refactor [scope-hint]".
    argument-hint: "[scope-hint]"
    ---
    ```
@@ -518,15 +547,39 @@ After all changes, run these checks:
 
    Expected output: `0`
 
-4. **Refactoring-specialist agent body is unchanged:**
+4. **Refactoring-specialist agent has the MIT-attribution comment:**
+
+   ```bash
+   grep -F 'Originally from VoltAgent/awesome-claude-code-subagents (MIT)' agents/refactoring-specialist.md
+   ```
+
+   Expected output:
+
+   ```
+   <!-- Originally from VoltAgent/awesome-claude-code-subagents (MIT). Customized for this project. -->
+   ```
+
+5. **Refactoring-specialist agent body is unchanged:**
 
    ```bash
    grep -c 'Refactoring excellence checklist' agents/refactoring-specialist.md
    ```
 
-   Expected output: `1` (the body content marker is still present — the edit only touched the frontmatter).
+   Expected output: `1` (the body content marker is still present — the edits only touched the frontmatter and added the attribution comment).
 
-5. **CLAUDE.md table includes the refactoring row:**
+6. **`/agents-update` skill is removed:**
+
+   ```bash
+   test ! -e .claude/skills/agents-update/SKILL.md && echo "removed"
+   ```
+
+   Expected output:
+
+   ```
+   removed
+   ```
+
+7. **CLAUDE.md table includes the refactoring row:**
 
    ```bash
    grep -F 'Refactoring (deliberate)' CLAUDE.md
@@ -538,7 +591,7 @@ After all changes, run these checks:
    | Refactoring (deliberate) | refactoring-specialist (via `/refactor`) |
    ```
 
-6. **CLAUDE.md workflow section includes the /refactor guidance:**
+8. **CLAUDE.md workflow section includes the /refactor guidance:**
 
    ```bash
    grep -F '### Considering /refactor' CLAUDE.md
@@ -550,35 +603,18 @@ After all changes, run these checks:
    ### Considering /refactor
    ```
 
-7. **README documents the version requirement:**
-
-   ```bash
-   grep -F 'CLAUDE_CODE_FORK_SUBAGENT' README.md
-   ```
-
-   Expected output:
-
-   ```
-   export CLAUDE_CODE_FORK_SUBAGENT=1
-   ```
-
-   (Or any line containing the env-var name; the exact form depends on how the README phrases it.)
-
-8. **Manual smoke test (after `claude plugin update bytewyrd`, with Claude Code restarted and `CLAUDE_CODE_FORK_SUBAGENT=1` exported):**
+9. **Manual smoke test (after `claude plugin update bytewyrd` and Claude Code restart):**
 
    - Type `/` in Claude Code; confirm `/refactor` appears in the autocomplete menu with the `[scope-hint]` argument hint.
-   - Type `/refactor src/auth/` (or any path) and confirm the skill enters phase 0 of the protocol (pre-flight: discovers test command and resolves scope), then phase 1 (analysis), runs in a forked context (no parent-context noise during analysis), and uses Opus + `max` effort (visible in the status line as "with max effort").
-   - Confirm the approval gate fires: after the plan is presented, the subagent stops and waits for `apply all`, `apply <list>`, or `cancel`.
+   - Type `/refactor src/auth/` (or any path) and confirm the main agent spawns a `bytewyrd:refactoring-specialist` subagent with `model: opus` and `effort: max`. The subagent enters phase 0 of the protocol (pre-flight: discovers test command and resolves scope), then phase 1 (analysis), and uses Opus + `max` effort (visible in the status line as "with max effort").
+   - Confirm the approval gate fires: after the plan is presented, the subagent stops and the main agent surfaces the plan to the user, asking for `apply all`, `apply <list>`, or `cancel`.
    - Approve `apply all` (or a subset) and confirm each approved step is applied as a separate commit with a `refactor(<scope>):` Conventional Commits message.
    - Confirm the report (phase 6) lists every applied step with its commit SHA.
+   - Type `/agents-update` and confirm it does not appear in the autocomplete menu (the skill has been removed).
 
-   If any of these steps fail, the issue is most likely (in order): (a) `tools:` field still present on the agent (subagent cannot edit), (b) `disable-model-invocation: true` typo (skill not invokable), (c) `context: fork` not honored (older Claude Code version, missing env var, or feature has been removed), (d) the test command from phase 0 doesn't match what the project actually uses (subagent should have asked rather than guessed).
+   If any of these steps fail, the issue is most likely (in order): (a) `tools:` field still present on the agent (subagent cannot edit), (b) the spawn instruction in the skill body did not pin `model: opus` and `effort: max` correctly, (c) the test command from phase 0 doesn't match what the project actually uses (subagent should have asked rather than guessed), (d) the `/agents-update` skill directory was not fully removed (re-check with `ls .claude/skills/`).
 
 ## Risks and open questions
-
-- **Risk: a future vendor-update reverts the `tools:` removal on `refactoring-specialist`.** The agents directory is vendored from `VoltAgent/awesome-claude-code-subagents`. If a vendor-update re-syncs the upstream version, the unavailable `tools:` list comes back and the skill silently breaks. **Mitigation:** the verification command in Step 6 (`grep -c '^tools:' agents/refactoring-specialist.md` → expects `0`) catches a regression on the next CI run or manual smoke test. A follow-up RFC can introduce a vendor-patch mechanism (overlay file that merges on top of the upstream pull) if this regression starts happening in practice; out of scope here.
-
-- **Risk: `context: fork` requires Claude Code v2.1.117 or later (forked subagents are still flagged experimental).** Users on older versions will see `/refactor` either fail or run in the parent context (depending on how Claude Code degrades). **Mitigation:** Step 5 of this RFC adds the version requirement and the `CLAUDE_CODE_FORK_SUBAGENT=1` flag note to the README. This is the only documentation channel for first-time users.
 
 - **Risk: `effort: max` may not be honored on Opus 4.6 or older.** Per the model-config docs, `max` is supported on Opus 4.7 and on Opus 4.6/Sonnet 4.6. If a user is pinned to an older Opus version, Claude Code "falls back to the highest supported level at or below the one you set" — degrading to `high` rather than failing. **Mitigation:** acceptable degradation. The skill's effectiveness is reduced but not broken on older models. No code change needed.
 
@@ -588,13 +624,15 @@ After all changes, run these checks:
 
 - **Open question: how does `/refactor` interact with `/rfc-implement`?** When `/rfc-implement` is running, it spawns a `feature-engineer` agent that follows the RFC's implementation spec. If the spec area has refactoring needs, should the feature-engineer pause and recommend `/refactor`, or should the user have run `/refactor` before approving the RFC? **Resolution within this RFC:** the RFC author runs `/refactor` against the RFC's file structure scope *before* `/rfc-approve` if they expect the implementation to benefit from a clean baseline. The CLAUDE.md "Considering /refactor" subsection mentions this case. The `/rfc-implement` skill is not modified by this RFC — feature-engineer continues to implement the spec as-is, not redesign or refactor.
 
-- **Risk: parent context loss on the forked subagent.** Mentioned in Drawbacks. Mitigation is encoded in the skill body's Scope section: the scope hint must include any non-obvious context from the parent conversation. If real-world use shows this is consistently insufficient, a follow-up could add a structured context-passthrough mechanism (e.g., the parent emits a compact context summary that the skill prepends to `$ARGUMENTS`). Out of scope here.
+- **Risk: subagent context loss.** Mentioned in Drawbacks. Mitigation is encoded in the skill body's Scope section: the scope hint must include any non-obvious context from the parent conversation. If real-world use shows this is consistently insufficient, a follow-up could add a structured context-passthrough mechanism (e.g., the parent emits a compact context summary that the skill prepends to `$ARGUMENTS`). Out of scope here.
 
 - **Risk: phase 0's test-command discovery may pick the wrong command in repos with multiple test runners.** A monorepo with both `cargo test` (Rust subcrate) and `bun test` (TS subcrate) will pick whichever ordering rule matches first. **Mitigation:** the discovery step explicitly asks the parent when "multiple plausible commands exist." If the heuristic mis-ranks them in a real repo and runs the wrong command silently, the answer is to add the multi-candidate ask earlier in the heuristic — a one-line skill-body change, not an RFC-level concern.
 
+- **Open question: how are future upstream improvements to `refactoring-specialist` (or other agents) brought in now that `/agents-update` is removed?** Manually, on a case-by-case basis: a maintainer reads the upstream change, decides whether to apply it locally, and edits the file directly. The MIT-attribution comment is the only signal that upstream exists. If a future RFC wants a more structured "see what's changed upstream" workflow, it can add a read-only diff command (`/agents-diff` or similar) that surfaces changes without overwriting — explicitly distinguished from the auto-overwrite behavior of the removed `/agents-update`. Out of scope here.
+
 ## Relationship to other RFCs
 
-None. This RFC is self-contained — it touches `skills/refactor/` (new), `agents/refactoring-specialist.md` (one-line edit), `.claude-plugin/plugin.json` (one-line addition), `CLAUDE.md` (table row + workflow subsection), and `README.md` (one-paragraph version-requirement note). No open RFC depends on or conflicts with this one.
+This RFC supersedes the upstream-vendor workflow for agents. Prior to this RFC, `agents/` was treated as a vendored copy of `VoltAgent/awesome-claude-code-subagents` and kept in sync via the `/agents-update` skill. This RFC switches that posture: the agent files become permanent local copies (with MIT attribution preserved in a header comment), and `/agents-update` is removed so there is no automated mechanism that can clobber local customizations. Future updates from upstream are pulled manually, file by file, when a maintainer judges them worth applying.
 
 The closest adjacencies are:
 
