@@ -104,7 +104,13 @@ Get the author name:
 git config user.name
 ```
 
-### 6. Spawn rfc-architect to fill in the RFC
+### 6. Remove promoted braindump entry
+
+If the description came from a `docs/rfc-braindump.md` entry (user selected a number in Step 1), remove that bullet line from `docs/rfc-braindump.md` now. Find the line starting with `* ` whose text matches the selected entry and delete it entirely (including its newline). Leave all other entries and the file header intact.
+
+If the description was typed directly by the user (not selected from the braindump list), skip this step.
+
+### 7. Spawn rfc-architect to fill in the RFC
 
 Spawn a `rfc-architect` agent (`model: "opus"`) with:
 - The user's description
@@ -117,20 +123,20 @@ The `rfc-architect` agent must **immediately** after writing dispatch the approp
 2. **Placeholder scan** — any prohibited patterns present?
 3. **Consistency** — type names, signatures, paths match across sections?
 
-### 7. Consensus review and fix loop
+### 8. Consensus review and fix loop
 
-After `rfc-architect` completes step 6, invoke the `/rfc-consensus-review` skill on the new RFC.
+After `rfc-architect` completes step 7, invoke the `/rfc-consensus-review` skill on the new RFC.
 
-The consensus review skill runs to completion: it auto-fixes all verified bugs, walks through any design opinions interactively with the human, and reports. Wait for it to finish — including the interactive walk-through — before proceeding to step 8.
+The consensus review skill runs to completion: it auto-fixes all verified bugs, walks through any design opinions interactively with the human, and reports. Wait for it to finish — including the interactive walk-through — before proceeding to step 9.
 
 **If verified bugs were found and fixed:**
 
 1. Invoke `/rfc-consensus-review` a second time on the updated RFC.
-2. If verified bugs still remain after the second pass, do **not** loop further — surface them to the human in step 8.
+2. If verified bugs still remain after the second pass, do **not** loop further — surface them to the human in step 9.
 
-**If no verified bugs remain:** proceed directly to step 8.
+**If no verified bugs remain:** proceed directly to step 9.
 
-### 8. Present to human
+### 9. Present to human
 
 Present the RFC to the human. The RFC stays `status: Draft`. Tell the user:
 - Path to the RFC file
