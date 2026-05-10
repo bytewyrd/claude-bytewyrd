@@ -14,7 +14,7 @@ Not here: setup/quickstart                   → README.md
 
 ## Overview
 
-Claude Bytewyrd Workflow is a Claude Code plugin that bundles skills, agents, and hooks for Bytewyrd projects. It is both a plugin (distributed via the Claude Code plugin system) and a live dogfood of itself — the plugin's own checkout uses the plugin's skills and conventions. Consumers install it via `claude plugin install bytewyrd` and get the full skill and agent set immediately; no per-project configuration is required beyond the install.
+Bytewyrd's Claude Plugin bundles skills and agents for Bytewyrd projects. It is both a plugin (distributed via the Claude Code plugin system) and a live dogfood of itself — the plugin's own checkout uses the plugin's skills and conventions. Consumers install it via `claude plugin install bytewyrd` and get the full skill and agent set immediately; no per-project configuration is required beyond the install.
 
 ## Components
 
@@ -44,15 +44,9 @@ Current plugin-local skills:
 - `best-practices-sync` — promotes entries from the global `~/.claude/BEST_PRACTICES.md` into `skills/sync/SKILL.md`
 - `agents-update` — syncs `agents/` with the latest upstream versions from VoltAgent/awesome-claude-code-subagents
 
-### Hooks (`.claude-plugin/hooks/`)
-
-**Purpose:** Shell commands that fire on Claude Code lifecycle events (SessionStart, PreCompact, PostToolUse, Stop) to remind developers of workflow steps they might miss.
-**Location:** `.claude-plugin/hooks/hooks.json`
-**Key interfaces:** Hooks are registered via the `hooks` field in `.claude-plugin/plugin.json`. Each hook is a `type: command` entry that runs a shell command at the specified event.
-
 ### Plugin manifest (`.claude-plugin/`)
 
-**Purpose:** Defines the plugin's identity, exports (skills), and hook configuration. This is the entrypoint the Claude Code plugin system reads.
+**Purpose:** Defines the plugin's identity. This is the entrypoint the Claude Code plugin system reads; skills and agents are auto-discovered from their respective root directories.
 **Location:** `.claude-plugin/plugin.json`
 
 ## Data Flow
@@ -60,8 +54,6 @@ Current plugin-local skills:
 Skills → executed by Claude Code in-session. No persistent side effects unless the skill writes files.
 
 Agents → spawned as subtask processes. Receive a goal and a tool allow-list from the calling skill; return a result message.
-
-Hooks → run as shell commands at lifecycle events. Side effects are advisory echoes only (no writes).
 
 `best-practices-record` (skill) → `~/.claude/BEST_PRACTICES.md` (user-global file) → `best-practices-sync` (plugin-local skill) → `skills/sync/SKILL.md` → future `/sync` runs in consumer projects.
 
@@ -84,5 +76,5 @@ Hooks → run as shell commands at lifecycle events. Side effects are advisory e
 | Dependency | Purpose |
 |------------|---------|
 | [VoltAgent/awesome-claude-code-subagents](https://github.com/VoltAgent/awesome-claude-code-subagents) | Source of agent definitions vendored into `agents/`. Updated via `/agents-update`. |
-| Claude Code plugin system | Runtime host — discovers skills, agents, and hooks |
+| Claude Code plugin system | Runtime host — discovers skills and agents |
 | GitHub API (`api.github.com`) | Used by `agents-update` to check upstream for new/changed agents |

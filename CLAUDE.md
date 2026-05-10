@@ -1,6 +1,6 @@
-# Claude Bytewyrd Workflow
+# Bytewyrd's Claude Plugin
 
-Opinionated Claude Code plugin for Bytewyrd projects — skills, agents, hooks, and RFC-driven workflow
+Opinionated Claude Code plugin for Bytewyrd projects — skills, agents, and RFC-driven workflow
 
 ## Toolchain
 
@@ -10,15 +10,20 @@ No language-specific toolchain detected. Add source code and re-run `/sync` to p
 
 ```
 claude-bytewyrd/
-├── CLAUDE.md          — this file
+├── CLAUDE.md                    — this file
+├── agents/                      — vendored subagent definitions (from VoltAgent/awesome-claude-code-subagents)
+├── skills/                      — exported plugin skills (auto-discovered by Claude Code)
+├── .claude-plugin/
+│   └── plugin.json              — plugin identity and metadata
+├── .claude/skills/              — plugin-local maintenance skills (not exported to consumers)
 ├── docs/
-│   ├── ARCHITECTURE.md        — system design (devs/agents)
-│   ├── BEST_PRACTICES.md      — session learnings (devs/agents)
-│   ├── CONTRIBUTING.md        — dev workflow (devs/agents)
-│   ├── project-brief.md       — what/why/who (optional)
-│   ├── guide/                 — expanded user documentation
-│   └── rfcs/                  — RFC proposals
-└── src/               — source code
+│   ├── ARCHITECTURE.md          — system design (devs/agents)
+│   ├── BEST_PRACTICES.md        — session learnings (devs/agents)
+│   ├── CONTRIBUTING.md          — dev workflow (devs/agents)
+│   ├── project-brief.md         — what/why/who (optional)
+│   ├── guide/                   — expanded user documentation
+│   └── rfcs/                    — RFC proposals
+└── README.md
 ```
 
 ## Agent delegation

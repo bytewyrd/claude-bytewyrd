@@ -2,7 +2,7 @@
 
 ## Problem
 
-Provides a standardized, opinionated Claude Code setup — skills, agents, hooks, and MCP configs — for Bytewyrd projects and teams who want to adopt the same workflow, eliminating the manual work of configuring Claude Code from scratch on each project.
+Provides a standardized, opinionated Claude Code setup — skills, agents, and MCP configs — for Bytewyrd projects and teams who want to adopt the same workflow, eliminating the manual work of configuring Claude Code from scratch on each project.
 
 ## Goals
 
