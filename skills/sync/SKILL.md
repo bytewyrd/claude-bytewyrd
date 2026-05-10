@@ -3,7 +3,7 @@ name: sync
 description: Set up or refresh a project repository with all standard conventions — idempotent, safe to re-run whenever the plugin updates. Triggered by "/sync".
 ---
 
-<!-- bootstrap-content-version: 2026-05-09-init03 -->
+<!-- bootstrap-content-version: 2026-05-10-8e478c1 -->
 
 # Sync
 
@@ -433,7 +433,7 @@ A mixed project like Rust + Svelte frontend + Terraform infra gets the Rust, JS/
 ```markdown
 # Best Practices
 
-<!-- bootstrap-content-version: 2026-05-09-init03 -->
+<!-- bootstrap-content-version: 2026-05-10-8e478c1 -->
 
 Accumulated non-obvious learnings from development sessions.
 
@@ -453,13 +453,22 @@ Use `/best-practices-extract` at the end of a session to add new entries.
 - **[<TODAY>]** _Workflow_: Before pushing any change, run the full quality gate locally (fmt check, linter, tests) — not just the step you touched. The pre-push hook enforces this, but run it yourself first so failures are found before the hook fires.
 - **[<TODAY>]** _Workflow_: Keep PRs small and focused on a single concern. Large PRs are harder to review, harder to revert, and hide bugs in unrelated diffs.
 - **[<TODAY>]** _Workflow_: Commit messages should describe the WHY, not the WHAT. The diff already shows what changed; the message should explain why the change was necessary.
-- **[<TODAY>]** _Workflow_: README.md is a user-facing landing page — not a developer guide. It answers: what is this, why should I care, how does it work, how do I get started. Build commands, test commands, and setup steps belong in CONTRIBUTING.md.
+- **[<TODAY>]** _Workflow_: README.md is a user-facing landing page — not a developer guide. It answers: what is this, why should I care, how does it work, how do I get started. Build commands, test steps, and setup instructions belong in CONTRIBUTING.md.
 
 ## Claude Code
 
 - **[<TODAY>]** _Claude Code_: Gather actual error output and logs before diagnosing a problem — don't assume a cause from symptoms. State hypotheses explicitly ("I think X might be causing Y") rather than compressing them into stated facts.
 - **[<TODAY>]** _Claude Code_: Verify subagent outputs before reporting success. An agent's summary describes what it intended to do, not necessarily what it did — check the actual file changes or command output.
 - **[<TODAY>]** _Claude Code_: Prefer specialized agents (rust-engineer, python-pro, frontend-developer, etc.) for language- and domain-specific work. They have narrower prompts and better defaults for their domain.
+
+## Code Design
+
+- **[<TODAY>]** _Code Design_: A module named `utils`, `helpers`, or `misc` is a textbook example of coincidental cohesion — the weakest type on Constantine's scale, where members are grouped by convenience rather than shared purpose. Every function that ends up there belongs in a domain-aligned module; if you cannot name the module after a concept, the abstraction is missing, not the catch-all.
+- **[<TODAY>]** _Code Design_: Apply "Parse, Don't Validate" (Alexis King, 2019): convert raw input into a typed value that structurally encodes its validity constraints, so downstream code cannot use unvalidated data. When enrichment requires external context, make it a separate `resolve(context)` step — keeping parsing pure and dependency-free, and making the enrichment dependencies explicit at the call site.
+
+## Code Style
+
+- **[<TODAY>]** _Code Style_: Optimize code for humans first. Group logically related statements with a blank line between distinct phases (setup, execution, output). A blank line costs nothing and saves the next reader from mentally parsing what belongs together.
 ```
 
 **Architecture addition** (append after the Claude Code section, all projects):
@@ -467,7 +476,7 @@ Use `/best-practices-extract` at the end of a session to add new entries.
 ```markdown
 ## Architecture
 
-- **[<TODAY>]** _Architecture_: Use structured tracing (`tracing` in Rust, OpenTelemetry-compatible libraries elsewhere) from day one. Adding spans retroactively is far more painful than instrumenting as you write the code.
+- **[<TODAY>]** _Architecture_: Use structured tracing from day one (`tracing` in Rust, OpenTelemetry-compatible libraries elsewhere) — adding spans retroactively is far more painful than instrumenting as you write. Initialize binaries with a runtime env-filter, put spans on functions that perform I/O or cross subsystem boundaries, and never use `println!` / `console.log` for diagnostics in production code.
 - **[<TODAY>]** _Architecture_: Single Responsibility — a module/struct/class has one reason to change. Two reasons (e.g., "user persistence" and "user authorization") means two collaborators should split the work, not one monolith.
 - **[<TODAY>]** _Architecture_: Open/Closed — extend behavior through new types or strategies, not by editing branches in the existing path. Adding a new payment provider should add a file, not add a `case` to a switch in five files.
 - **[<TODAY>]** _Architecture_: Liskov Substitution — a subtype must accept everything its supertype accepts and produce nothing its supertype wouldn't. Violating this turns "polymorphism" into "if statement spread across types."
@@ -881,13 +890,14 @@ Example for a Rust project with all plugins installed:
 
 ```json
 {
-  "extraKnownMarketplaces": [
-    {
-      "id": "bytewyrd",
-      "name": "Bytewyrd",
-      "url": "https://github.com/bytewyrd/claude-bytewyrd-workflow"
+  "extraKnownMarketplaces": {
+    "bytewyrd": {
+      "source": {
+        "source": "github",
+        "repo": "bytewyrd/claude-bytewyrd-workflow"
+      }
     }
-  ],
+  },
   "enabledPlugins": {
     "bytewyrd-workflow@bytewyrd": true,
     "github@claude-plugins-official": true,
