@@ -3,7 +3,7 @@ name: sync
 description: Set up or refresh a project repository with all standard conventions — idempotent, safe to re-run whenever the plugin updates. Triggered by "/sync".
 ---
 
-<!-- bootstrap-content-version: 2026-05-10-8e478c1 -->
+<!-- bootstrap-content-version: 2026-05-10-d3d36af -->
 
 # Sync
 
@@ -427,6 +427,7 @@ Create with the base content below, substituting `<TODAY>` with today's date in 
    - **Rails** — if `has_rails` is true; appended after the Ruby block.
    - **Kubernetes / CUE / kapply** — if `has_k8s_cue` is true (Step 3).
    - **Terraform / Terragrunt** — if `has_terraform` is true (Step 3).
+4. **Project-Specific addition** — always, last (placed at the bottom of the file so all generalizable sections come first).
 
 A mixed project like Rust + Svelte frontend + Terraform infra gets the Rust, JS/TS, Svelte, and Terraform blocks (Svelte implies the underlying JS/TS also applies).
 
@@ -435,7 +436,7 @@ A mixed project like Rust + Svelte frontend + Terraform infra gets the Rust, JS/
 ```markdown
 # Best Practices
 
-<!-- bootstrap-content-version: 2026-05-10-8e478c1 -->
+<!-- bootstrap-content-version: 2026-05-10-d3d36af -->
 
 Accumulated non-obvious learnings from development sessions.
 
@@ -672,6 +673,16 @@ Use `/best-practices-extract` at the end of a session to add new entries.
 - **[<TODAY>]** _Terraform_: Tag every resource with a standard set (owner, environment, cost-center, managed-by-terraform=true). Tags are the only path from "what is this resource?" to an answer the cost-management and audit teams can use.
 - **[<TODAY>]** _Terraform_: Run `tflint` and `tfsec` (or `checkov`) in CI. tflint catches style and provider-specific issues; tfsec/checkov catches security misconfigurations (public S3 buckets, unencrypted volumes) before they're applied.
 - **[<TODAY>]** _Terraform_: Refactor with `moved` blocks, not `terraform state rm` + `terraform import`. `moved` is reversible, declarative, and reviewable; manual state surgery is none of those.
+```
+
+**Project-Specific addition** (append last, after all language blocks, always):
+
+```markdown
+## Project-Specific
+
+Entries below describe rules and gotchas specific to this codebase. They are not promoted to the global pool by `/best-practices-sync` and they are not transferable to other projects. Do not move entries into or out of this section without re-triaging — see [`skills/best-practices-extract/TRIAGE-AND-LIFT.md`](../skills/best-practices-extract/TRIAGE-AND-LIFT.md) (path resolves inside the bytewyrd plugin checkout; in a consumer project the file lives at `.claude/plugins/bytewyrd/skills/best-practices-extract/TRIAGE-AND-LIFT.md`).
+
+(none yet — entries are added by `/best-practices-extract` when a learning fails the portability triage)
 ```
 
 ### `README.md`

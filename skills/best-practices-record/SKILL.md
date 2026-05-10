@@ -22,6 +22,57 @@ If the rule describes how a single project is built, prefer `/best-practices-ext
 
 The user invokes this skill with a single sentence or short paragraph stating the practice. If the invocation lacks the practice text, ask: "What is the best practice to record?" — wait for the answer before proceeding.
 
+## Triage Step (Before Categorization)
+
+Apply the three portability questions defined in [`../best-practices-extract/TRIAGE-AND-LIFT.md`](../best-practices-extract/TRIAGE-AND-LIFT.md):
+
+1. Framework portability
+2. Project portability
+3. Audience portability
+
+`/best-practices-record` writes only to the global pool (`~/.claude/BEST_PRACTICES.md`). The global pool is for *generalizable* entries only — there is no global "project-specific" section, by design.
+
+- **All three yes** → generalizable; continue to the Lift Step below.
+- **Any one no** → refuse, with this exact message:
+
+  ```
+  This statement looks project-specific (failed: <which question>). Project-specific
+  learnings belong in the project's docs/BEST_PRACTICES.md under the
+  ## Project-Specific section, not in the global pool.
+
+  Use /best-practices-extract instead, which routes project-specific entries
+  to the project file. If you believe the underlying principle is generalizable
+  but you've stated it instance-by-instance, re-state the principle and re-invoke
+  /best-practices-record.
+  ```
+
+  Stop. Do not proceed to categorization or write anything.
+
+## Lift Step
+
+Apply the two-pass + verification procedure defined in [`../best-practices-extract/TRIAGE-AND-LIFT.md`](../best-practices-extract/TRIAGE-AND-LIFT.md):
+
+1. **Pass 1 — Strip the instance**: rewrite the user's statement with project-specific identifiers replaced by their role.
+2. **Pass 2 — Name the domain**: prepend the canonical domain prefix that matches the destination section.
+3. **Verification — re-read in isolation**: confirm the lifted statement survives the two-years-later test.
+
+Show the user the lifted version alongside their original. The user picks which one is recorded — the lifted version is the recommendation, but the user can override.
+
+```
+You said:
+  <user's original statement>
+
+Lifted to principle:
+  <Pass 2 output>
+
+Which version do you want to record?
+- Option 1: Lifted (recommended) — generalizable, ready for the global pool
+- Option 2: Original — record as-is (only do this if Lifted lost important meaning)
+- Option 3: Edit — type a corrected version
+```
+
+If the user picks Original *and* the Original still contains project-specific identifiers, refuse with: "The original contains project-specific identifiers (`<identifier>`). Either pick the Lifted version or use `/best-practices-extract` instead." This is a hard gate — `/best-practices-record` writes only to the global pool, and the global pool admits no project-specific entries.
+
 ## Categorization Step
 
 Determine the section the entry belongs in. The global file uses the same section headers as `sync/SKILL.md`. The categorization also decides whether the entry will eventually land in a *general* (always-emitted) sync section, or a *stack-specific* (detection-gated) section — this matters for promotion: stack-specific entries only ship to projects that use the matching tooling.
@@ -106,6 +157,7 @@ If the target section header (`## <Category>`) does not exist, append it (with a
 ## Red Flags — Stop and Reconsider
 
 - The statement is more than 2 sentences → ask the user to compress it before recording.
-- The statement is project-specific ("our deploy script does X") → suggest `/best-practices-extract` instead.
+- The statement is project-specific ("our deploy script does X") → handled by the Triage Step refusal above, but if it slips through Triage, refuse here too.
 - The statement is a library quirk ("the K8s HPA controller does X") → that's library documentation; suggest looking it up via Context7 / Exa instead of recording.
+- The lifted version differs from the original only in cosmetic ways (whitespace, capitalization) → the lift didn't actually change anything; either the original was already lifted, or Pass 1 missed identifiers. Re-check.
 - A near-duplicate already exists under the target section → present the existing entry and ask whether to replace, append, or skip.
