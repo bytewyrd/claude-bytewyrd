@@ -1,10 +1,10 @@
-<!-- UPSTREAM: ~/.claude/rfc-process.md -->
+<!-- UPSTREAM: $CLAUDE_PLUGIN_ROOT/rfc-process.md -->
 <!-- LAST_SYNCED: 2026-05-09 -->
-<!-- /rfc-update replaces everything before END_UPSTREAM_CONTENT when upstream changes. -->
+<!-- /rfc-update or /sync replaces everything before END_UPSTREAM_CONTENT when upstream changes. -->
 
 # RFC Process
 
-This document defines the global RFC (Request for Comments) process. Projects that have been set up with `/rfc-install` carry a self-contained copy of this document in `docs/rfc-process.md`. See the **Maintaining project RFC files** section at the end.
+This document defines the RFC (Request for Comments) process for Bytewyrd projects. Projects set up with `/sync` carry a self-contained copy of this document in `docs/rfc-process.md`. See the **Maintaining project RFC files** section at the end.
 
 ---
 
@@ -107,7 +107,7 @@ There is no required section order, but a complete RFC generally covers:
 
 Scale each section to its complexity. A simple RFC may compress several sections into a paragraph.
 
-**Security Considerations** is an optional section required whenever the RFC touches authentication, authorization, secrets, user data, permissions, or external integrations. Include it after "Risks and open questions" when relevant. The security review agents (`security-engineer`, `security-auditor`) are added automatically by the review agent selection table when this section is present or when the domain warrants it.
+**Security Considerations** is an optional section required whenever the RFC touches authentication, authorization, secrets, user data, permissions, or external integrations. Include it after "Risks and open questions" when relevant. The security review agents (`security-engineer`, `penetration-tester`) are added automatically by the review agent selection table when this section is present or when the domain warrants it.
 
 **When comparing tools, libraries, or platforms:** do full research on each candidate before writing the Analysis section. This means going beyond surface-level feature lists — verify actual capabilities, configuration requirements, known limitations, ergonomics, and operational complexity for each option. Claims about what a tool "can" or "cannot" do must be grounded in documentation or source evidence, not assumptions. Inaccurate capability comparisons lead to wrong recommendations and implementation surprises. If research reveals a tool can do something the RFC initially assumed it couldn't (or vice versa), the RFC must reflect the corrected finding before being finalized.
 
@@ -171,50 +171,48 @@ Always include the general reviewer. Add domain-specific agents based on what th
 
 | Concern | Agent |
 |---------|-------|
-| General correctness, logic, feasibility | `feature-dev:code-reviewer` |
+| General correctness, logic, feasibility | `code-reviewer` |
 
 **Add based on RFC domain:**
 
 | RFC touches… | Add agent(s) |
 |--------------|-------------|
-| Security, auth, secrets, permissions, IAM | `security-engineer`, `security-auditor` |
+| Security, auth, secrets, permissions, IAM | `security-engineer`, `penetration-tester` |
 | Frontend UI, user-facing components | `frontend-developer`, `ux-design-architect` |
 | React / Next.js | `react-specialist`, `nextjs-developer` |
-| Vue / Nuxt | `vue-expert` |
 | Infrastructure, Terraform, cloud resources | `terraform-engineer`, `cloud-architect` |
 | Kubernetes, Helm, cluster config | `kubernetes-specialist` |
 | Databases, schema, queries | `database-administrator`, `postgres-pro` |
 | APIs, REST, GraphQL | `api-designer`, `graphql-architect` |
 | Performance, scalability | `performance-engineer` |
-| Data pipelines, ML | `data-engineer`, `ml-engineer` |
-| Observability, monitoring | `sre-engineer` |
-| Mobile | `mobile-developer` |
+| AI / LLM / MCP | `ai-engineer`, `llm-architect`, `mcp-developer` |
+| Observability, reliability | `sre-engineer` |
 
 Run all review agents in parallel. The `rfc-architect` agent synthesizes their outputs — conflicting feedback is resolved by reasoning about the RFC's stated goals, not by deferring to whichever reviewer was most emphatic.
 
 ### Implementing an approved RFC
 
-Use `/rfc-implement`. The skill spawns a `feature-engineer` or `feature-dev:feature-dev` agent (`model: "opus"`) with the approved RFC as primary input. The agent follows the implementation spec; it does not redesign. If the spec is ambiguous, update the RFC first (via `rfc-architect` + `/rfc-read-feedback`) rather than having the implementation agent guess. When implementation is complete and merged, update `status` to `Done`.
+Use `/rfc-implement`. The skill spawns a `feature-engineer` agent (`model: "opus"`) with the approved RFC as primary input. The agent follows the implementation spec; it does not redesign. If the spec is ambiguous, update the RFC first (via `rfc-architect` + `/rfc-read-feedback`) rather than having the implementation agent guess. When implementation is complete and merged, update `status` to `Done`.
 
 ---
 
 ## Maintaining project RFC files
 
-Projects keep a `docs/rfc-process.md` that is a **self-contained copy** of this document, plus optional project-specific extensions in a `## Project Extensions` section at the bottom. This makes the full process visible to all contributors, not just those with the global config.
+Projects keep a `docs/rfc-process.md` that is a **self-contained copy** of this document, plus optional project-specific extensions in a `## Project Extensions` section at the bottom. This makes the full process visible to all contributors, not just those with the plugin installed.
 
 **Skills:**
 
 | Skill | Purpose |
 |-------|---------|
 | `/rfc-braindump` | Capture a quick RFC idea into `docs/rfc-braindump.md` |
-| `/rfc-install` | Set up the RFC process in a new project |
-| `/rfc-update` | Pull upstream changes into an existing `docs/rfc-process.md` |
 | `/rfc-new` | Create a new RFC from template, run agent review, run consensus review, and fix critical findings |
 | `/rfc-consensus-review` | Spawn 5 parallel reviewers, synthesize findings by consensus, report tiered results |
 | `/rfc-read-feedback` | Address inline `FEEDBACK:` comments left by humans in an RFC |
 | `/rfc-approve` | Approve a Draft RFC (human-invoked) |
 | `/rfc-implement` | Begin implementing an Approved RFC |
 | `/rfc-drop` | Drop an RFC with a reason |
+| `/rfc-update` | Pull upstream changes into `docs/rfc-process.md` (also handled automatically by `/sync`) |
+| `/sync` | Set up or refresh the full project Claude Code environment, including RFC process |
 
 **Project extensions may add:**
 - Project-specific naming conventions or directory layout

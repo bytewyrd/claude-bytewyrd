@@ -121,9 +121,9 @@ All work — code, plans, specs — happens inside the worktree so it's committe
 
 Superpowers skills (brainstorming, writing-plans, etc.) are for **brainstorming and ideation only**.
 
-**If the current project has `docs/rfc-process.md`** (set up with `/rfc-install`): use the RFC process for all design, architecture, and implementation planning — do **not** use superpowers brainstorming or writing-plans skills for this work.
+**If the current project has `docs/rfc-process.md`** (set up with `/sync`): use the RFC process for all design, architecture, and implementation planning — do **not** use superpowers brainstorming or writing-plans skills for this work.
 
-**If the project has not been `/rfc-install`'ed**: superpowers skills are the accepted approach for planning and ideation.
+**If the project has not been set up with `/sync`**: superpowers skills are the accepted approach for planning and ideation.
 
 **Spec and plan storage:** Write all brainstorming specs and plans outside project repositories, to:
 ```
@@ -137,15 +137,15 @@ Filename format: `YYYY-MM-DD-<topic>-design.md` for specs, `YYYY-MM-DD-<topic>-p
 
 ## RFC Process
 
-**The RFC process only applies to projects that have been set up with `/rfc-install`.** Check for `docs/rfc-process.md` before following any RFC guidance.
+**The RFC process only applies to projects that have been set up with `/sync`.** Check for `docs/rfc-process.md` before following any RFC guidance.
 
 - **File exists:** read `docs/rfc-process.md` (self-contained — full process + any project extensions). Use the RFC skills for all design and implementation work.
 - **File absent:** the RFC process does not apply to this project. Do not read `~/.claude/rfc-process.md` or follow the RFC workflow. Use superpowers skills for planning instead.
 
 **Quick reference (installed projects):**
-- RFCs live in `docs/rfcs/`; filename format `NNN-<kebab-title>.md`
+- RFCs live in `docs/rfcs/`; filename format `YYYY-MM-DD-<kebab-title>.md`
 - Lifecycle: `Draft → Approved → Done | Dropped`
-- Skills: `/rfc-new`, `/rfc-reviews`, `/rfc-approve`, `/rfc-implement`, `/rfc-drop`, `/rfc-install`, `/rfc-update`
+- Skills: `/rfc-new`, `/rfc-approve`, `/rfc-implement`, `/rfc-drop`, `/rfc-braindump`, `/rfc-read-feedback`, `/rfc-consensus-review`, `/rfc-update`
 
 ## Claude Code Sandbox — Container Tool Compatibility
 

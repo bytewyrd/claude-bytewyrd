@@ -67,6 +67,8 @@ Hooks → run as shell commands at lifecycle events. Side effects are advisory e
 
 `agents-update` (skill) → VoltAgent/awesome-claude-code-subagents (GitHub) → `agents/*.md` (local vendor copy).
 
+`/sync` (skill) → `$CLAUDE_PLUGIN_ROOT/rfc-process.md` (canonical template) → `docs/rfc-process.md` in consumer project (created or updated with upstream sync markers).
+
 ## Design Decisions
 
 | Decision | Choice | Rationale |
@@ -75,6 +77,7 @@ Hooks → run as shell commands at lifecycle events. Side effects are advisory e
 | Skill naming | Noun-first (`rfc-new`, `best-practices-extract`) | Groups related skills alphabetically; matches `rfc-*` family already established |
 | Plugin-local vs exported skills | Plugin-local in `.claude/skills/`, exported in `skills/` | Keeps maintenance tools out of consumer installs; plugin.json is the explicit export declaration |
 | Best-practices flow | Record → global file → manual sync to `/sync` content | Puts human review between personal capture and distribution; prevents one user's project-specific notes from polluting the sync content of every future project |
+| RFC process distribution | Canonical template at plugin root; `/sync` creates/updates `docs/rfc-process.md` with upstream sync markers | Eliminates separate `/rfc-install` step; RFC setup is idempotent and automatic on every `/sync` run |
 
 ## Dependencies
 

@@ -47,12 +47,12 @@ Required before reporting any UI or frontend change done. The dev server must al
 
 ## RFC Process
 
-**Only applies to projects set up with `/rfc-install`.** Check for `docs/rfc-process.md` before following any RFC guidance.
+**Only applies to projects set up with `/sync`.** Check for `docs/rfc-process.md` before following any RFC guidance.
 
 - **File exists:** read it (self-contained — full process + any project extensions). Use RFC skills for all design and implementation work.
 - **File absent:** RFC process does not apply. Do not follow the RFC workflow.
 
-RFCs live in `docs/rfcs/`; filename format `NNN-<kebab-title>.md`. Lifecycle: `Draft → Approved → Done | Dropped`. Skills: `/rfc-new`, `/rfc-approve`, `/rfc-implement`, `/rfc-drop`, `/rfc-braindump`, `/rfc-read-feedback`, `/rfc-consensus-review`.
+RFCs live in `docs/rfcs/`; filename format `YYYY-MM-DD-<kebab-title>.md`. Lifecycle: `Draft → Approved → Done | Dropped`. Skills: `/rfc-new`, `/rfc-approve`, `/rfc-implement`, `/rfc-drop`, `/rfc-braindump`, `/rfc-read-feedback`, `/rfc-consensus-review`.
 
 ## Evidence-Based Development
 

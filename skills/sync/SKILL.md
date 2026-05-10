@@ -298,12 +298,12 @@ Create with the following template, filling in the placeholders:
 
 ## RFC Process
 
-**Only applies to projects set up with `/rfc-install`.** Check for `docs/rfc-process.md` before following any RFC guidance.
+**Only applies to projects set up with `/sync`.** Check for `docs/rfc-process.md` before following any RFC guidance.
 
 - **File exists:** read it (self-contained — full process + any project extensions). Use RFC skills for all design and implementation work.
 - **File absent:** RFC process does not apply. Do not follow the RFC workflow.
 
-RFCs live in `docs/rfcs/`; filename format `NNN-<kebab-title>.md`. Lifecycle: `Draft → Approved → Done | Dropped`. Skills: `/rfc-new`, `/rfc-approve`, `/rfc-implement`, `/rfc-drop`, `/rfc-braindump`, `/rfc-read-feedback`, `/rfc-consensus-review`.
+RFCs live in `docs/rfcs/`; filename format `YYYY-MM-DD-<kebab-title>.md`. Lifecycle: `Draft → Approved → Done | Dropped`. Skills: `/rfc-new`, `/rfc-approve`, `/rfc-implement`, `/rfc-drop`, `/rfc-braindump`, `/rfc-read-feedback`, `/rfc-consensus-review`.
 
 ## Evidence-Based Development
 
@@ -863,12 +863,17 @@ Not here: setup/quickstart                   → README.md
 
 ### `.claude/settings.json`
 
-Build the `enabledPlugins` object from the `installed` set detected in Step 1. Only include plugins that ARE installed — an uninstalled plugin in `enabledPlugins` causes Claude Code to error on startup.
+Build the `enabledPlugins` object as follows:
 
-Candidate plugins to include (if installed):
+**Always include** (triggers an install prompt for team members who don't have the plugin yet):
+- `bytewyrd-workflow@bytewyrd: true`
+
+**Include only if installed** — an uninstalled `claude-plugins-official` plugin causes Claude Code to error on startup:
 - `github@claude-plugins-official`
 - `context7@claude-plugins-official`
 - `code-review@claude-plugins-official`
+
+Always include `extraKnownMarketplaces` with the bytewyrd entry so Claude Code can resolve the plugin URL when prompting team members to install.
 
 For Rust projects, include a `PreToolUse` hook (pre-push quality gate). For other languages, include the analogous gate if the toolchain is standard.
 
@@ -876,7 +881,15 @@ Example for a Rust project with all plugins installed:
 
 ```json
 {
+  "extraKnownMarketplaces": [
+    {
+      "id": "bytewyrd",
+      "name": "Bytewyrd",
+      "url": "https://github.com/bytewyrd/claude-bytewyrd-workflow"
+    }
+  ],
   "enabledPlugins": {
+    "bytewyrd-workflow@bytewyrd": true,
     "github@claude-plugins-official": true,
     "context7@claude-plugins-official": true,
     "code-review@claude-plugins-official": true
@@ -1252,9 +1265,43 @@ labels: "type:spike, needs-triage"
 
 ---
 
-## Step 7 — Install RFC process
+## Step 7 — Set up RFC process
 
-Run `/rfc-install`. This creates `docs/rfc-process.md`, `docs/rfcs/.gitkeep`, and copies the RFC skills into `.claude/skills/`.
+**Create `docs/rfcs/`** with a `.gitkeep` if the directory doesn't exist:
+
+```bash
+mkdir -p docs/rfcs && test -f docs/rfcs/.gitkeep || touch docs/rfcs/.gitkeep
+```
+
+**Sync `docs/rfc-process.md`:**
+
+Determine the upstream source root:
+
+```bash
+echo "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}"
+```
+
+Use the printed path as `PLUGIN_ROOT`. Read `$PLUGIN_ROOT/rfc-process.md` (the canonical template).
+
+**If `docs/rfc-process.md` does not exist:** create it with the following structure, substituting the literal `$PLUGIN_ROOT` path:
+
+```
+<!-- UPSTREAM: <$PLUGIN_ROOT>/rfc-process.md -->
+<!-- LAST_SYNCED: <today's date as YYYY-MM-DD> -->
+<!-- /rfc-update or /sync replaces everything before END_UPSTREAM_CONTENT when upstream changes. -->
+
+<full verbatim content of $PLUGIN_ROOT/rfc-process.md>
+
+<!-- END_UPSTREAM_CONTENT -->
+
+---
+
+## Project Extensions
+
+*(no project-specific extensions — the global process applies as-is)*
+```
+
+**If `docs/rfc-process.md` already exists:** apply the same logic as `/rfc-update` Step 2 — compare the upstream content to the current core section (everything before `<!-- END_UPSTREAM_CONTENT -->`). If different, replace the core section while preserving the `## Project Extensions` section verbatim. If identical, leave the file unchanged and note "docs/rfc-process.md already up to date."
 
 ---
 
@@ -1280,7 +1327,8 @@ Print a summary table of every file, showing the actual outcome:
 | `.github/PULL_REQUEST_TEMPLATE.md` | created / **skipped** (exists) — only if GitHub=yes |
 | `.github/ISSUE_TEMPLATE/*.md` | created / **skipped** (exists) — only if GitHub=yes |
 | GitHub repo description | updated via `gh repo edit` / skipped (no remote or no description) — only if GitHub=yes |
-| `docs/rfc-process.md` + RFC skills | via `/rfc-install` (skips if already installed) |
+| `docs/rfcs/.gitkeep` | created / already exists |
+| `docs/rfc-process.md` | created / updated / already up to date |
 
 If any files were skipped, note them clearly so the user knows what was already in place.
 

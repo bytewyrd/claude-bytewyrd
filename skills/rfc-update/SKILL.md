@@ -1,13 +1,11 @@
 ---
 name: rfc-update
-description: Use to sync docs/rfc-process.md and .claude/skills/rfc-*/ with upstream. Replaces the core content of the process doc while preserving Project Extensions, and updates skill files that differ from upstream. Triggered by "/rfc-update" or when upstream changes.
+description: Use to sync docs/rfc-process.md with upstream. Replaces the core content of the process doc while preserving Project Extensions. Triggered by "/rfc-update" or when upstream changes.
 ---
 
 # RFC Update
 
-Syncs two things from upstream:
-1. `docs/rfc-process.md` — the core section is replaced; the `## Project Extensions` section is preserved.
-2. `.claude/skills/rfc-*/SKILL.md` — each skill file is compared to its upstream counterpart and replaced if different.
+Syncs `docs/rfc-process.md` from upstream — the core section is replaced; the `## Project Extensions` section is preserved.
 
 ## Steps
 
@@ -19,7 +17,7 @@ Check that `docs/rfc-process.md` exists:
 test -f docs/rfc-process.md && echo "EXISTS" || echo "NOT FOUND"
 ```
 
-If the file does not exist: stop and suggest `/rfc-install`.
+If the file does not exist: stop and suggest `/sync` (which creates it automatically as part of project setup).
 
 ### 2. Sync `docs/rfc-process.md`
 
@@ -44,7 +42,7 @@ Extract the raw RFC process text from the core section (strip sync header lines 
 ```
 <!-- UPSTREAM: <$PLUGIN_ROOT>/rfc-process.md -->
 <!-- LAST_SYNCED: <today's date as YYYY-MM-DD> -->
-<!-- /rfc-update replaces everything before END_UPSTREAM_CONTENT when upstream changes. -->
+<!-- /rfc-update or /sync replaces everything before END_UPSTREAM_CONTENT when upstream changes. -->
 
 <full verbatim content of $PLUGIN_ROOT/rfc-process.md>
 
@@ -75,98 +73,12 @@ If confirmed: for each legacy file, read its `created:` frontmatter field for th
 
 If declined, skip and continue.
 
-### 4. Sync RFC skill files
-
-The skills to sync are (`rfc-braindump`, `rfc-install`, `rfc-update`, `rfc-new`, `rfc-read-feedback`, `rfc-approve`, `rfc-implement`, `rfc-drop`, `rfc-consensus-review`).
-
-**First, probe for sandbox restrictions:**
-
-```bash
-mkdir -p .claude/skills/_probe && rm -d .claude/skills/_probe && echo "OK" || echo "SANDBOXED"
-```
-
-**If `OK`:** for each skill:
-
-1. Check whether `$PLUGIN_ROOT/skills/<skill>/SKILL.md` exists. If not, skip (upstream missing — no-op).
-2. Check whether `.claude/skills/<skill>/SKILL.md` exists in the project. If not, create the directory and copy.
-3. If both exist: compare content. If identical, skip. If different, copy the upstream version and note the update.
-
-**If `SANDBOXED`:** export `BYTEWYRD_PLUGIN_ROOT` and write the following script to `$TMPDIR/rfc-update.sh`, then tell the user:
-
-> The sandbox prevented writing to `.claude/skills/`. Run this to complete the update:
-> `BYTEWYRD_PLUGIN_ROOT="<printed PLUGIN_ROOT>" bash $TMPDIR/rfc-update.sh`
-
-Script contents:
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-# Syncs RFC skills from the bytewyrd-workflow plugin (or global Claude install) into this project.
-# Skips skills that are already up to date.
-# Run from the project root: BYTEWYRD_PLUGIN_ROOT="<plugin-path>" bash /tmp/rfc-update.sh
-
-readonly GLOBAL_SKILLS="${BYTEWYRD_PLUGIN_ROOT:-${HOME}/.claude}/skills"
-readonly PROJECT_SKILLS=".claude/skills"
-
-readonly SKILLS=(
-  rfc-braindump
-  rfc-install
-  rfc-update
-  rfc-new
-  rfc-read-feedback
-  rfc-approve
-  rfc-implement
-  rfc-drop
-  rfc-consensus-review
-)
-
-main() {
-  local updated=0
-  local unchanged=0
-
-  echo "Syncing RFC skills in ${PROJECT_SKILLS}/ ..."
-
-  for skill in "${SKILLS[@]}"; do
-    local src="${GLOBAL_SKILLS}/${skill}/SKILL.md"
-    local dst="${PROJECT_SKILLS}/${skill}/SKILL.md"
-
-    if [[ ! -f "${src}" ]]; then
-      echo "  SKIP     ${skill} — not found in global install"
-      continue
-    fi
-
-    if [[ -f "${dst}" ]] && diff -q "${src}" "${dst}" > /dev/null 2>&1; then
-      echo "  UNCHANGED ${skill}"
-      unchanged=$(( unchanged + 1 ))
-      continue
-    fi
-
-    mkdir -p "${PROJECT_SKILLS}/${skill}"
-    cp "${src}" "${dst}"
-    echo "  UPDATED  ${skill}"
-    updated=$(( updated + 1 ))
-  done
-
-  echo ""
-  echo "Done: ${updated} updated, ${unchanged} unchanged."
-  if [[ "${updated}" -gt 0 ]]; then
-    echo "Commit .claude/skills/ to share the updates with the team."
-  fi
-}
-
-main "$@"
-```
-
-### 5. Report
+### 4. Report
 
 Summarize what changed:
 
 ```
 docs/rfc-process.md  — updated (added: scope check section)
-rfc-approve/SKILL.md — updated (now requires RFC number)
-rfc-new/SKILL.md     — already up to date
-... (etc.)
 ```
 
 If nothing changed: **"Everything is up to date."**
