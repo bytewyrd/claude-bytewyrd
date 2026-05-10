@@ -2,7 +2,7 @@
 rfc: "2026-05-10-refactor-command"
 title: "/refactor Command for Explicit Refactoring Subagent"
 author: "Rodrigo Kochenburger"
-status: "Approved"
+status: "Done"
 created: "2026-05-10"
 drop_reason: ~
 ---
