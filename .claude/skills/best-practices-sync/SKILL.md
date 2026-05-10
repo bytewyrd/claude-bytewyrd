@@ -36,6 +36,42 @@ For every entry in the global file, normalize it and compare against the matchin
 
 Use judgment to distinguish CONFLICT from NEW: if the global entry and an existing sync entry give the same advice to a developer (even with different wording, emphasis, or examples), it is a CONFLICT. If the global entry adds genuinely new guidance that the section does not cover, it is NEW.
 
+## Step 2a — Re-triage (defense in depth)
+
+For every entry classified NEW or CONFLICT in Step 2, re-apply the three portability questions defined in [`../../skills/best-practices-extract/TRIAGE-AND-LIFT.md`](../../skills/best-practices-extract/TRIAGE-AND-LIFT.md):
+
+1. Framework portability
+2. Project portability
+3. Audience portability
+
+This is defense in depth — the entry should already have passed triage at `best-practices-extract` or `best-practices-record` time, but entries written by older sessions (before this RFC) or by less disciplined invocations may have leaked through.
+
+For each entry that fails re-triage:
+
+- **Stop and ask the user** with AskUserQuestion (single-select):
+
+  ```
+  Re-triage failed for this entry:
+    <entry text>
+
+  Which portability question failed: <question 1 / 2 / 3>
+
+  Options:
+  - Option 1: Skip — leave in ~/.claude/BEST_PRACTICES.md (manual cleanup later)
+  - Option 2: Delete — remove from global file (it should not be there)
+  - Option 3: Lift now — open the lift procedure interactively, rewrite the entry,
+             then re-classify (NEW or CONFLICT) against the sync file
+  ```
+
+- Act on the user's choice:
+  - **Skip**: leave the entry in the global file and exclude it from this sync run. It may be re-triaged on the next run.
+  - **Delete**: remove the entry from `~/.claude/BEST_PRACTICES.md` and exclude it from sync. Do not write to the sync file.
+  - **Lift now**: walk the user through Pass 1 → Pass 2 → Verification interactively (one AskUserQuestion call per pass for confirmation). Replace the entry text with the lifted version, then re-run Step 2's classification on the new text.
+
+EXACT_DUPLICATE entries are not re-triaged — they already exist in the sync file and are handled by Step 6's removal-from-global step.
+
+Entries that pass re-triage proceed to Step 3 unchanged.
+
 ## Step 3 — Resolve conflicts
 
 For each CONFLICT entry, resolve it before moving on to Step 4.
@@ -67,6 +103,28 @@ For each CONFLICT entry, resolve it before moving on to Step 4.
    - **Combined**: the Opus-generated text replaces the existing sync entry. Record: write Opus text, delete existing sync entry, delete global line.
 
 If there are multiple CONFLICT entries, resolve them one at a time (sequential AskUserQuestion calls — do not batch conflicts into a multi-select).
+
+### Lift the Combined version (when chosen)
+
+If the user picked the **Combined (Opus)** option for a CONFLICT resolution, run one final lift pass on the Opus output before writing it to the sync file. Apply Pass 1 (strip) and Pass 2 (name domain) from the shared procedure; skip the user-facing verification dialog (the user has already approved the Combined text). If Pass 1 changes the text, surface the change with AskUserQuestion (single-select):
+
+```
+You picked the Combined version:
+  <Opus output>
+
+Lift pass produced:
+  <lifted text>
+
+The lift removed: <list of stripped identifiers>
+
+Use which?
+- Option 1: Lifted (recommended)
+- Option 2: Original Combined (Opus)
+```
+
+Default is Lifted. The Original-Combined option exists because Opus may produce a generic example that the lift step incorrectly interprets as a project-specific reference.
+
+Global and Plugin choices do not get an extra lift pass — the Plugin version is already in the sync file (so it has been lifted previously), and the Global version was lifted at record time (and just passed Step 2a re-triage).
 
 ## Step 4 — Present NEW candidates for batch approval
 
@@ -167,6 +225,6 @@ The skill never commits. Review and commit are the user's call.
 
 ## Red Flags — Stop and Reconsider
 
-- A candidate is project-specific (mentions a project name, internal service, or repo path) → skip it; explain why ("this looks project-specific; sync content must be cross-project"). Remove from global file only if user confirms.
+- A candidate is project-specific (mentions a project name, internal service, or repo path) → Step 2a should have caught this. If it didn't, the triage predicate may need refinement — see [`../../skills/best-practices-extract/TRIAGE-AND-LIFT.md`](../../skills/best-practices-extract/TRIAGE-AND-LIFT.md). Skip the entry, surface the miss to the user, and ask whether to update the predicate.
 - A candidate is > 2 sentences → note this in the presentation ("Note: this entry is N sentences — sync entries are typically ≤ 2. Consider using the Combined option to get a tighter version.") but do NOT skip it; let the user decide. If it goes in via conflict resolution, the Opus combined version will naturally be more concise.
 - The destination section already has > 12 entries → warn the user that the section is getting long and may need a split, but proceed unless the user says to stop.
