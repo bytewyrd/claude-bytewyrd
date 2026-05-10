@@ -3,7 +3,7 @@ name: sync
 description: Set up or refresh a project repository with all standard conventions — idempotent, safe to re-run whenever the plugin updates. Triggered by "/sync".
 ---
 
-<!-- bootstrap-content-version: 2026-05-10-d3d36af -->
+<!-- bootstrap-content-version: 2026-05-10-f7d5384 -->
 
 # Sync
 
@@ -11,12 +11,14 @@ Sets up or refreshes a project repository with all standard conventions. Idempot
 
 ## Interaction model
 
-Sync runs almost entirely autonomously. There are exactly **two points** where user input is collected:
+Sync runs almost entirely autonomously. User input is collected only when project identity cannot be sourced from `docs/project-brief.md`:
 
-1. **Step 2** — Two AskUserQuestion calls: project brief preference, then display name and description.
-2. **Step 5** (only if `brief_mode = "help"`) — One AskUserQuestion call with 4 project-brief questions.
+1. **Step 2a.i (identity gap-fill)** — One AskUserQuestion with 1 or 2 questions, asked only when the existing brief lacks a usable H1 (or the H1 is the literal `Project Brief` placeholder) and/or a non-empty `## Description` section.
+2. **Step 2a.ii (optional body-fill)** — Up to two AskUserQuestion calls (a single yes/no, then if yes, one prompt with 1–4 questions). Asked only when one or more of the four narrative sections (Problem / Goals / Non-Goals / Constraints) is empty or contains a placeholder, and the user opts in. Skippable.
+3. **Step 2b** — One AskUserQuestion: "Do you want to create a project brief now?". Asked only when `docs/project-brief.md` does not exist.
+4. **Step 2c** — One AskUserQuestion with 6 questions (name, description, problem, goals, non-goals, constraints). Asked only when 2b answered "Yes".
 
-Everything else — environment detection, file creation, GitHub metadata update, RFC install, and the final report — happens without asking the user.
+When `docs/project-brief.md` already exists *and* the parser yields both a non-placeholder H1 and a non-empty `## Description` section *and* every narrative section has real (non-placeholder) content, all four prompts are skipped — `/sync` reads identity from the brief and proceeds. Everything else — environment detection, file creation, GitHub metadata update, RFC install, and the final report — happens without asking the user.
 
 ## Step 1 — Validate environment + detect installed plugins + detect GitHub remote
 
@@ -72,56 +74,109 @@ If `github@claude-plugins-official` is missing from `installed`, warn but do not
 
 ---
 
-## Step 2 — Gather project info
+## Step 2 — Gather project identity from the brief
 
-This step uses **two sequential AskUserQuestion calls**: brief first, then name and description. The brief is asked first because an existing brief can supply the project name and description, which informs the defaults for the second call.
+Project identity (`project_name` and `description`) is sourced from `docs/project-brief.md`. The brief is the single source of truth — `/sync` does not maintain identity values independently of it.
 
 `"Other"` is a special label in the Claude Code UI — it renders as a text input field rather than a plain button. Do not add any label like "Type below" or "Enter custom"; the text field is self-explanatory.
 
-### 2a — Project brief
+### 2a — Read existing brief, if any
 
-**Check first:** if `docs/project-brief.md` already exists, skip the question entirely — set `brief_mode = "added"` automatically and proceed to extract name and description from it. Do not ask the user.
+If `docs/project-brief.md` exists, parse it (parser rules are documented in the RFC `2026-05-10-project-brief-sync-source-of-truth`). The parse yields these outputs:
 
-If the file does not exist, ask one question:
+- `brief_name` — string from the H1 (regex `/^#\s+(.+?)\s*$/m`), or `None` if no H1 is present
+- `brief_description` — string from the first non-blank paragraph of the `## Description` section, or `None` if the section is absent or its body is empty after trimming
+- `brief_problem`, `brief_goals`, `brief_nongoals`, `brief_constraints` — body of each named section, plus a `<section>_is_placeholder` flag set to `true` when the section is absent, empty after trimming, or its body (after trimming) is exactly one of these recognized placeholder strings: the literal `<...>`, `—`, `TBD`, or `TODO` (case-insensitive). Any other content — including a single real sentence — is treated as non-placeholder.
 
-**"Do you have a project brief?"** — a short document capturing what the project is for, who it serves, and what's in/out of scope
-- Option 1: `Help me create one` — sync will ask you 4 questions after setup and fill in `docs/project-brief.md`
-- Option 2: `I've added the file to docs/project-brief.md` — sync reads it and uses it to pre-populate name and description
-- Auto-added `Other` text input: anything entered is treated as skip (store `null`)
+Resolve `project_name`:
+1. If `brief_name` is non-`None` and non-empty AND not equal to `"Project Brief"` (case-insensitive — the literal placeholder from older brief templates) → `project_name = brief_name`.
+2. Else → set `project_name_missing = true` (will be filled by the identity gap-fill prompt below). Also set `needs_migration = true` (the brief exists but has the placeholder H1 or no H1 at all, so the H1 line will be rewritten by Change 3).
 
-Store `brief_mode`:
-- `"help"` if "Help me create one" selected
-- `"added"` if "I've added the file" selected (or if the file was already present)
-- `null` otherwise
+Resolve `description`:
+1. If `brief_description` is non-`None` and non-empty → `description = brief_description`.
+2. Else → set `description_missing = true` (will be filled by the identity gap-fill prompt below). Also set `needs_migration = true` (the brief exists but lacks a usable `## Description` section, so the section will be inserted/replaced by Change 3).
 
-**If `brief_mode = "added"`:** read `docs/project-brief.md`. Extract:
-- `brief_name` — first `# Heading` line if present, strip the `# ` prefix
-- `brief_description` — first non-heading, non-blank, non-HTML-comment sentence or paragraph
+#### 2a.i — Identity gap-fill (only if name or description is missing)
 
-These become the defaults for Step 2b.
+If `project_name_missing` is set OR `description_missing` is set, ask one AskUserQuestion to fill the gaps:
 
-### 2b — Name and description
+- If only `project_name_missing`: include question 1 only.
+- If only `description_missing`: include question 2 only.
+- If both: include both questions in one call.
 
-AskUserQuestion with two questions:
+**Question 1 — "Project name (display)?"**: suggestion is `Title Case(project_slug)`; the auto-rendered `Other` is a free-text input. Falls back to the suggestion if `Other` is empty.
 
-1. **"What is the project name?"** *(human/display name — used in headings and docs)*
-   - Default option: `brief_name` if extracted, otherwise Title Case of `project_slug` (e.g., `tinywyrd` → `Tinywyrd`)
-   - `Other` option: free-text input for a custom display name
+**Question 2 — "One-sentence description?"**: if `github_description` from Step 1 is non-empty, it is the suggestion; otherwise the suggestion is a slug-derived placeholder like `<project_slug> — <one-line outcome>.`. The auto-rendered `Other` is a free-text input. Falls back to the suggestion if `Other` is empty. (There is no "skip" option — every project has *some* description, even if generic. If the user wants no real description, they can type `—` or any placeholder.)
 
-2. **"One-sentence description?"**
-   - If `brief_description` is non-empty: options are `<brief_description>` (click to accept), `Other` (text input to replace it)
-   - Else if `github_description` is non-empty: options are `<github_description>` (click to accept), `Other` (text input to replace it)
-   - Otherwise: options are `Skip — I'll fill it in later`, `Other` (text input for description)
-   - If "Skip" is selected, store an empty string and leave the `<description>` placeholder in generated files.
+After answering, set `project_name` and `description` from the answers. The collected values are folded into `docs/project-brief.md` by Change 3's migration sub-rule.
 
-Store answers as:
-- `project_name` — human display name (from 2b question 1)
-- `project_slug` — repo identity name (derived in Step 1, not asked)
-- `description` — (from 2b question 2)
-- `has_github` — derived from Step 1: `true` if a `github.com` remote was detected, `false` otherwise. Never asked.
-- `brief_mode` — `"help"`, `"added"`, or `null`
+#### 2a.ii — Optional body-fill for the four narrative sections
 
-**Languages are not asked** — they are detected automatically in Step 3 by scanning manifest files. Sync is idempotent: re-run it after adding source code to pick up new languages and fill in any missing language-specific files.
+After the identity gap-fill (or directly, if no identity gap-fill was needed because both `project_name` and `description` were already resolved from the brief), inspect the four narrative sections. Compute `body_has_placeholders = brief_problem_is_placeholder OR brief_goals_is_placeholder OR brief_nongoals_is_placeholder OR brief_constraints_is_placeholder`.
+
+If `body_has_placeholders = false` (every narrative section already has real, non-placeholder content), skip this sub-step entirely — no prompt, no rewrite. Proceed to Step 3.
+
+If `body_has_placeholders = true`, ask one AskUserQuestion with a single yes/no question:
+
+**"Some narrative sections of `docs/project-brief.md` are empty or contain placeholders. Fill them in now?"**
+
+- Option 1: `Yes — walk me through the empty sections` — sets `fill_body = true`
+- Option 2: `Skip — I'll edit the brief manually later` — sets `fill_body = false`
+
+If `fill_body = false`, proceed to Step 3 with the body sections untouched. The migration sub-rule of Change 3 will not rewrite any narrative section; only the H1 and `## Description` section are rewritten if `needs_migration = true`.
+
+If `fill_body = true`, ask one AskUserQuestion containing exactly one question per *placeholder-looking* narrative section (1 to 4 questions in a single call — sections that already have real content are not re-prompted):
+
+1. **"Problem — what does this solve, and who is it for?"** — included only if `brief_problem_is_placeholder`. Suggestion inferred from the project slug and any detected language (e.g. for a Rust binary the suggestion might be `"<project_slug> — utility for <inferred-context>; for <inferred-audience>."`)
+2. **"Goals — what does success look like?"** — included only if `brief_goals_is_placeholder`. Suggestion: a generic `"<project_slug> ships a <one-line-outcome> that <verb> for its users."` template adapted from the slug.
+3. **"Non-goals — what is explicitly out of scope?"** — included only if `brief_nongoals_is_placeholder`. Suggestion: a generic `"Not a general-purpose <category> for arbitrary use; opinionated toward <inferred-stack>."` template adapted from the slug.
+4. **"Constraints — technical, operational, or philosophical?"** — included only if `brief_constraints_is_placeholder`. Suggestion: a generic `"Must work within the user's standard <inferred-runtime> environment."` template adapted from the slug.
+
+For every question included: each gets one suggestion option plus an auto-rendered `Other` free-text input. If the user submits an empty `Other` value for any question, fall back to that question's suggestion. None of the included questions can be skipped to empty.
+
+Store the answers as `answer_problem`, `answer_goals`, `answer_nongoals`, `answer_constraints` — only for the sections that were actually asked. Sections that were not asked (because they already had real content) keep their existing body. Set `body_fill_applied = true` so Change 3's migration sub-rule knows to write the body sections.
+
+### 2b — If brief is absent, decide whether to create one
+
+If `docs/project-brief.md` does not exist, ask one AskUserQuestion:
+
+**"Do you want to create a project brief now?"** The brief is the canonical source of project identity (name, description) and scope (problem, goals, non-goals, constraints). Without it, `/sync` will use derived defaults (Title-Case of the directory name for the project name; a slug-derived placeholder description) and will re-ask on every run.
+
+- Option 1: `Yes — let's set it up now (single prompt, 6 questions)` — sets `create_brief = true`
+- Option 2: `Skip — I'll create it later by re-running /sync` — sets `create_brief = false`
+
+If `create_brief = false`, set `project_name = Title Case(project_slug)` and `description = ""`, then proceed directly to Step 3. The brief is not created; subsequent `/sync` runs will re-ask this question.
+
+If `create_brief = true`, proceed to Step 2c.
+
+### 2c — First-run unified prompt (only when brief is being created)
+
+This step runs only when `create_brief = true`. It is a single AskUserQuestion containing six questions in one call.
+
+Each question gets one suggestion option plus an auto-rendered `Other` free-text input. The user can either accept the pre-fill or type a custom answer:
+
+1. **"Project name (display)?"** — suggestion: `Title Case(project_slug)` (e.g. `tinywyrd` → `Tinywyrd`)
+2. **"One-sentence description?"** — suggestion: if `github_description` from Step 1 is non-empty, that string; otherwise a slug-derived placeholder like `<project_slug> — <one-line outcome>.`
+3. **"Problem — what does this solve, and who is it for?"** — suggestion inferred from the project slug and any detected language (e.g. for a Rust binary the suggestion might be `"<project_slug> — utility for <inferred-context>; for <inferred-audience>."`)
+4. **"Goals — what does success look like?"** — suggestion: a generic `"<project_slug> ships a <one-line-outcome> that <verb> for its users."` template adapted from the slug
+5. **"Non-goals — what is explicitly out of scope?"** — suggestion: a generic `"Not a general-purpose <category> for arbitrary use; opinionated toward <inferred-stack>."` template adapted from the slug
+6. **"Constraints — technical, operational, or philosophical?"** — suggestion: a generic `"Must work within the user's standard <inferred-runtime> environment."` template adapted from the slug
+
+For every question (1 through 6): if the user submits an empty `Other` value, fall back to the suggestion. None of the six can be skipped to empty.
+
+Store the answers as `answer_name`, `answer_description`, `answer_problem`, `answer_goals`, `answer_nongoals`, `answer_constraints`. Then:
+
+- `project_name = answer_name`
+- `description = answer_description`
+- `brief_problem = answer_problem`, `brief_goals = answer_goals`, `brief_nongoals = answer_nongoals`, `brief_constraints = answer_constraints`
+
+The brief file is written in Step 5 — not here — so that `/sync` writes all files in one block.
+
+`has_github` is derived from Step 1 (`true` if a `github.com` remote was detected) and never asked.
+
+`project_slug` is derived from Step 1 (`basename $(git rev-parse --show-toplevel)`) and never asked.
+
+**Languages are not asked** — they are detected automatically in Step 3.
 
 ---
 
@@ -195,9 +250,10 @@ Proceed immediately — no confirmation needed.
 **File creation policy:** Check whether each file exists before writing. **Skip any file that already exists — never overwrite.** The only exceptions are:
 - `.gitignore` — always append-only: add missing entries, never remove existing ones
 - `.worktrees/` — always create if absent (idempotent)
-- **Name and description sync** — always apply, even to existing files:
-  - In `CLAUDE.md`: update the `# <heading>` on line 1 if it differs from `project_name`; update the description paragraph directly after the heading if it differs from `description` (skip if description is empty)
-  - In `README.md`: update the `# <heading>` on line 1 if it differs; update the `> <blockquote>` description on line 3 if it differs (skip if description is empty)
+- **Name and description sync** — always apply, even to existing files. Both values come from `project_name` and `description` resolved in Step 2 (which sourced them from the H1 and the `## Description` section of `docs/project-brief.md`, or from the gap-fill fallback):
+  - In `CLAUDE.md`: update the `# <heading>` on line 1 if it differs from `project_name`; update the description paragraph directly after the heading if it differs from `description` (skip the description update if `description` is empty).
+  - In `README.md`: update the `# <heading>` on line 1 if it differs from `project_name`; update the `> <blockquote>` description on line 3 if it differs from `description` (skip the description update if `description` is empty).
+  - **Direction is one-way: brief → docs.** Edits made directly to `CLAUDE.md` line 1 or `README.md` line 1 are overwritten on the next `/sync` run. To rename the project, edit the H1 of `docs/project-brief.md` and re-run `/sync`. To change the description, edit the `## Description` section of the brief and re-run `/sync`.
 
 Track each file as `created`, `updated`, or `skipped` for the Step 8 report.
 
@@ -209,39 +265,53 @@ Create with a `.gitkeep` so the directory is tracked. This is where expanded use
 
 ### `docs/project-brief.md`
 
-**If `brief_mode = "added"`** — the file already exists; skip creation. Note it in the Step 8 report as "exists — used for name/description".
+The brief is the single source of truth for project identity. The exact action depends on what was determined in Step 2:
 
-**If `brief_mode = "help"`** — create the blank template first (so the file exists), then after completing all other steps, ask the user four questions conversationally and fill in the answers:
+**If the brief already exists with a usable H1, a non-empty `## Description` section, and no placeholder narrative sections** (Step 2a found `brief_name` non-empty and non-placeholder, `brief_description` non-empty, with `needs_migration` unset and `body_fill_applied` unset) — skip the file. Track in the Step 8 report as `exists — H1, ## Description, and narrative sections present`.
 
-```markdown
-# Project Brief
+**If the brief exists but `needs_migration = true` and/or `body_fill_applied = true`** (the H1 was missing/placeholder, or the `## Description` section was missing/empty, or one or more narrative sections were placeholder-looking and the user opted into Step 2a.ii's body-fill, with the gap-fill prompts providing the resolved values) — rewrite the affected regions in place, preserving every other byte exactly. Read the existing file content, then proceed by case:
+
+- *Case A — H1 needs replacement* (no H1 present, or the existing H1 was the literal `Project Brief` case-insensitive placeholder): locate the first line matching `^#\s+`. If found, replace that single line with `# <resolved project_name>`. If no H1 line exists, prepend `# <resolved project_name>` followed by a blank line to the file.
+
+- *Case B — `## Description` section needs insertion or replacement*: locate the line `## Description` (case-sensitive). If present, replace the section's body (every line after the heading up to the next H2 or end of file) with a single blank line, the resolved description, and a trailing blank line. If absent, insert a new `## Description` section directly after the H1 — the inserted block is one blank line, then `## Description`, then one blank line, then the resolved description, then one blank line — placed before whatever currently follows the H1.
+
+- *Case C — narrative section body needs replacement* (only applies when `body_fill_applied = true`, and only for sections the user actually answered in Step 2a.ii — those whose `<section>_is_placeholder` flag was true and an `answer_<section>` value was collected): for each affected section (`## Problem`, `## Goals`, `## Non-Goals`, `## Constraints`), locate the section heading line. If the heading is present, replace the section's body (every line after the heading up to the next H2 or end of file) with a single blank line, the answered value, and a trailing blank line. If the heading is absent, append a new `## <Section>` block at the end of the file (a leading blank line, the heading, a blank line, the answered value, a trailing blank line). Never touch a section the user did *not* answer (whether because it had real content or because the user skipped Step 2a.ii entirely).
+
+Cases may apply in any combination (e.g., a pre-RFC brief with `# Project Brief` H1 and no `## Description` section and `<...>` placeholders in all four narrative sections will trigger Case A, Case B, and Case C for whichever sections the user answered). Apply Case A first (rewriting the H1), then Case B (inserting/replacing the `## Description` section), then Case C (rewriting each affected narrative section). Any content not covered by an applied case (e.g., narrative sections the user did not answer, additional headings or paragraphs the user added beyond the template) is preserved exactly — no re-flowing, no other heading rewrites, no sentence-level edits.
+
+`<resolved project_name>` is the value computed in Step 2a (which has already accounted for the `Project Brief` literal-placeholder rule and the identity gap-fill prompt). `<resolved description>` is the value computed in Step 2a. The `answer_<section>` values for Case C come from Step 2a.ii's body-fill prompt.
+
+Track in the Step 8 report as `migrated (H1, ## Description, and/or narrative sections rewritten)`.
+
+**If `create_brief = true`** (Step 2c was run) — write a new brief now using the answers collected in Step 2c. The full file content:
+
+```
+# <answer_name>
+
+## Description
+
+<answer_description>
 
 ## Problem
 
-<!-- What problem does this project solve? Who is it for? -->
+<answer_problem>
 
 ## Goals
 
-<!-- What does success look like? What are the key outcomes? -->
+<answer_goals>
 
 ## Non-Goals
 
-<!-- What is explicitly out of scope? -->
+<answer_nongoals>
 
 ## Constraints
 
-<!-- Technical, time, budget, or other constraints that shape the solution -->
+<answer_constraints>
 ```
 
-Ask using AskUserQuestion with all four questions in a single call. For each question, include exactly two options:
-1. A pre-generated contextual suggestion (infer from `project_name`, `description`, and detected language — e.g. for a Rust buildpack the problem option might be "Enables deploying Rust apps to CNB-compatible platforms without custom Dockerfiles, for Rust developers and platform teams.")
-2. `Other` — label only, **no description text**
+Track in the Step 8 report as `created (full template)`.
 
-`"Other"` is a special label that the Claude Code UI renders as a free-text input. Do not add any description to it, and do not use any variant label like "Type my answer below" or "Enter custom".
-
-Write the answers into the corresponding sections of `docs/project-brief.md`. If the user typed a custom answer via `Other`, use that text. If the user selected the pre-generated option, use it verbatim. Leave the HTML comment placeholder in place for any section the user skipped.
-
-**If `brief_mode = null`** — skip entirely; do not create the file.
+**If `create_brief = false` and the brief is absent** — skip entirely. Track in the Step 8 report as `skipped (user opted not to create)`.
 
 ### `.gitignore`
 If the file exists, read it first and append only entries that are not already present.
@@ -436,7 +506,7 @@ A mixed project like Rust + Svelte frontend + Terraform infra gets the Rust, JS/
 ```markdown
 # Best Practices
 
-<!-- bootstrap-content-version: 2026-05-10-d3d36af -->
+<!-- bootstrap-content-version: 2026-05-10-f7d5384 -->
 
 Accumulated non-obvious learnings from development sessions.
 
@@ -1108,6 +1178,8 @@ If the repo name on GitHub differs from `project_name` (GitHub repo names are ty
 
 If `gh` is not available or the remote is not yet set up, note it in the Step 8 report and move on.
 
+The `description` value passed to `gh repo edit` is the same value written into `CLAUDE.md` and `README.md` — all three are sourced from the `## Description` section of `docs/project-brief.md`, ensuring local and remote stay aligned. The empty-guard is preserved: when `description` is `""` (Step 2 produced no value because the brief was opted out via Step 2b), no `gh repo edit --description` call is made, and any pre-existing GitHub description is left untouched.
+
 ### `.github/workflows/ci.yml`
 
 Assemble one file with a shared header and one job per detected language. If only one language is detected, name the job `ci`; otherwise name each job after the language (`rust`, `frontend`, `go`, `python`).
@@ -1342,7 +1414,7 @@ Print a summary table of every file, showing the actual outcome:
 | `docs/CONTRIBUTING.md` | created / **skipped** (exists) |
 | `docs/ARCHITECTURE.md` | created / **skipped** (exists) |
 | `docs/guide/` | created / already exists |
-| `docs/project-brief.md` | created (template) / exists — used for name/description / **skipped** (not requested) |
+| `docs/project-brief.md` | created (full template) / exists — H1, ## Description, and narrative sections present / migrated (H1, ## Description, and/or narrative sections rewritten) / skipped (user opted not to create) |
 | `.claude/settings.json` | created / **skipped** (exists) |
 | `.claude/settings.local.json` | created / **skipped** (exists) |
 | `rust-toolchain.toml` or `mise.toml` | created / **skipped** (exists) |
