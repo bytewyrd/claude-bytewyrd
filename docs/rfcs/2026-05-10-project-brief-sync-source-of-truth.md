@@ -2,7 +2,7 @@
 rfc: "2026-05-10-project-brief-sync-source-of-truth"
 title: "Project Brief as Single Source of Truth in /sync"
 author: "Rodrigo Kochenburger"
-status: "Approved"
+status: "Done"
 created: "2026-05-10"
 drop_reason: ~
 ---
