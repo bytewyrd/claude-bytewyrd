@@ -110,22 +110,22 @@ If the description came from a `docs/rfc-braindump.md` entry (user selected a nu
 
 If the description was typed directly by the user (not selected from the braindump list), skip this step.
 
-### 7. Spawn rfc-architect to fill in the RFC
+### 7. Spawn bytewyrd:rfc-architect to fill in the RFC
 
-Spawn a `rfc-architect` agent (`model: "opus"`) with:
+Spawn a `bytewyrd:rfc-architect` agent (`model: "opus"`) with:
 - The user's description
 - The path to the created RFC file
 - The full project context (relevant code, existing RFCs, docs)
 - Instruction: fill in the template completely, remove all `<!-- ... -->` guidance comments, follow the RFC process in `docs/rfc-process.md`, especially the no-placeholders rule and file structure mapping requirement
 
-The `rfc-architect` agent must **immediately** after writing dispatch the appropriate review agents in parallel (per the review agent selection table in `docs/rfc-process.md`), incorporate their feedback, then run the self-review checklist:
+The `bytewyrd:rfc-architect` agent must **immediately** after writing dispatch the appropriate review agents in parallel (per the review agent selection table in `docs/rfc-process.md`), incorporate their feedback, then run the self-review checklist:
 1. **Coverage** — every requirement pointed to an implementation spec section?
 2. **Placeholder scan** — any prohibited patterns present?
 3. **Consistency** — type names, signatures, paths match across sections?
 
 ### 8. Consensus review and fix loop
 
-After `rfc-architect` completes step 7, invoke the `/rfc-consensus-review` skill on the new RFC.
+After `bytewyrd:rfc-architect` completes step 7, invoke the `/rfc-consensus-review` skill on the new RFC.
 
 The consensus review skill runs to completion: it auto-fixes all verified bugs, walks through any design opinions interactively with the human, and reports. Wait for it to finish — including the interactive walk-through — before proceeding to step 9.
 

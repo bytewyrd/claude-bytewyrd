@@ -48,7 +48,7 @@ If no prior context exists, omit this block entirely.
 
 ### 3. Spawn 5 parallel reviewer agents
 
-Spawn five `feature-dev:code-reviewer` agents (`model: "opus"`) in a **single message**. Do not ask for human confirmation first.
+Spawn five `bytewyrd:code-reviewer` agents (`model: "opus"`) in a **single message**. Do not ask for human confirmation first.
 
 Each agent receives the full RFC text and this prompt:
 
@@ -98,7 +98,7 @@ Map each group to an action using both count and type:
 
 ### 6. Auto-fix all verified bugs
 
-Without asking for confirmation, spawn a `rfc-architect` agent (`model: "opus"`) with:
+Without asking for confirmation, spawn a `bytewyrd:rfc-architect` agent (`model: "opus"`) with:
 - The RFC content
 - The complete list of verified bugs grouped by tier (Critical → Moderate → Minor)
 - Instruction: fix every bug in the list, run the self-review checklist after, do not change status, do not commit
@@ -130,7 +130,7 @@ Suggested change: <fix in 1-2 sentences>
 Address this? (yes / no / skip all remaining)
 ```
 
-Wait for a response before presenting the next item. Apply confirmed fixes immediately (via direct edit or a targeted `rfc-architect` call if the change is non-trivial). If the human says "skip all remaining", stop the loop.
+Wait for a response before presenting the next item. Apply confirmed fixes immediately (via direct edit or a targeted `bytewyrd:rfc-architect` call if the change is non-trivial). If the human says "skip all remaining", stop the loop.
 
 ### 8. Final report
 

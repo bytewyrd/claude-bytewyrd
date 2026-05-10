@@ -34,12 +34,12 @@ Scan the implementation spec for any remaining `REVIEW:` markers or placeholder 
 > "The implementation spec has unresolved items. Run `/rfc-reviews` or update the RFC before implementing."
 Stop.
 
-### 4. Spawn feature-engineer agent
+### 4. Spawn bytewyrd:feature-engineer agent
 
-Spawn a `feature-engineer` or `feature-dev:feature-dev` agent (`model: "opus"`) with:
+Spawn a `bytewyrd:feature-engineer` agent (`model: "opus"`) with:
 - The full RFC content as primary input
 - The instruction to follow the implementation spec exactly — not redesign, not extend scope
-- If the spec is ambiguous on any point: stop, update the RFC via `rfc-architect` + `/rfc-reviews`, get it re-approved, then resume
+- If the spec is ambiguous on any point: stop, update the RFC via `bytewyrd:rfc-architect` + `/rfc-reviews`, get it re-approved, then resume
 
 Do **not** start implementation if the spec has gaps. Fix the RFC first.
 

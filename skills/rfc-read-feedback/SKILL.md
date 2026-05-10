@@ -54,9 +54,9 @@ Address these? (yes/no)
 
 Wait for confirmation before proceeding.
 
-### 4. Spawn rfc-architect to address the comments
+### 4. Spawn bytewyrd:rfc-architect to address the comments
 
-Spawn a `rfc-architect` agent (`model: "opus"`) with:
+Spawn a `bytewyrd:rfc-architect` agent (`model: "opus"`) with:
 - The full RFC content
 - The list of `FEEDBACK:` comments and their line numbers
 - Instruction: address each comment by updating the relevant section, then remove the `FEEDBACK:` line; do not add new `FEEDBACK:` lines; follow the no-placeholders rule
