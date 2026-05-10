@@ -9,7 +9,7 @@ No language-specific toolchain detected. Add source code and re-run `/sync` to p
 ## File structure
 
 ```
-claude-bytewyrd-workflow/
+claude-bytewyrd/
 ├── CLAUDE.md          — this file
 ├── docs/
 │   ├── ARCHITECTURE.md        — system design (devs/agents)

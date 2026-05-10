@@ -19,7 +19,7 @@ Not here: what the project does or its architecture → README.md / docs/ARCHITE
 
 ```bash
 git clone <repo-url>
-cd claude-bytewyrd-workflow
+cd claude-bytewyrd
 ```
 
 ## Plugin Setup (one-time)
@@ -28,7 +28,7 @@ This project is both the definition of the Bytewyrd workflow and a live instance
 
 ```bash
 claude plugin marketplace add ./ --scope local
-claude plugin install bytewyrd-workflow --scope local
+claude plugin install bytewyrd --scope local
 ```
 
 Then restart Claude Code. The plugin is now active in all your sessions from this directory.

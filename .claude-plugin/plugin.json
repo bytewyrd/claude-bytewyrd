@@ -1,5 +1,5 @@
 {
-  "name": "bytewyrd-workflow",
+  "name": "bytewyrd",
   "description": "Opinionated Claude Code workflow for Bytewyrd projects and teams: skills, agents, hooks, and operating principles for evidence-based development with RFC-driven design.",
   "version": "0.1.0",
   "author": {

@@ -14,7 +14,7 @@ Not here: setup/quickstart                   → README.md
 
 ## Overview
 
-Claude Bytewyrd Workflow is a Claude Code plugin that bundles skills, agents, and hooks for Bytewyrd projects. It is both a plugin (distributed via the Claude Code plugin system) and a live dogfood of itself — the plugin's own checkout uses the plugin's skills and conventions. Consumers install it via `claude plugin install bytewyrd-workflow` and get the full skill and agent set immediately; no per-project configuration is required beyond the install.
+Claude Bytewyrd Workflow is a Claude Code plugin that bundles skills, agents, and hooks for Bytewyrd projects. It is both a plugin (distributed via the Claude Code plugin system) and a live dogfood of itself — the plugin's own checkout uses the plugin's skills and conventions. Consumers install it via `claude plugin install bytewyrd` and get the full skill and agent set immediately; no per-project configuration is required beyond the install.
 
 ## Components
 

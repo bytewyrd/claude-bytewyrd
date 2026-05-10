@@ -1,6 +1,6 @@
 ---
 name: agents-update
-description: Use inside the bytewyrd-workflow plugin's checkout to sync the local agents/ directory with the latest upstream versions from VoltAgent/awesome-claude-code-subagents. Shows a diff of what changed, lets you approve updates, and downloads approved files.
+description: Use inside the bytewyrd plugin's checkout to sync the local agents/ directory with the latest upstream versions from VoltAgent/awesome-claude-code-subagents. Shows a diff of what changed, lets you approve updates, and downloads approved files.
 ---
 
 # Update Agents from Upstream
@@ -9,7 +9,7 @@ description: Use inside the bytewyrd-workflow plugin's checkout to sync the loca
 
 Sync the `agents/` directory in this plugin with the latest agent definitions from [VoltAgent/awesome-claude-code-subagents](https://github.com/VoltAgent/awesome-claude-code-subagents). The upstream repository is the authoritative source for all agent definitions bundled in this plugin.
 
-This skill is plugin-local: it only makes sense inside the bytewyrd-workflow checkout. If `agents/` does not exist at the current working directory, stop with: "agents-update only runs inside the bytewyrd-workflow plugin checkout. cd into the plugin repo and try again."
+This skill is plugin-local: it only makes sense inside the bytewyrd checkout. If `agents/` does not exist at the current working directory, stop with: "agents-update only runs inside the bytewyrd plugin checkout. cd into the plugin repo and try again."
 
 ## Step 1 — Fetch the upstream file tree
 

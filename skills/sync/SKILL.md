@@ -875,7 +875,7 @@ Not here: setup/quickstart                   → README.md
 Build the `enabledPlugins` object as follows:
 
 **Always include** (triggers an install prompt for team members who don't have the plugin yet):
-- `bytewyrd-workflow@bytewyrd: true`
+- `bytewyrd@bytewyrd: true`
 
 **Include only if installed** — an uninstalled `claude-plugins-official` plugin causes Claude Code to error on startup:
 - `github@claude-plugins-official`
@@ -894,12 +894,12 @@ Example for a Rust project with all plugins installed:
     "bytewyrd": {
       "source": {
         "source": "github",
-        "repo": "bytewyrd/claude-bytewyrd-workflow"
+        "repo": "bytewyrd/claude-bytewyrd"
       }
     }
   },
   "enabledPlugins": {
-    "bytewyrd-workflow@bytewyrd": true,
+    "bytewyrd@bytewyrd": true,
     "github@claude-plugins-official": true,
     "context7@claude-plugins-official": true,
     "code-review@claude-plugins-official": true

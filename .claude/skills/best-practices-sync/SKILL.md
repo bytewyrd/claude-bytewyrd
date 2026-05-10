@@ -1,6 +1,6 @@
 ---
 name: best-practices-sync
-description: Use inside the bytewyrd-workflow plugin's checkout to promote vetted global best-practice entries into the plugin's sync content. Run after accumulating a few entries via /best-practices-record. For each candidate it detects whether a conceptually similar entry already exists in the sync file — if so, it shows both versions plus an Opus-generated combined version and asks the user to pick one. Approved entries are appended to skills/sync/SKILL.md and removed from ~/.claude/BEST_PRACTICES.md.
+description: Use inside the bytewyrd plugin's checkout to promote vetted global best-practice entries into the plugin's sync content. Run after accumulating a few entries via /best-practices-record. For each candidate it detects whether a conceptually similar entry already exists in the sync file — if so, it shows both versions plus an Opus-generated combined version and asks the user to pick one. Approved entries are appended to skills/sync/SKILL.md and removed from ~/.claude/BEST_PRACTICES.md.
 ---
 
 # Sync Best Practices Into Plugin
@@ -9,7 +9,7 @@ description: Use inside the bytewyrd-workflow plugin's checkout to promote vette
 
 Promote entries from the user's global pool (`~/.claude/BEST_PRACTICES.md`) into this plugin's distributed sync content (`skills/sync/SKILL.md`), and then remove the promoted entries from the global pool. This is the *only* path for a global entry to reach a freshly-synced project — the global file is private to the user; the plugin file is what consumers receive.
 
-This skill is plugin-local: it lives at `.claude/skills/best-practices-sync/` inside the plugin checkout and is not exported via `.claude-plugin/plugin.json`. It is only invokable from within the bytewyrd-workflow plugin checkout. If the cwd does not contain `skills/sync/SKILL.md` and `.claude-plugin/plugin.json`, stop with: "best-practices-sync only runs inside the bytewyrd-workflow plugin checkout. cd into the plugin repo and try again."
+This skill is plugin-local: it lives at `.claude/skills/best-practices-sync/` inside the plugin checkout and is not exported via `.claude-plugin/plugin.json`. It is only invokable from within the bytewyrd plugin checkout. If the cwd does not contain `skills/sync/SKILL.md` and `.claude-plugin/plugin.json`, stop with: "best-practices-sync only runs inside the bytewyrd plugin checkout. cd into the plugin repo and try again."
 
 ## Step 1 — Read both files
 

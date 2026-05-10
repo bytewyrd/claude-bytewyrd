@@ -96,7 +96,7 @@ If `~/.claude/BEST_PRACTICES.md` does not exist, create it with this header befo
 ```markdown
 # Global Best Practices
 
-Cross-project accumulator. Entries here are candidates for promotion into the bytewyrd-workflow plugin's sync content via `/best-practices-sync`. Once promoted, sync removes them from this file.
+Cross-project accumulator. Entries here are candidates for promotion into the bytewyrd plugin's sync content via `/best-practices-sync`. Once promoted, sync removes them from this file.
 
 Format: **[YYYY-MM-DD]** _Category_: Concise statement (1–2 sentences max).
 ```

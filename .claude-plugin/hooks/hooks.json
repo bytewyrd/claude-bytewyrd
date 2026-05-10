@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -f docs/BEST_PRACTICES.md ] && [ -f .claude/plugins/bytewyrd-workflow/skills/sync/SKILL.md ]; then PROJECT_VER=$(grep -m1 'bootstrap-content-version:' docs/BEST_PRACTICES.md 2>/dev/null | sed -E 's/.*bootstrap-content-version: ([^ ]+).*/\\1/'); PLUGIN_VER=$(grep -m1 'bootstrap-content-version:' .claude/plugins/bytewyrd-workflow/skills/sync/SKILL.md 2>/dev/null | sed -E 's/.*bootstrap-content-version: ([^ ]+).*/\\1/'); if [ -n \"$PLUGIN_VER\" ] && [ \"$PROJECT_VER\" != \"$PLUGIN_VER\" ]; then echo \"SessionStart: sync content has new entries (project=$PROJECT_VER, plugin=$PLUGIN_VER). Consider running /sync to refresh docs/BEST_PRACTICES.md.\"; fi; fi"
+            "command": "if [ -f docs/BEST_PRACTICES.md ] && [ -f .claude/plugins/bytewyrd/skills/sync/SKILL.md ]; then PROJECT_VER=$(grep -m1 'bootstrap-content-version:' docs/BEST_PRACTICES.md 2>/dev/null | sed -E 's/.*bootstrap-content-version: ([^ ]+).*/\\1/'); PLUGIN_VER=$(grep -m1 'bootstrap-content-version:' .claude/plugins/bytewyrd/skills/sync/SKILL.md 2>/dev/null | sed -E 's/.*bootstrap-content-version: ([^ ]+).*/\\1/'); if [ -n \"$PLUGIN_VER\" ] && [ \"$PROJECT_VER\" != \"$PLUGIN_VER\" ]; then echo \"SessionStart: sync content has new entries (project=$PROJECT_VER, plugin=$PLUGIN_VER). Consider running /sync to refresh docs/BEST_PRACTICES.md.\"; fi; fi"
           }
         ]
       }
@@ -41,7 +41,7 @@
           },
           {
             "type": "command",
-            "command": "if [ -f .claude-plugin/plugin.json ] && grep -q '\"name\": \"bytewyrd-workflow\"' .claude-plugin/plugin.json 2>/dev/null && [ -s \"$HOME/.claude/BEST_PRACTICES.md\" ]; then echo 'Session ending (plugin checkout): ~/.claude/BEST_PRACTICES.md has pending entries — consider running /best-practices-sync to promote vetted entries into sync content.'; fi"
+            "command": "if [ -f .claude-plugin/plugin.json ] && grep -q '\"name\": \"bytewyrd\"' .claude-plugin/plugin.json 2>/dev/null && [ -s \"$HOME/.claude/BEST_PRACTICES.md\" ]; then echo 'Session ending (plugin checkout): ~/.claude/BEST_PRACTICES.md has pending entries — consider running /best-practices-sync to promote vetted entries into sync content.'; fi"
           }
         ]
       }
