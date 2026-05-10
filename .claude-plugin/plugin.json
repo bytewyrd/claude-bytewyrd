@@ -5,21 +5,5 @@
   "author": {
     "name": "Bytewyrd",
     "email": "divoxx@gmail.com"
-  },
-  "hooks": "./.claude-plugin/hooks/hooks.json",
-  "skills": [
-    "./skills/best-practices-extract",
-    "./skills/best-practices-record",
-    "./skills/sync",
-    "./skills/git-branch-cleanup",
-    "./skills/rfc-approve",
-    "./skills/rfc-braindump",
-    "./skills/rfc-consensus-review",
-    "./skills/rfc-drop",
-    "./skills/rfc-implement",
-
-    "./skills/rfc-new",
-    "./skills/rfc-read-feedback",
-    "./skills/rfc-update"
-  ]
+  }
 }
