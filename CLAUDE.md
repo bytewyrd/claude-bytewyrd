@@ -115,6 +115,7 @@ Use `"./run *"` (with wildcard), not `"./run"`. Keep in `settings.local.json` (g
 - Prefer specialized agents over direct implementation in the main context.
 - Each parallel agent needs its own worktree. Sub-agents share the parent worktree.
 - Never start long-running processes — ask the user to run in a separate terminal.
+- **Always write to the current working directory** — if invoked from a worktree, write there. Never use `git rev-parse --git-common-dir` to find the "main" repo root and redirect writes to it. A worktree is the intended branch context; files written there are committed on the branch and reviewed via PR.
 
 ### Session end
 

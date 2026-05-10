@@ -1,18 +1,4 @@
 {
-  "extraKnownMarketplaces": {
-    "bytewyrd": {
-      "source": {
-        "source": "github",
-        "repo": "bytewyrd/claude-bytewyrd"
-      }
-    }
-  },
-  "enabledPlugins": {
-    "bytewyrd@bytewyrd": true,
-    "github@claude-plugins-official": true,
-    "context7@claude-plugins-official": true,
-    "code-review@claude-plugins-official": true
-  },
   "hooks": {
     "SessionStart": [
       {
@@ -40,8 +26,8 @@
         "hooks": [
           {
             "type": "command",
-            "if": "Bash(git commit*)",
-            "command": "echo 'Post-commit: does this change component structure → ARCHITECTURE.md; dev workflow or quality gate → CONTRIBUTING.md; user-facing behavior or install method → README.md; product scope, audience, or core model → docs/project-brief.md? Update before pushing if so.'"
+            "command": "echo 'Post-commit: does this change component structure → ARCHITECTURE.md; dev workflow or quality gate → CONTRIBUTING.md; user-facing behavior or install method → README.md; product scope, audience, or core model → docs/project-brief.md? Update before pushing if so.'",
+            "if": "Bash(git commit*)"
           }
         ]
       },
@@ -78,5 +64,19 @@
         ]
       }
     ]
+  },
+  "enabledPlugins": {
+    "github@claude-plugins-official": true,
+    "context7@claude-plugins-official": true,
+    "code-review@claude-plugins-official": true,
+    "bytewyrd@bytewyrd": true
+  },
+  "extraKnownMarketplaces": {
+    "bytewyrd": {
+      "source": {
+        "source": "github",
+        "repo": "bytewyrd/claude-bytewyrd"
+      }
+    }
   }
 }

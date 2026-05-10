@@ -28,6 +28,8 @@ git config user.name
 
 If either fails, stop with a clear error message.
 
+**Write target:** all files created or modified by sync go to the directory returned by `git rev-parse --show-toplevel`. This is always the correct target — whether you're in a standard checkout or a worktree. **Never** run `git rev-parse --git-common-dir` or otherwise detect the "main" repo root and redirect writes there. If sync is invoked from a worktree, the worktree is the intended working context; changes land on a branch and flow through a PR — that is the desired workflow.
+
 If the repo already has substantial committed content (more than a LICENSE/README), note: "This repo already has content — sync will skip any files that already exist and only create the ones that are missing."
 
 **Derive `project_slug`** — the repo/package identity name:

@@ -12,23 +12,15 @@ The plugin provides a curated collection of Claude Code skills (like `/sync`, `/
 
 ## Getting Started
 
-Add the Bytewyrd marketplace to your Claude Code settings (`~/.claude/settings.json` for all projects, or `.claude/settings.json` for a single project):
-
-```json
-{
-  "extraKnownMarketplaces": {
-    "bytewyrd": {
-      "source": { "source": "github", "repo": "bytewyrd/claude-bytewyrd" }
-    }
-  }
-}
-```
-
-Then install and restart Claude Code:
+Install the plugin and restart Claude Code:
 
 ```bash
-claude plugin install bytewyrd
+claude plugin marketplace add bytewyrd/claude-bytewyrd --scope project
 ```
+
+`--scope project` is recommended: it stores the marketplace registration in the project's `.claude/settings.json`, so anyone who checks out the repo will be prompted to install the plugin automatically — no per-machine setup needed.
+
+If you want the plugin available across all your projects, use `--scope user`. Just be aware that the marketplace registration only exists on that machine: teammates or other machines won't be prompted to install, even if the plugin is listed in the project's `.claude/settings.json`.
 
 Once installed, run `/bytewyrd:sync` in any project to bootstrap it with the full Claude Code setup — RFC process, best-practices tracking, CI, agent delegation, and all.
 
