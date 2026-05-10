@@ -1,5 +1,5 @@
 <!-- UPSTREAM: $CLAUDE_PLUGIN_ROOT/rfc-process.md -->
-<!-- LAST_SYNCED: 2026-05-09 -->
+<!-- LAST_SYNCED: 2026-05-10 -->
 <!-- /rfc-update or /sync replaces everything before END_UPSTREAM_CONTENT when upstream changes. -->
 
 # RFC Process

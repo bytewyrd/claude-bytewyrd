@@ -1,6 +1,6 @@
 # Claude Bytewyrd Workflow
 
-Provides a standardized, opinionated Claude Code setup — skills, agents, hooks, and MCP configs — for Bytewyrd projects and teams who want to adopt the same workflow, eliminating the manual work of configuring Claude Code from scratch on each project.
+Opinionated Claude Code plugin for Bytewyrd projects — skills, agents, hooks, and RFC-driven workflow
 
 ## Toolchain
 
