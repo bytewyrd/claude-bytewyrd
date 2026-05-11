@@ -225,16 +225,15 @@ TREE_JSON="$(curl -sf -H 'Accept: application/vnd.github+json' \
 }
 
 # Fetch the head commit SHA for the report header. Failure here is non-fatal —
-# fall back to the tree SHA from the tree response, or "unknown" as a last resort.
+# fall back to "unknown".
 HEAD_SHA="$(curl -sf -H 'Accept: application/vnd.github+json' \
     'https://api.github.com/repos/VoltAgent/awesome-claude-code-subagents/commits/main' \
     2>/dev/null \
     | python3 -c "import json,sys; print(json.load(sys.stdin)['sha'][:7])" 2>/dev/null || \
-    echo "$TREE_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin).get('sha','unknown')[:7])" 2>/dev/null || \
     echo 'unknown')"
 ```
 
-`curl -sf` causes curl to exit non-zero on HTTP 4xx/5xx (the `-f` flag) while still suppressing the progress bar (`-s`). The Trees API call is mandatory; failure aborts. The commits API call is optional (for the report header); failure falls back to the tree SHA, then to `"unknown"`.
+`curl -sf` causes curl to exit non-zero on HTTP 4xx/5xx (the `-f` flag) while still suppressing the progress bar (`-s`). The Trees API call is mandatory; failure aborts. The commits API call is optional (for the report header); failure falls back to `'unknown'`. The tree-SHA fallback was removed because the Trees API response's `sha` field is a tree object SHA, not a commit SHA — displaying it as `commit <sha>` would mislead a maintainer trying to look up that ref on GitHub.
 
 Validate the tree response and extract agent file paths:
 
@@ -522,7 +521,7 @@ fi
 
 ## Step 7 — `--verbose` mode (optional)
 
-The skill checks the invocation arguments for `--verbose`. The arguments are available via the `$ARGUMENTS` token that Claude Code substitutes into the skill body at invocation time:
+The skill checks the invocation arguments for `--verbose`. The arguments are available via the `$ARGUMENTS` token that Claude Code substitutes **textually** into the skill body at invocation time — it is not a shell environment variable; Claude Code performs the substitution before the bash block is executed, replacing `$ARGUMENTS` with the literal string of arguments the user provided (empty string if none). The sibling `.claude/skills/best-practices-sync/SKILL.md` uses the same token for reference.
 
 ```bash
 VERBOSE=0
@@ -608,7 +607,7 @@ After Step 1, run these checks. Each is a single command with an expected output
    - Expected: the skill emits the report described in Step 6 of the skill body. Check the two count identities that must hold:
      - `modified + identical + failed == both` (every file that appears in both upstream and local is classified into exactly one of those three buckets, including failed fetches).
      - `both + new_upstream == upstream_count` and `both + removed_upstream == local_count` (set-cover identities: `both` is the intersection; `new_upstream` and `removed_upstream` are the two exclusive halves).
-   - Confirm the upstream commit SHA in the report header is a 7-character hex string (or the literal `unknown` if the optional commits-API call failed).
+   - Confirm the upstream SHA in the report header is a 7-character hex string (if the commits API call succeeded) or the literal `unknown` (if it failed). No other values are expected.
    - Run `/agents-diff --verbose` and confirm the identical-files section lists filenames one per line.
    - Run the skill from a directory that does not contain `agents/` and confirm it exits with the "plugin checkout only" message.
 
