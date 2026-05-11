@@ -2,15 +2,17 @@
 
 ## Problem
 
-Provides a standardized, opinionated Claude Code setup — skills, agents, and MCP configs — for Bytewyrd projects and teams who want to adopt the same workflow, eliminating the manual work of configuring Claude Code from scratch on each project.
+Configuring Claude Code consistently across projects takes significant manual effort — skills, agent delegation patterns, MCP servers, RFC process, and quality gates all need to be set up from scratch each time. This plugin packages that work into a single installable unit with proven defaults.
+
+## Target audience
+
+Built by Bytewyrd for its own projects. The conventions are opinionated but deliberately generic — any team wanting RFC-driven Claude Code workflow can install and use this without modification. Bytewyrd is the origin, not the gatekeeper.
+
+This should be communicated clearly and directly in all user-facing surfaces: the README, the plugin marketplace description, and any documentation. Do not bury it in a Non-Goals section or hedge it with "while the conventions are opinionated toward the Bytewyrd stack."
 
 ## Goals
 
-Every Bytewyrd project (and any project adopting this workflow) has a consistent, fully-configured Claude Code environment with proven skills, agent delegation patterns, quality gates, and RFC process out of the box.
-
-## Non-Goals
-
-Not a general-purpose Claude Code starter kit for arbitrary workflows — while the conventions are opinionated toward the Bytewyrd stack, the plugin is designed to be adoptable by other teams wanting to follow the same workflow.
+Every project that installs the plugin gets a consistent, fully-configured Claude Code environment with proven skills, agent delegation patterns, quality gates, and RFC process out of the box — in a single `/sync` command.
 
 ## Constraints
 

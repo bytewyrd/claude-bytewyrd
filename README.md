@@ -1,13 +1,18 @@
 <div align="center">
-  <img src="docs/icon.svg" alt="" width="96" height="96"/>
-  <h1>claude-bytewyrd</h1>
-  <p>Opinionated Claude Code workflow for Bytewyrd projects and teams</p>
+  <h1>
+    <img src="docs/icon.svg" alt="" width="56" height="56" align="absmiddle"/>
+    &nbsp;claude-bytewyrd
+  </h1>
+  <p>Opinionated Claude Code workflow — RFC-driven development, specialist agents, and best-practices capture, ready to install in any project</p>
+  <br/>
   <code>claude plugin marketplace add bytewyrd/claude-bytewyrd --scope project</code>
+  &nbsp;&nbsp;then&nbsp;&nbsp;
+  <code>/bytewyrd:sync</code>
 </div>
 
 ---
 
-A Claude Code plugin that wires up the full Bytewyrd development workflow — slash-command skills, 50+ specialist agents, an RFC-driven design process, and cross-session best-practices tracking — into any project with a single command.
+A Claude Code plugin that wires up a complete, opinionated development workflow — slash-command skills, 50+ specialist agents, an RFC-driven design process, and cross-session best-practices tracking — into any project with a single command. Built by Bytewyrd for its own projects; the conventions are generic enough that any team can adopt them.
 
 Install once. Run `/sync`. Everything else follows.
 
@@ -137,12 +142,6 @@ RFC docs, best-practices file, agent delegation table, and CI are set up in one 
 - [Contributing](docs/CONTRIBUTING.md) — development workflow and conventions
 - [RFC Process](docs/rfc-process.md) — the design-first workflow (installed by `/sync`)
 - [Best Practices](docs/BEST_PRACTICES.md) — accumulated session learnings
-
----
-
-<div align="center">
-  <code>claude plugin marketplace add bytewyrd/claude-bytewyrd --scope project</code>
-</div>
 
 <!--
 README audience: users — people who want to use or run this project.
