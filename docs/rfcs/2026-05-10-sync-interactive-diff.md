@@ -210,7 +210,7 @@ Rejected because the user has no opportunity to say "I know the plugin updated C
   "upstream_key": "bytewyrd/CLAUDE.md@v1",
   "source": ".claude-plugin/scripts/templates/CLAUDE.md.tpl",
   "target": "CLAUDE.md",
-  "sha256": "a1b2c3d4e5f6...",
+  "template_sha": "a1b2c3d4e5f6...",
   "extension_strategy": "section",
   "owned_sections": [
     "## Toolchain",
@@ -228,6 +228,8 @@ Rejected because the user has no opportunity to say "I know the plugin updated C
   "template_inputs": ["project_name", "description", "project_slug", "component_roots", "installed_plugins"]
 }
 ```
+
+(Templated artifacts use `template_sha`; non-templated artifacts use `sha256` — never both in the same entry.)
 
 Field semantics:
 
@@ -273,7 +275,7 @@ Because the marker stores the rendered-canonical SHA at last write, the comparis
 This handles three cases cleanly:
 - **Common: plugin tweaked the template; consumer inputs unchanged** → re-render produces new canonical bytes, `plugin_current_canonical_sha != local_ancestor_sha`, classified as fast-forward.
 - **Common: consumer renamed the project** → re-render produces new canonical bytes (different project_name), classified as fast-forward.
-- **Rare: plugin added a new template input variable, consumer's project doesn't set it** → re-render produces the same canonical bytes (the new variable expands to its default/empty value, leaving rendered output unchanged for this consumer), classified as unchanged. No false positive.
+- **Rare: plugin added a new template input variable, consumer's project doesn't set it** → re-render produces the same canonical bytes (the new variable expands to the empty string (per the renderer's unrecognized-placeholder rule), leaving rendered output unchanged for this consumer), classified as unchanged. No false positive.
 
 ### Marker format
 
@@ -327,9 +329,7 @@ The sidecar is itself a plugin-managed artifact in the manifest (`upstream_key: 
 
 Because the sidecar holds runtime sync state (one entry per JSON-format plugin artifact, with the consumer's last-written SHA), the manifest declares its `extension_strategy` as `"whole"` for ownership purposes but the actual content is *generated* during sync, not rendered from a template. The diff engine treats the sidecar file specially: its `local_ancestor_sha`/`local_current_canonical_sha` comparison is not run (the file is always rewritten on every sync when any JSON-format artifact's marker changes); the sidecar is never classified as `conflict` or `fast_forward`. It is updated as a side effect of the apply phase (Step 5) whenever a JSON-format artifact's marker is updated.
 
-In either case (embedded or sidecar), `<sha-12>` is the first 12 hex characters of:
-- The canonical SHA-256 of the artifact (for non-templated files).
-- The `template_sha` from the manifest (for templated files).
+In either case (embedded or sidecar), `<sha-12>` is the first 12 hex characters of `plugin_current_canonical_sha` as computed during the write phase — the SHA-256 of the canonical-rendered content as it was written for this specific consumer. For non-templated artifacts this equals the manifest `sha256`; for templated artifacts it is independently computed from the rendered output and does **not** equal `template_sha`.
 
 The marker format per file type is fixed and parsed deterministically by the diff engine. When the engine extracts `local_ancestor_sha`, it looks first in the embedded marker (Markdown/TOML/gitignore/YAML) and second in `.claude/.bootstrap-versions.json` (JSON files). A file with no embedded marker and no sidecar entry is classified as "legacy" (see Classification matrix).
 
@@ -355,7 +355,7 @@ For `extension_strategy = "section"` / `"structured"`, the classification is per
 
 - **`whole` strategy:** canonical form is the file content with the marker line(s) removed (the first comment line of the appropriate kind for that file type — e.g., the `<!-- bootstrap-content-version: ... -->` line and any subsequent blank line). For sidecar-marker JSON files, the marker is not in the file at all, so canonical form is the full file content.
 - **`region` strategy:** canonical form is the file content from line 1 up to and including the `region_end_marker` line, with the marker line(s) removed (same removal rule as `whole`). The project-extension region after the marker is excluded from the hash entirely.
-- **`section` strategy:** canonical form is built by extracting each heading in `owned_sections` in *manifest order* and concatenating, for each: the literal heading line + `\n` + the section body (every line between the heading and the next H2 or end of file, trimmed of leading and trailing blank lines) + `\n`. Sections present in the local file but not in `owned_sections` are excluded from the hash. The marker line is not part of any owned section, so it is not part of the hash by construction.
+- **`section` strategy:** canonical form is built by extracting each heading in `owned_sections` in *manifest order* and concatenating, for each: the literal heading line + `\n` + the section body (every line between the heading and the next H2 or end of file, trimmed of leading and trailing blank lines) + `\n`. Sections present in the local file but not in `owned_sections` are excluded from the hash. If a section listed in `owned_sections` is absent from the file being canonicalized, it contributes the literal heading line + `\n` with an empty body (no body lines). This rule applies identically to local and plugin canonicalization — an owned section missing from the local file produces a different hash from the plugin's rendered content (which always includes all owned sections), correctly classifying the file as `fast_forward`. The marker line is not part of any owned section, so it is not part of the hash by construction.
 - **`structured` strategy (JSON / TOML):** canonical form is built by extracting each path in `owned_paths` in manifest order. For each path: serialize the value at the path using `jq --sort-keys --indent 2` (for JSON) or the equivalent canonical TOML serialization (for TOML), then append a `\n`. For id-based array paths (`[]:<id_key>`), serialize only the entries with a non-empty id key, sorted by id ascending; user-added entries (no id) are excluded from the hash. For set-union array paths (`[]:union`), serialize the set of plugin-contributed entries (identified by comparing to the manifest's current rendered array contents); user-added local-only entries are excluded.
 - **`structured` strategy (`.gitignore`):** canonical form is built by extracting each tagged block in `owned_paths` order. For each tag: the literal `# <tag>\n` line + the lines in the block + `\n`. Free-form (untagged) blocks are excluded.
 
@@ -379,7 +379,7 @@ For conflicts: the only way `region` strategy can conflict is if the user edited
 
 **`section` strategy** (used for `CLAUDE.md`, `docs/BEST_PRACTICES.md`).
 
-Parse the file as a sequence of Markdown sections. A section starts at a heading line matching `^##\s+(.+)$` (or `^#\s+(.+)$` for the H1) and extends to the next heading line of the same or higher level (or end of file).
+Parse the file as a sequence of Markdown sections. A section starts at a heading line matching `^##\s+(.+)$` (or `^#\s+(.+)$` for the H1) and extends to the next H2 (or H1) heading line, or end of file. H3 and deeper headings inside an H2 section are part of that H2's body and do not begin a new section.
 
 For fast-forward updates:
 1. Parse local file into a section map: `section_heading → (heading_line, body, position_in_file)`.
@@ -395,7 +395,7 @@ For JSON / TOML files:
 1. Parse local file into the in-memory data structure.
 2. For each path in `owned_paths` (manifest order): replace the value at that path with the plugin's current rendered value. If the path does not exist in the local file, create it (parent objects are created as empty `{}` if missing).
 3. Preserve every other path in the local data, including paths the user added (e.g., custom `permissions.allow` entries, custom `[tools]` entries).
-4. Reserialize. For JSON: pretty-print with two-space indent, preserving the order of keys as parsed (with new keys appended after existing ones), with the `_meta.bootstrap-content-version` marker updated. For TOML: serialize with `@iarna/toml` (or equivalent), preserving table order.
+4. Reserialize. For JSON: pretty-print with two-space indent, preserving the order of keys as parsed (with new keys appended after existing ones). The JSON file itself carries no marker — the marker for this artifact is updated in the sidecar at Step 5.5. For TOML: serialize using the small hand-written generator (see Step 5 template rendering rule — `mise.toml` and `rust-toolchain.toml` both have simple, fixed shapes that round-trip cleanly through a line-oriented generator).
 
 **Special rule for JSON array paths** (`hooks.PostToolUse[]:_meta.bytewyrd_hook_id`, `permissions.allow[]:union`): array merging uses the syntax declared in the manifest's `owned_paths` entry. Two array-merge modes are supported:
 
@@ -432,6 +432,10 @@ sidecar = read_sidecar(".claude/.bootstrap-versions.json")  # {} if file absent
 results = []
 
 for artifact in manifest.artifacts:
+    # The sidecar is managed separately — skip in pre-flight classification.
+    if artifact.upstream_key.endswith("/.bootstrap-versions.json"):
+        continue
+
     target = artifact.target          # path inside consumer repo
     upstream_key = artifact.upstream_key
 
@@ -505,13 +509,9 @@ for artifact in manifest.artifacts:
         results.append({artifact: artifact, classification: "local_only"})
     elif local_current_canonical_sha == plugin_current_canonical_sha:
         # Both local and plugin drifted from ancestor but converged to same content.
-        # Treat as unchanged (the marker is stale but the bytes are correct).
-        results.append({
-            artifact: artifact,
-            classification: "unchanged",
-            stale_marker: True,                     # write a fresh marker on next /sync
-            new_sha: plugin_current_canonical_sha,
-        })
+        # Treat as unchanged — the stale marker is harmless since both sides canonicalize
+        # to the same SHA; future runs will hit this same branch until one side diverges.
+        results.append({artifact: artifact, classification: "unchanged"})
     else:
         # All three are different — true conflict.
         results.append({
@@ -535,7 +535,7 @@ Every variable holding a sha is the first 12 hex chars of the SHA-256 of canonic
 
 (This step replaces the existing "Step 4 — Print creation summary".)
 
-Run the pre-flight diff procedure above. Print a categorized summary to the conversation, grouped in this order: `Additions`, `Fast-forward updates`, `Conflicts`, `Local-only edits (collapsed)`, `Unchanged (collapsed)`. Example output for a re-run scenario:
+Run the pre-flight diff procedure above. Print a categorized summary to the conversation, grouped in this order: `Additions`, `Fast-forward updates`, `Legacy marker injection`, `Conflicts`, `Local-only edits (collapsed)`, `Unchanged (collapsed)`. Example output for a re-run scenario:
 
 ```
 /sync — change summary:
@@ -551,6 +551,10 @@ Fast-forward updates (5 files, no local edits):
   ~ docs/rfc-process.md    (plugin: scope-check section added; ## Project Extensions preserved)
   ~ .claude/settings.json  (plugin: new PostToolUse hook added)
   ~ README.md              (plugin: "Documentation" section reformatted)
+
+Legacy marker injection (2 files, content matches — adding version marker only):
+  + CLAUDE.md               (first sync after upgrade — no content change)
+  + docs/BEST_PRACTICES.md  (first sync after upgrade — no content change)
 
 Conflicts (1 file, local edits collide with plugin update):
   ! .claude/settings.json/hooks.PreToolUse[bytewyrd-prepush]
@@ -574,6 +578,8 @@ Ask one AskUserQuestion. The question set depends on which categories have items
 - If `fast_forwards` is non-empty: include Question 2 — "Apply 5 fast-forward updates? (no local edits will be lost)" with the same three options.
 
 The two questions are sent in a single AskUserQuestion call (the existing `/sync` Step 2c already sends 6 questions in one call, so two is well-supported). If neither category has items, skip Step 4a entirely.
+
+Files in the `Legacy marker injection` category are shown for visibility only; they do not require confirmation and are rewritten silently as part of Step 5.
 
 `Review each` mode for a category: for each file in the category, ask one AskUserQuestion with the single question "Apply update to `<path>`?" and options `Apply` / `Skip`. The file's content diff (first 40 lines of unified diff between local and plugin-rendered content) is printed to the conversation immediately before the question.
 
@@ -610,15 +616,20 @@ For each artifact in the diff result, apply the action determined by Step 4a / 4
 2. **fast_forward** (approved in Step 4a) — Render the template (for templated artifacts) or read the plugin source (for non-templated). Merge per the artifact's `extension_strategy` against the local file (preserving user-owned regions/sections/paths). Update the marker (per the file's marker format — embedded comment on line 2 for Markdown/TOML/gitignore/YAML, sidecar entry for JSON) to `<upstream_key>:<plugin_current_canonical_sha>` from the pre-flight diff result. Write the file.
 3. **conflict** (resolution chosen in Step 4b) — Apply the resolution as described above.
 4. **conflict_legacy** (resolution chosen in Step 4b) — Apply the resolution as described above; the `Adopt plugin and add marker` option specifically inserts a marker on a previously-unmarked file.
-5. **unchanged**, **unchanged_legacy**, **local_only** — No action.
+5. **unchanged_legacy** — Silently re-write the file with the marker inserted (no content change); report as `unchanged (legacy marker added)`. This is the one-time migration write listed in the Step 4 "Legacy marker injection" summary.
+6. **unchanged**, **local_only** — No action.
 
 The existing Step 5 template content (the inline CLAUDE.md template, the BEST_PRACTICES.md template, the per-language tool entries, the language-specific BEST_PRACTICES.md sections, etc.) is **extracted into the new `.claude-plugin/scripts/templates/` directory** as part of this RFC's implementation. The templates retain the same `<project_name>`, `<description>`, `<TODAY>`, and other placeholders they use today.
 
-**Template rendering rule** (used by the skill body in both the diff phase and the apply phase): read the template source file as a string; for each `<placeholder>` token in the template, substitute the corresponding value from `project_inputs`. The substitution is a literal string-replace; nested placeholders are not supported. For sections that depend on detected languages (e.g., the Toolchain block in `CLAUDE.md`, the per-language BEST_PRACTICES blocks), the template uses named conditional regions (e.g., `<!--lang:rust-start-->...<!--lang:rust-end-->`) that the renderer includes when the corresponding language is detected. Conditional regions and their delimiter comments are stripped from the rendered output; the canonicalize function operates on the rendered output, not the template.
+**Template rendering rule** (used by the skill body in both the diff phase and the apply phase): read the template source file as a string; for each `<placeholder>` token in the template, substitute the corresponding value from `project_inputs`. The substitution is a literal string-replace; nested placeholders are not supported. Unrecognized `<placeholder>` tokens (present in the template but absent from `project_inputs`) are replaced with an empty string. Callers must not rely on a missing placeholder to preserve literal angle-bracket text; any literal `<...>` text in template output must use an HTML-escaped form or a non-placeholder-looking pattern. For sections that depend on detected languages (e.g., the Toolchain block in `CLAUDE.md`, the per-language BEST_PRACTICES blocks), the template uses named conditional regions (e.g., `<!--lang:rust-start-->...<!--lang:rust-end-->`) that the renderer includes when the corresponding language is detected. Conditional regions and their delimiter comments are stripped from the rendered output; the canonicalize function operates on the rendered output, not the template.
 
 This extraction is what makes hashing the canonical templated content possible (the template source becomes a single file the manifest can reference). The renderer is a small function inside `skills/sync/SKILL.md` (~30 lines) implementing the literal-substitution and conditional-region semantics described above. The skill is not language-agnostic about *how* templates are written — it owns the template format end-to-end.
 
 The existing inline template prose in `skills/sync/SKILL.md` Step 5 (templates for CLAUDE.md, BEST_PRACTICES.md base, BEST_PRACTICES.md per-language additions, README.md, CONTRIBUTING.md, ARCHITECTURE.md, settings.json, settings.local.json, mise.toml, the GitHub templates, and the CI workflow jobs) is deleted from the skill body and replaced with references to the corresponding template file. The skill body shrinks by roughly 600 lines as a result; the manifest plus the templates carry the content instead.
+
+### Step 5.5 — Rewrite sidecar if any JSON artifact's marker advanced
+
+After all artifacts have been processed in Step 5, check whether any JSON-format artifact's marker was updated (i.e., the apply phase wrote a new marker to the sidecar for any JSON artifact). If yes, rewrite `.claude/.bootstrap-versions.json` in full with all current marker entries — including any entries that were not changed in this run. This is the only write that touches the sidecar; do not update it piecemeal during the apply loop. If no JSON artifact's marker changed, the sidecar is not rewritten (its mtime is preserved, which verifies the no-op property in Verification step 4).
 
 ### Step 6 — GitHub artifacts (unchanged surface, manifest-aware internals)
 
@@ -703,8 +714,7 @@ hash_file() {
 # (upstream_key, source, target, extension_strategy, owned_sections, owned_paths,
 #  templated, template_inputs) from the existing manifest.
 
-jq --arg root "$PLUGIN_ROOT" '.' "$MANIFEST" \
-  | jq -c '.artifacts[]' \
+jq -c '.artifacts[]' "$MANIFEST" \
   | while read -r artifact; do
       source_rel=$(echo "$artifact" | jq -r '.source')
       source_abs="$PLUGIN_ROOT/$source_rel"
@@ -766,7 +776,7 @@ If any command is missing, stop with an error message naming the missing tool an
 
 On the first `/sync` run after a project upgrades to a plugin version that ships this RFC, all plugin-managed files exist locally without markers. Step 4's diff classifies them as `unchanged_legacy` (content matches plugin current) or `conflict_legacy` (content differs).
 
-For `unchanged_legacy`: the file content is bit-equal to the plugin's current content. No prompt needed; Step 5 simply re-writes the file with the marker added, reporting `unchanged (legacy marker added)`. This is a one-time silent rewrite to put the marker in place.
+For `unchanged_legacy`: the file content is bit-equal to the plugin's current content. No prompt needed; these files are listed in the Step 4 summary under "Legacy marker injection" for visibility, then Step 5 silently re-writes each file with the marker added, reporting `unchanged (legacy marker added)`. This is a one-time rewrite to put the marker in place.
 
 For `conflict_legacy`: the user is prompted with the four standard options plus the fast-path `Adopt plugin and add marker (recommended if you haven't customized this file)`. The fast-path adopts the plugin's content (which may include legitimate plugin updates the user wants) and stamps the marker; users who have intentionally customized a file pick one of the other options and proceed with proper conflict resolution from there.
 
@@ -806,7 +816,7 @@ After implementation, run these checks to confirm correctness:
 
 3. **New project — first `/sync` run writes markers:**
 
-   In an empty repo, run `/sync`. Open `CLAUDE.md`; line 2 should be `<!-- bootstrap-content-version: bytewyrd/CLAUDE.md@v1:<12-hex-chars> -->`. Same for every plugin-managed file (with the JSON `_meta` or TOML / gitignore comment variant on non-Markdown files).
+   In an empty repo, run `/sync`. Open `CLAUDE.md`; line 2 should be `<!-- bootstrap-content-version: bytewyrd/CLAUDE.md@v1:<12-hex-chars> -->`. Same for every plugin-managed Markdown file. For TOML and `.gitignore` files, the marker appears as a `#` comment on line 1. For JSON files, the marker is NOT in the file itself — check `.claude/.bootstrap-versions.json` to see the per-file markers for JSON artifacts.
 
 4. **Re-run on up-to-date project is a no-op:**
 
@@ -844,7 +854,7 @@ If any verification step fails, the failure points to one of: (a) marker format 
 
 - **Risk: a plugin update changes the `owned_sections` list (e.g., renames `## Agent delegation` to `## Agents`).** Existing consumer files have the old section heading; the new manifest looks for the new heading and does not find it. The diff engine classifies the file as "old heading section present but not owned" plus "new heading section absent" → likely treats the file as a conflict on every consumer. **Mitigation:** the manifest entry can include an `aliases` field (`owned_sections_aliases: { "## Agents": ["## Agent delegation"] }`); during diff, the engine treats any aliased heading as equivalent to the canonical one for the purpose of section identification, and on write replaces the old heading with the new canonical name. Captured as a follow-up in the Implementation spec — alias support is added in a second commit once the base path is working.
 
-- **Open question: should `section` strategy support sub-headings (H3, H4)?** The current spec treats H2 as the section boundary; an `## H2` containing an `### H3` is one section, body is the H3 + H3 body. This works for the current `CLAUDE.md` and `BEST_PRACTICES.md` structures, but a future file that wants finer-grained ownership might need H3 boundaries. **Resolution within this RFC:** keep H2-only for now. If a future artifact needs H3 ownership, add an `owned_sections_level` field (default `2`) to the manifest entry. Not implementing it preemptively avoids cost for a hypothetical case.
+- **Open question: should `section` strategy support sub-headings (H3, H4)?** The current spec treats H2 as the section boundary; an `## H2` containing an `### H3` is one section, body is the H3 + H3 body (the current rule uses H2-only boundaries as specified above; see `owned_sections_level` open question for future extension). This works for the current `CLAUDE.md` and `BEST_PRACTICES.md` structures, but a future file that wants finer-grained ownership might need H3 boundaries. **Resolution within this RFC:** keep H2-only for now. If a future artifact needs H3 ownership, add an `owned_sections_level` field (default `2`) to the manifest entry. Not implementing it preemptively avoids cost for a hypothetical case.
 
 - **Open question: what happens if the consumer's project name changes after the initial `/sync`?** Templated artifacts re-render at sync time with the new project_name; their `rendered SHA` changes; but the `template_sha` is the same (the template did not change). The diff engine compares the local file's content to the re-rendered template output; differences in templated values would be detected as content differences. **Resolution within this RFC:** templated values that come from `docs/project-brief.md` (project_name, description) are already kept in sync by the existing brief→docs propagation rule from the prior RFC. The diff engine handles a project rename as a fast-forward on every templated artifact (because the local content has the old name, and the re-rendered template has the new name — local content differs from re-rendered template, but the local content's marker matches the plugin's template_sha, so it's a fast-forward not a conflict). This is the correct behavior: the user changes the brief; `/sync` propagates to all templated artifacts; the user confirms the batch.
 
