@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">
+  <!-- base — solid dark, no dot grid (matches tinywyrd chip spec) -->
+  <rect width="96" height="96" rx="12" fill="#0B0B0C"/>
+  <!-- border -->
+  <rect x=".5" y=".5" width="95" height="95" rx="11.5" fill="none" stroke="#1F2024" stroke-width="1"/>
+  <!-- top inset highlight -->
+  <rect x="1" y="1" width="94" height="1" fill="#FFFFFF0A"/>
+
+  <!-- Starburst: 13 narrow capsule rays, irregular angles, varying lengths -->
+  <!-- Inspired by the Claude mark — thin rounded rects with visible dark    -->
+  <!-- gaps between tips, bases converging into a merged center blob.        -->
+  <!-- Ray: width=7, centered at x=48 (x=44.5), tip at y≈8, base at y=48   -->
+  <rect x="44.5" y="9"  width="7" height="39" rx="3.5" fill="#5577FF" transform="rotate(0   48 48)"/>
+  <rect x="44.5" y="9"  width="7" height="39" rx="3.5" fill="#5577FF" transform="rotate(22  48 48)"/>
+  <rect x="44.5" y="12" width="7" height="36" rx="3.5" fill="#5577FF" transform="rotate(48  48 48)"/>
+  <rect x="44.5" y="9"  width="7" height="39" rx="3.5" fill="#5577FF" transform="rotate(72  48 48)"/>
+  <rect x="44.5" y="9"  width="7" height="39" rx="3.5" fill="#5577FF" transform="rotate(98  48 48)"/>
+  <rect x="44.5" y="11" width="7" height="37" rx="3.5" fill="#5577FF" transform="rotate(126 48 48)"/>
+  <rect x="44.5" y="9"  width="7" height="39" rx="3.5" fill="#5577FF" transform="rotate(152 48 48)"/>
+  <rect x="44.5" y="9"  width="7" height="39" rx="3.5" fill="#5577FF" transform="rotate(177 48 48)"/>
+  <rect x="44.5" y="12" width="7" height="36" rx="3.5" fill="#5577FF" transform="rotate(205 48 48)"/>
+  <rect x="44.5" y="9"  width="7" height="39" rx="3.5" fill="#5577FF" transform="rotate(229 48 48)"/>
+  <rect x="44.5" y="9"  width="7" height="39" rx="3.5" fill="#5577FF" transform="rotate(256 48 48)"/>
+  <rect x="44.5" y="11" width="7" height="37" rx="3.5" fill="#5577FF" transform="rotate(283 48 48)"/>
+  <rect x="44.5" y="9"  width="7" height="39" rx="3.5" fill="#5577FF" transform="rotate(313 48 48)"/>
+</svg>

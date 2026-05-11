@@ -71,6 +71,10 @@ Use `/best-practices-extract` at the end of a session to add new entries.
 - **[2026-05-10]** _Documentation_: Write docs for the *next* developer (often you in six months), not for the current one. Explain *why* a decision was made, not just what was decided — the diff already shows the what.
 - **[2026-05-10]** _Documentation_: Examples are the highest-density docs. A working example beats a paragraph of prose — copy-paste-ability is what real users need. Keep examples in `examples/` and run them in CI so they cannot rot silently.
 - **[2026-05-10]** _Documentation_: Code comments explain *why* and *what for*, not *what*. The code already shows what it does; a comment that paraphrases the code adds noise. A comment that captures the constraint, the trade-off, or the reason for an apparent contradiction is gold.
+- **[2026-05-10]** _Documentation_: Open source project icon pattern: a standalone square SVG icon + markdown `<h1>` is the dominant convention for developer CLI tools; the icon reuses as GitHub org avatar, npm icon, and favicon — a wordmark SVG is too wide for those contexts and name changes require SVG edits rather than a one-line markdown update.
+- **[2026-05-10]** _Documentation_: `<img align="absmiddle">` inside an `<h1>` vertically aligns an icon with heading text in GitHub-rendered markdown without table layout markup.
+- **[2026-05-10]** _Documentation_: Plugin/integration icon trademark: when an icon would naturally evoke a platform's trademarked mark, create a geometrically inspired original rather than reproducing the trademark — common practice in plugin ecosystems, avoids IP risk.
+- **[2026-05-10]** _Documentation_: Surface org-vs-product distinction prominently in the hero and a dedicated section — not buried in Non-Goals. "Anyone can use this" buried in Non-Goals is effectively invisible to readers who skim.
 
 ## Security
 
@@ -91,4 +95,4 @@ Use `/best-practices-extract` at the end of a session to add new entries.
 
 Entries below describe rules and gotchas specific to this codebase. They are not promoted to the global pool by `/best-practices-sync` and they are not transferable to other projects. Do not move entries into or out of this section without re-triaging — see [`skills/best-practices-extract/TRIAGE-AND-LIFT.md`](../skills/best-practices-extract/TRIAGE-AND-LIFT.md).
 
-(none yet — entries are added by `/best-practices-extract` when a learning fails the portability triage)
+- **[2026-05-10]** _Project-Specific_: claude-bytewyrd: the plugin namespace in Claude Code sessions is `bytewyrd:` (hence `/bytewyrd:sync`) but the install address is `bytewyrd/claude-bytewyrd` — these are distinct identifiers for distinct contexts and must not be conflated in docs or code.

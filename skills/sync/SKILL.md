@@ -3,7 +3,7 @@ name: sync
 description: Set up or refresh a project repository with all standard conventions — idempotent, safe to re-run whenever the plugin updates. Triggered by "/sync".
 ---
 
-<!-- bootstrap-content-version: 2026-05-10-f7d5384 -->
+<!-- bootstrap-content-version: 2026-05-10-a81e517 -->
 
 # Sync
 
@@ -506,7 +506,7 @@ A mixed project like Rust + Svelte frontend + Terraform infra gets the Rust, JS/
 ```markdown
 # Best Practices
 
-<!-- bootstrap-content-version: 2026-05-10-f7d5384 -->
+<!-- bootstrap-content-version: 2026-05-10-a81e517 -->
 
 Accumulated non-obvious learnings from development sessions.
 
@@ -587,6 +587,10 @@ Use `/best-practices-extract` at the end of a session to add new entries.
 - **[<TODAY>]** _Documentation_: Examples are the highest-density docs. A working example beats a paragraph of prose — copy-paste-ability is what real users need. Keep examples in `examples/` and run them in CI so they cannot rot silently.
 - **[<TODAY>]** _Documentation_: Code comments explain *why* and *what for*, not *what*. The code already shows what it does; a comment that paraphrases the code adds noise. A comment that captures the constraint, the trade-off, or the reason for an apparent contradiction is gold.
 - **[<TODAY>]** _Documentation_: Architecture decision records (ADRs / RFCs) are how you preserve the *why* across years. When you reverse a past decision, link the new RFC to the old one — the historical context is part of the explanation.
+- **[<TODAY>]** _Documentation_: Open source project icon pattern: a standalone square SVG icon + markdown `<h1>` is the dominant convention for developer CLI tools; the icon reuses as GitHub org avatar, npm icon, and favicon — a wordmark SVG is too wide for those contexts and name changes require SVG edits rather than a one-line markdown update.
+- **[<TODAY>]** _Documentation_: `<img align="absmiddle">` inside an `<h1>` vertically aligns an icon with heading text in GitHub-rendered markdown without table layout markup.
+- **[<TODAY>]** _Documentation_: Plugin/integration icon trademark: when an icon would naturally evoke a platform's trademarked mark, create a geometrically inspired original rather than reproducing the trademark — common practice in plugin ecosystems, avoids IP risk.
+- **[<TODAY>]** _Documentation_: Surface org-vs-product distinction prominently in the hero and a dedicated section — not buried in Non-Goals. "Anyone can use this" buried in Non-Goals is effectively invisible to readers who skim.
 
 ## Security
 
