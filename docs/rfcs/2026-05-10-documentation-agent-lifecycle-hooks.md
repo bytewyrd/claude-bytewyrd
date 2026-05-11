@@ -9,7 +9,7 @@ drop_reason: ~
 
 ## Summary
 
-Add a specialized `docs-agent` to the bytewyrd plugin that owns the user-facing documentation surface in `docs/guide/` — tutorials, how-to guides, API reference pages, and a dedicated contributor section — and wire it into the workflow via two Claude Code hooks so docs stay current automatically. The first hook fires `SubagentStop` matching `feature-engineer` (the agent spawned by `/rfc-implement`), prompting the main agent to consider invoking `/docs-review` after a feature lands; the second hook fires inside `/sync` (the plugin's existing setup/refresh skill) and compares the local `docs-agent` definition hash to the plugin's current version, kicking off a documentation review against the codebase when the agent definition has improved. The agent is bounded by a strict ownership map: it owns `docs/guide/**` and the contributor section, and it must **never** touch `docs/ARCHITECTURE.md`, `docs/CONTRIBUTING.md`, `docs/BEST_PRACTICES.md`, `docs/project-brief.md`, or `docs/rfcs/**`, which already have separate owners. The skill front door is `/docs-review [scope-hint]`, modeled on the same pattern `/refactor` and `/rfc-new` use: a thin skill that spawns the specialist subagent with the protocol as its prompt.
+Add a specialized `docs-agent` to the bytewyrd plugin that owns the user-facing documentation surface in `docs/guide/` — tutorials, how-to guides, API reference pages, and a dedicated contributor section — and wire it into the workflow via two Claude Code hooks so docs stay current automatically. The first hook fires `SubagentStop` matching `feature-engineer` (the agent spawned by `/rfc-implement`), prompting the main agent to consider invoking `/docs-review` after a feature lands; the second hook fires inside `/sync` (the plugin's existing setup/refresh skill) and compares the local `docs-agent-version` marker to the plugin's current version, kicking off a documentation review against the codebase when the agent definition has improved. The agent is bounded by a strict ownership map: it owns `docs/guide/**` and the contributor section, and it must **never** touch `docs/ARCHITECTURE.md`, `docs/CONTRIBUTING.md`, `docs/BEST_PRACTICES.md`, `docs/project-brief.md`, or `docs/rfcs/**`, which already have separate owners. The skill front door is `/docs-review [scope-hint]`, modeled on the same pattern `/refactor` and `/rfc-new` use: a thin skill that spawns the specialist subagent with the protocol as its prompt.
 
 ## Should we do this?
 
@@ -190,7 +190,7 @@ You **must never** modify, create alongside, or delete:
 - `docs/rfc-process.md` — owned by `/rfc-update` and `/sync`
 - `docs/rfc-braindump.md` — owned by `/rfc-braindump` and `/rfc-new`
 - `README.md` (project root) — owned by changes to user-facing behavior or install method
-- Any file outside `docs/guide/**` (the `contributing.md` and `index.md` files listed above are the only files you ever write outside the four subdirectories)
+- Any file outside `docs/guide/**` — the allow-list above is the complete list of writable paths; within `docs/guide/**`, the only writable locations are the four subdirectories plus `contributing.md` and `index.md` at the `docs/guide/` root. Nothing else in the repository may be touched.
 
 If a documentation task seems to require editing one of the reject-listed files, stop and surface the boundary violation to the parent: "This task requires editing `docs/CONTRIBUTING.md` which has a separate owner. Suggested split: I update `docs/guide/contributing.md` with the new onboarding step; you (or the appropriate owner) updates `docs/CONTRIBUTING.md` with the workflow change." Do not edit the reject-listed file under any circumstance, even if the parent insists — surface the conflict, do not yield.
 
@@ -473,7 +473,7 @@ Create the hooks configuration with this exact content:
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -f .bytewyrd/last-feature-engineer-stop ]; then MTIME=$(stat -c %Y .bytewyrd/last-feature-engineer-stop 2>/dev/null || stat -f %m .bytewyrd/last-feature-engineer-stop 2>/dev/null || echo \"0\"); if echo \"$MTIME\" | grep -qE '^[0-9]+$'; then SENTINEL_AGE=$(( $(date -u +%s) - $MTIME )); else SENTINEL_AGE=999999; fi; if [ \"$SENTINEL_AGE\" -lt 86400 ]; then echo 'Post-compact reminder: a feature-engineer agent finished in the last 24 hours and /docs-review may not yet have run. Consider running /docs-review against the implemented files.'; fi; fi"
+            "command": "if [ -f .bytewyrd/last-feature-engineer-stop ]; then MTIME=$(stat -c %Y .bytewyrd/last-feature-engineer-stop 2>/dev/null || stat -f %m .bytewyrd/last-feature-engineer-stop 2>/dev/null); if echo \"$MTIME\" | grep -qE '^[0-9]+$'; then SENTINEL_AGE=$(( $(date -u +%s) - $MTIME )); else SENTINEL_AGE=999999; fi; if [ \"$SENTINEL_AGE\" -lt 86400 ]; then echo 'Post-compact reminder: a feature-engineer agent finished in the last 24 hours and /docs-review may not yet have run. Consider running /docs-review against the implemented files.'; fi; fi"
           }
         ]
       }
@@ -484,7 +484,7 @@ Create the hooks configuration with this exact content:
 
 The matcher `(^|:)feature-engineer$` is a regex (it contains `(`, `^`, `$`) so Claude Code evaluates it as a regular expression per the matcher rules ("Contains any other character" → JS regex). It matches both the bare agent name `feature-engineer` (when spawned without a plugin namespace prefix) and the plugin-namespaced form `bytewyrd:feature-engineer` (when spawned from the bytewyrd plugin's skills, as `/rfc-implement` does). This handles both invocation paths Claude Code may surface to hook matchers.
 
-The two `SubagentStop` hook handlers fire in order: the first prints the reminder; the second touches a sentinel file (`: > path` is a portable empty-file create-or-truncate idiom that works in any POSIX shell without spawning a child process). The `SessionStart` hook (matcher `compact`) is a new pattern this RFC introduces — Claude Code's `SessionStart` event supports a `compact` matcher that fires only on the compaction-resume path; the project's existing `.claude/settings.json` uses an unmatched `SessionStart` hook (no matcher field) for bootstrap version drift, which is a different invocation path. The hook reads the sentinel's mtime portably via GNU `stat -c %Y` with a BSD `stat -f %m` fallback, validates the result is numeric, and sets `SENTINEL_AGE` to a large value (999999) when the mtime cannot be parsed — fail-silent so an unparseable stat suppresses the reminder rather than firing a false-positive. The sentinel is gitignored (Step 6 adds `.bytewyrd/` to `.gitignore` if not already excluded).
+The two `SubagentStop` hook handlers fire in order: the first prints the reminder; the second touches a sentinel file (`: > path` is a portable empty-file create-or-truncate idiom that works in any POSIX shell without spawning a child process). The `SessionStart` hook (matcher `compact`) is a new pattern this RFC introduces — Claude Code's `SessionStart` event supports a `compact` matcher that fires only on the compaction-resume path; the project's existing `.claude/settings.json` uses an unmatched `SessionStart` hook (no matcher field) for bootstrap version drift, which is a different invocation path. The hook reads the sentinel's mtime portably via GNU `stat -c %Y` with a BSD `stat -f %m` fallback, validates the result is numeric by matching `^[0-9]+$`, and sets `SENTINEL_AGE` to a large value (`999999`) when the mtime is empty or non-numeric — this handles the case where both `stat` invocations fail (unsupported platform, missing file, permission error) and suppresses the reminder rather than firing a false-positive. The sentinel is gitignored (Step 6 adds `.bytewyrd/` to `.gitignore` if not already excluded).
 
 Both hooks are echo-only. They never modify project files, never invoke skills automatically, and never block anything. They are reminders surfaced into the agent's context — the same echo-only pattern the existing `.claude/settings.json` hooks use for `git commit`, `PreCompact`, `SessionStart` (bootstrap version drift, no matcher), and `Stop` (session-end checklist). The `SessionStart` `compact` matcher is the one new mechanism this RFC introduces; it is a documented Claude Code feature, not an existing project convention.
 
@@ -531,7 +531,7 @@ Add a new step **"Step 1.5 — Detect docs-agent version drift"** between the ex
 Read the plugin's `docs-agent-version` marker from `$CLAUDE_PLUGIN_ROOT/agents/docs-agent.md`:
 
 ```bash
-PLUGIN_DOCS_VER=$(grep -m1 'docs-agent-version:' "$CLAUDE_PLUGIN_ROOT/agents/docs-agent.md" 2>/dev/null | sed -E 's/.*docs-agent-version: ([^ ]+).*/\1/')
+PLUGIN_DOCS_VER=$(grep -m1 'docs-agent-version:' "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/agents/docs-agent.md" 2>/dev/null | sed -E 's/.*docs-agent-version: ([^ ]+).*/\1/')
 ```
 
 Read the project's recorded marker from `.bytewyrd/docs-agent-version`:
@@ -546,7 +546,7 @@ If `PLUGIN_DOCS_VER` is non-empty and differs from `PROJECT_DOCS_VER` (including
 The plugin's docs-agent has improved (project=<PROJECT_DOCS_VER>, plugin=<PLUGIN_DOCS_VER>). Consider running /docs-review against docs/guide/** to re-audit user-facing documentation with the updated checks.
 ```
 
-Then record the new version so subsequent sync runs do not re-prompt until the marker changes again:
+Then record the new version so subsequent sync runs do not re-prompt until the marker changes again. Only write the marker if `PLUGIN_DOCS_VER` is non-empty (guard with `[ -n "$PLUGIN_DOCS_VER" ]`) to prevent overwriting a valid marker with an empty string when the plugin's agent file is unreachable.
 
 ```bash
 mkdir -p .bytewyrd
@@ -749,7 +749,7 @@ After all changes, run these checks:
     - Run `/docs-review all` against this plugin's own checkout. Confirm the docs-agent subagent spawns on Sonnet, runs phase 1 (resolve scope: codebase = full project tree excluding `docs/`/`.git/`/`.worktrees/`; docs = empty `docs/guide/**`), and phase 2 (coverage audit identifies missing tutorials/how-to/reference/contributing files), then presents the plan and waits at the approval gate.
     - Approve a small subset (e.g., `apply 1, 2` — create the index and one reference page). Confirm each approved finding lands as a separate commit with a `docs(guide):` Conventional Commits message.
     - Confirm `.gitkeep` is deleted after the first real file is created in `docs/guide/`.
-    - Run `/rfc-implement` against any approved Draft RFC. After `feature-engineer` finishes, confirm the `SubagentStop` hook fires and the reminder appears in the agent's context.
+    - Run `/rfc-implement` against any approved Draft RFC. Before doing so, temporarily add a debug command to the `SubagentStop` hook in `.claude-plugin/hooks/hooks.json` as the first hook entry: `{ "type": "command", "command": "echo 'hook fired at ' $(date) >> /tmp/hook-debug.log" }`. After `feature-engineer` finishes, inspect `/tmp/hook-debug.log` to confirm the hook fired. Also confirm `.bytewyrd/last-feature-engineer-stop` was created. If the log is empty, the matcher did not match — re-read Claude Code's hook documentation and adjust the matcher pattern. Remove the debug hook entry before committing.
     - Re-run `/sync`. Confirm Step 1.5 runs silently (the version is unchanged from the just-recorded value); manually bump the marker in `agents/docs-agent.md` to `2026-05-10-initial-2`, run `/sync` again, and confirm the suggestion line appears.
 
     If any of these steps fail, the issue is most likely (in order): (a) the agent's frontmatter `model: sonnet` is missing or mistyped (subagent falls back to whatever Sonnet alias the session uses), (b) the hook file path in `plugin.json` does not match the file's actual location (Claude Code silently ignores missing hook files), (c) the `SubagentStop` matcher regex does not match the namespaced form Claude Code surfaces (verify by adding `echo "matched: $CLAUDE_HOOK_MATCHED" >> /tmp/hook-debug.log` to the hook command and inspecting what Claude Code passed), (d) `.bytewyrd/` is not in `.gitignore` and the sentinel file accidentally got committed.
