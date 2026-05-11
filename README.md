@@ -5,7 +5,7 @@
   </h1>
   <p>Opinionated Claude Code workflow — RFC-driven development, specialist agents, and best-practices capture, ready to install in any project</p>
   <br/>
-  <code>claude plugin marketplace add bytewyrd/claude-bytewyrd --scope project</code>
+  <code>claude plugin install bytewyrd/claude-bytewyrd --scope project</code>
   &nbsp;&nbsp;then&nbsp;&nbsp;
   <code>/bytewyrd:sync</code>
 </div>
@@ -64,10 +64,10 @@ Install once. Run `/sync`. Everything else follows.
 
 ```bash
 # Recommended: scoped to the project so teammates get prompted to install automatically
-claude plugin marketplace add bytewyrd/claude-bytewyrd --scope project
+claude plugin install bytewyrd/claude-bytewyrd --scope project
 
 # Or: install for your user globally across all projects
-claude plugin marketplace add bytewyrd/claude-bytewyrd --scope user
+claude plugin install bytewyrd/claude-bytewyrd --scope user
 ```
 
 Then in any Claude Code session:
@@ -146,7 +146,7 @@ RFC docs, best-practices file, agent delegation table, and CI are set up in one 
 <!--
 README audience: users — people who want to use or run this project.
 Update this file when:
-  - A real install method is available (replace the marketplace command if it changes)
+  - The install command changes (it is currently `claude plugin install`)
   - The product's value proposition or top-level workflow changes
   - Skills are added or removed
   - A new section is added to the Documentation list
