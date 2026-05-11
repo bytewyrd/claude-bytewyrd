@@ -73,12 +73,12 @@ Every claim, diagnosis, and recommendation must be grounded in evidence — not 
 
 ## Model Usage Optimization
 
-When spawning subagents, use the cheapest model that fits the task:
+When spawning subagents, use the model that fits the task — default to `sonnet`, upgrade or downgrade from there:
 - **`model: "haiku"`** — exploration, file search, simple lookups, routine checks, formatting
-- **`model: "sonnet"`** — routine code review (correctness, conventions, security), refactoring, implementation of well-defined tasks
+- **`model: "sonnet"`** — routine code review (correctness, conventions, security), refactoring, implementation of well-defined tasks (default)
 - **`model: "opus"`** — RFC and architectural review, complex multi-step problem solving, ambiguous or novel tasks where the problem space itself is unclear
 
-Default to `haiku` unless the task clearly requires more. Err on the side of cheaper models.
+Default to `sonnet`. Upgrade to `opus` for reasoning-heavy or ambiguous tasks; downgrade to `haiku` for exploration and lookups.
 
 ## Claude Code Sandbox — Container Tool Compatibility
 
