@@ -23,7 +23,7 @@ The plugin currently exposes documentation capability through one piece — the 
 
 - `agents/documentation-writer.md` — a 52-line agent definition originally from VoltAgent's `awesome-claude-code-subagents` library (MIT). It covers "documentation architecture," "audience-specific writing," "documentation standards," and "quality assurance" in generic terms. Its instructions reference `README.md`, `DEVELOPMENT.md`, and a generic `docs/` directory — none of which match this plugin's actual documentation layout (which uses `docs/ARCHITECTURE.md`, `docs/CONTRIBUTING.md`, `docs/BEST_PRACTICES.md`, `docs/project-brief.md`, `docs/rfcs/`, and a currently-empty `docs/guide/`). The agent has no `model:` field, so it inherits whatever the parent session is using; it has no scoped file list, so a freeform invocation can mutate any file under `docs/` — including the four files that already have separate owners.
 - `docs/` directory layout in consumer projects (and dogfooded here): `ARCHITECTURE.md` (system design, owned by changes to component structure), `CONTRIBUTING.md` (dev workflow, owned by changes to setup or quality gates), `BEST_PRACTICES.md` (session learnings, owned by `/best-practices-extract` and `/best-practices-sync`), `project-brief.md` (product identity, owned by `/sync` Step 2), `rfcs/` (proposals, owned by `/rfc-*` skills), `rfc-process.md` (canonical process doc, owned by `/rfc-update` and `/sync`), `rfc-braindump.md` (ideas list, owned by `/rfc-braindump` and `/rfc-new`), and `guide/` (currently empty — the gap this RFC fills).
-- `skills/` — twelve skills exist today (`best-practices-extract`, `best-practices-record`, `git-branch-cleanup`, `rfc-approve`, `rfc-braindump`, `rfc-consensus-review`, `rfc-drop`, `rfc-implement`, `rfc-new`, `rfc-read-feedback`, `rfc-update`, `sync`). None target documentation. The pattern they all follow: the skill body instructs the main agent to spawn a specialist subagent via the Agent tool with a structured prompt. Recent in-flight work (`2026-05-10-refactor-command`) adds `/refactor` following the same pattern — that RFC is approved and serves as the closest precedent for the skill shape this RFC needs.
+- `skills/` — thirteen skills exist today (`best-practices-extract`, `best-practices-record`, `git-branch-cleanup`, `rfc-approve`, `rfc-braindump`, `rfc-consensus-review`, `rfc-drop`, `rfc-implement`, `rfc-new`, `rfc-read-feedback`, `rfc-update`, `refactor`, `sync`). None target documentation. The pattern they all follow: the skill body instructs the main agent to spawn a specialist subagent via the Agent tool with a structured prompt. RFC `2026-05-10-refactor-command` (Done) added `/refactor` following the same pattern and serves as the closest precedent for the skill shape this RFC needs.
 - `.claude-plugin/plugin.json` — currently a minimal metadata file (name, description, version, author). No `skills` array exists today; skills are auto-discovered from `skills/`. No `hooks` field is referenced. The plugin's hook system is currently provisioned only at the project level via `.claude/settings.json` (see below) — there is no `.claude-plugin/hooks/hooks.json` file in the plugin yet.
 - `.claude/settings.json` — the plugin's own checkout uses hooks at the project level. The current hook events configured are: `SessionStart` (reminds about `/sync` when `bootstrap-content-version` differs), `PreCompact` (reminds about `/best-practices-extract`), `PostToolUse` matching `Bash(git commit*)` and two MCP file-write tools (reminds about ARCHITECTURE/CONTRIBUTING/README/project-brief updates), and `Stop` (reminds about session-end checklist plus `/best-practices-sync` when in the plugin checkout). These are echo-only reminder hooks — they print suggestions to the agent but never block or auto-execute anything. They are the template this RFC's hooks follow.
 - `CLAUDE.md` "Agent delegation" table currently routes "Documentation" tasks to `documentation-writer`. There is no row for proactive documentation review or for a scoped, hook-triggered docs workflow. The Model Usage Optimization section says `sonnet` is appropriate for "routine code review (correctness, conventions, security), refactoring, implementation of well-defined tasks" — which is the right tier for documentation reviews against a defined ownership scope.
@@ -102,6 +102,8 @@ Rejected as overcomplicated. The sentinel-file dance reinvents what `SubagentSto
 
 **Recommendation: Option A.** `SubagentStop` matching `feature-engineer` is the documented, named mechanism for "after this specific agent finishes" and the hook body is a one-line echo, identical in shape to the existing project hooks.
 
+**Note:** The `SubagentStop` matcher format has not been empirically verified for this project. The regex `(^|:)feature-engineer$` is designed to match both bare and plugin-namespaced agent identifiers. The verification step 10's debug probe (`echo "matched: $CLAUDE_HOOK_MATCHED"`) should be run before relying on the hook in production; if the matcher does not work as expected, fall back to the literal string `feature-engineer` and test again.
+
 ### Decision 4 — How does `/sync` detect an improved docs-agent definition and trigger a doc review?
 
 The braindump asked for "/sync detect when the agent definition itself has improved and kick off a review of existing docs against the current codebase." `/sync` already uses a `bootstrap-content-version` marker (a `YYYY-MM-DD-<git-sha-prefix>` string embedded as an HTML comment in `docs/BEST_PRACTICES.md` and `skills/sync/SKILL.md`) to detect drift between project and plugin versions. The same mechanism extends naturally to the docs-agent.
@@ -142,11 +144,12 @@ Triggers on every plugin version bump, including bumps that only touch unrelated
 | Action | Path | Responsibility |
 |--------|------|----------------|
 | Create | `agents/docs-agent.md` | New specialized agent — owns `docs/guide/**` plus the contributor section; explicit reject-list for the four already-owned files; embeds `docs-agent-version` marker for `/sync` drift detection. Replaces no existing agent (the upstream-vendored `documentation-writer.md` stays where it is for the general-purpose case). |
-| Create | `skills/docs-review/SKILL.md` | New skill — instructs the main agent to spawn `bytewyrd:docs-agent` via the Agent tool with `model: "sonnet"`, passing the six-phase documentation-review protocol (scope → coverage audit → drift detection → plan → approval gate → apply → report) as the agent prompt; accepts a free-form scope hint via `$ARGUMENTS`. |
+| Create | `skills/docs-review/SKILL.md` | New skill — instructs the main agent to spawn `bytewyrd:docs-agent` via the Agent tool with `model: "sonnet"`, passing the seven-phase documentation-review protocol (scope → coverage audit → drift detection → plan → approval gate → apply → report) as the agent prompt; accepts a free-form scope hint via `$ARGUMENTS`. |
 | Create | `.claude-plugin/hooks/hooks.json` | New plugin-level hook configuration. Registers two echo-only reminder hooks: `SubagentStop` matching `feature-engineer` (suggests `/docs-review` after a feature lands), and `SessionStart` with the `compact` matcher (re-suggests `/docs-review` after compaction loses doc-review context, only fires if a recent `/rfc-implement` was visible in the pre-compact transcript — implemented as a one-line shell check on a sentinel file written by the `SubagentStop` hook). |
 | Modify | `.claude-plugin/plugin.json` | Add `"hooks": "./.claude-plugin/hooks/hooks.json"` to the plugin manifest so Claude Code picks up the new hook entries when the plugin is enabled. |
 | Modify | `skills/sync/SKILL.md` | Add Step 1.5 ("Detect docs-agent version drift") that reads the plugin's `docs-agent-version` marker from `$CLAUDE_PLUGIN_ROOT/agents/docs-agent.md` and the project's `.bytewyrd/docs-agent-version` file, prints a one-line suggestion if they differ, then writes the new version to the project file. Update the `bootstrap-content-version` marker at the top of the file to reflect the change. |
 | Modify | `CLAUDE.md` (plugin root) | (1) Replace the existing "Documentation" row in the Agent delegation table to point to `docs-agent (via /docs-review)` for scoped user-facing docs work, and add a clarifying note that `documentation-writer` remains the general-purpose docs agent for ad-hoc work. (2) Add a "Considering /docs-review" subsection in the Workflow section explaining the manual-invocation heuristic and acknowledging the hook reminders. |
+| Modify | `.gitignore` | Add `.bytewyrd/` to exclusion list so sentinel file and version marker are not committed |
 | Create | `docs/guide/.gitkeep` | Placeholder so the empty directory is present after this RFC merges; the first `/docs-review` invocation populates the actual content. (Deleted automatically by the agent on first run as it writes real files into the directory.) |
 
 No other agent files modified. No changes to the existing `documentation-writer.md` (it stays as the general-purpose docs agent). No new skills other than `docs-review`. No deletions.
@@ -204,7 +207,7 @@ The contributor section (`docs/guide/contributing.md`) sits alongside the four q
 
 ## What you check during a review
 
-When invoked with a scope, you run the six-phase protocol from the `/docs-review` skill body (which is your prompt for the specific invocation). The protocol covers:
+When invoked with a scope, you run the seven-phase protocol from the `/docs-review` skill body (which is your prompt for the specific invocation). The protocol covers:
 
 1. Scope resolution — map the scope hint to a concrete file list (a recently-implemented RFC's file structure, a path glob, a free-text description of an area).
 2. Coverage audit — for the scope, what tutorials / how-to / reference pages *should* exist? Compare against what *does* exist.
@@ -248,13 +251,13 @@ Create the file with this exact content:
 ````markdown
 ---
 name: docs-review
-description: Run a scoped documentation review against the codebase. The skill instructs the main agent to spawn the docs-agent subagent on Sonnet, with a six-phase protocol that audits docs/guide/** for drift (broken examples, stale references, workflow drift) and coverage gaps against the current code. Respects strict ownership — never touches ARCHITECTURE.md, CONTRIBUTING.md, BEST_PRACTICES.md, project-brief.md, or rfcs/. Use after a feature lands, when /sync reports the docs-agent has improved, or any time the user-facing docs may be out of step with the code. Triggered by "/docs-review [scope-hint]".
+description: Run a scoped documentation review against the codebase. The skill instructs the main agent to spawn the docs-agent subagent on Sonnet, with a seven-phase protocol that audits docs/guide/** for drift (broken examples, stale references, workflow drift) and coverage gaps against the current code. Respects strict ownership — never touches ARCHITECTURE.md, CONTRIBUTING.md, BEST_PRACTICES.md, project-brief.md, or rfcs/. Use after a feature lands, when /sync reports the docs-agent has improved, or any time the user-facing docs may be out of step with the code. Triggered by "/docs-review [scope-hint]".
 argument-hint: "[scope-hint]"
 ---
 
 # /docs-review — Scoped Documentation Review
 
-This skill runs in the main conversation. Its job is to spawn a `bytewyrd:docs-agent` subagent with the six-phase documentation-review protocol below as the prompt, then relay the subagent's questions, plan, and final report back to the user.
+This skill runs in the main conversation. Its job is to spawn a `bytewyrd:docs-agent` subagent with the seven-phase documentation-review protocol below as the prompt, then relay the subagent's questions, plan, and final report back to the user.
 
 ## Step 1 — Capture scope
 
@@ -294,6 +297,14 @@ If the user requests changes to the plan ("merge findings 2 and 3", "skip findin
 ## Step 4 — Deliver the final report
 
 When the subagent finishes (Phase 7), present the structured report to the user verbatim. The report includes the scope, files audited, findings by severity, applied edits with commit SHAs, deferred findings, and recommended follow-ups. The user decides what to do with the recommended follow-ups.
+
+After presenting the report (whether the review ran successfully or the user cancelled), delete the sentinel file if it exists:
+
+```bash
+rm -f .bytewyrd/last-feature-engineer-stop
+```
+
+This prevents the `SessionStart compact` hook from re-echoing the reminder after the review has been completed or explicitly skipped. If the user wants to dismiss the reminder manually (without running `/docs-review`), they can run `rm -f .bytewyrd/last-feature-engineer-stop` directly.
 
 ---
 
@@ -389,11 +400,10 @@ For each approved finding, in the order the parent listed them:
 2. If the finding is a coverage gap (a file that should exist but does not), create the file with content appropriate to its Diátaxis quadrant (tutorial / how-to / reference / contributing).
 3. Verify the edit by re-running the relevant check from phase 3 against the updated file. The check should now pass.
 4. Commit the finding. Use a Conventional Commits message: `docs(guide): <one-line description from the plan>` — one commit per approved finding (or per approved group when findings were bundled as `1a, 1b, 1c`).
-5. Move to the next approved finding.
+5. If `docs/guide/.gitkeep` exists and this is the first real file being committed to `docs/guide/`, include its deletion in the same commit as the first file (not a separate commit).
+6. Move to the next approved finding.
 
 If a finding turns out to be larger or riskier than the plan estimated (e.g., fixing one stale reference requires restructuring the surrounding section to maintain coherence), stop and re-present the revised finding to the parent before continuing.
-
-If the docs scope was empty (first invocation against `docs/guide/`), the apply phase creates the initial set of files identified as coverage gaps in phase 2. Delete `docs/guide/.gitkeep` once the first real file is created in `docs/guide/`.
 
 ### Phase 7 — Report
 
@@ -463,7 +473,7 @@ Create the hooks configuration with this exact content:
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -f .bytewyrd/last-feature-engineer-stop ]; then SENTINEL_AGE=$(( $(date -u +%s) - $(stat -c %Y .bytewyrd/last-feature-engineer-stop 2>/dev/null || stat -f %m .bytewyrd/last-feature-engineer-stop 2>/dev/null || date -u +%s) )); if [ \"$SENTINEL_AGE\" -lt 86400 ]; then echo 'Post-compact reminder: a feature-engineer agent finished in the last 24 hours and /docs-review may not yet have run. Consider running /docs-review against the implemented files.'; fi; fi"
+            "command": "if [ -f .bytewyrd/last-feature-engineer-stop ]; then MTIME=$(stat -c %Y .bytewyrd/last-feature-engineer-stop 2>/dev/null || stat -f %m .bytewyrd/last-feature-engineer-stop 2>/dev/null || echo \"0\"); if echo \"$MTIME\" | grep -qE '^[0-9]+$'; then SENTINEL_AGE=$(( $(date -u +%s) - $MTIME )); else SENTINEL_AGE=999999; fi; if [ \"$SENTINEL_AGE\" -lt 86400 ]; then echo 'Post-compact reminder: a feature-engineer agent finished in the last 24 hours and /docs-review may not yet have run. Consider running /docs-review against the implemented files.'; fi; fi"
           }
         ]
       }
@@ -474,9 +484,9 @@ Create the hooks configuration with this exact content:
 
 The matcher `(^|:)feature-engineer$` is a regex (it contains `(`, `^`, `$`) so Claude Code evaluates it as a regular expression per the matcher rules ("Contains any other character" → JS regex). It matches both the bare agent name `feature-engineer` (when spawned without a plugin namespace prefix) and the plugin-namespaced form `bytewyrd:feature-engineer` (when spawned from the bytewyrd plugin's skills, as `/rfc-implement` does). This handles both invocation paths Claude Code may surface to hook matchers.
 
-The two `SubagentStop` hook handlers fire in order: the first prints the reminder; the second touches a sentinel file (`: > path` is a portable empty-file create-or-truncate idiom that works in any POSIX shell without spawning a child process). The `SessionStart` hook (matcher `compact`) fires only on the compaction-resume path and uses the sentinel's mtime — read portably via GNU `stat -c %Y` with a BSD `stat -f %m` fallback, and a final fallback to "now" (which makes `SENTINEL_AGE = 0` and triggers the reminder, the conservative default for an unparseable stat) — to re-surface the reminder if it was likely lost in the compacted context. The sentinel is gitignored (Step 6 adds `.bytewyrd/` to `.gitignore` if not already excluded).
+The two `SubagentStop` hook handlers fire in order: the first prints the reminder; the second touches a sentinel file (`: > path` is a portable empty-file create-or-truncate idiom that works in any POSIX shell without spawning a child process). The `SessionStart` hook (matcher `compact`) is a new pattern this RFC introduces — Claude Code's `SessionStart` event supports a `compact` matcher that fires only on the compaction-resume path; the project's existing `.claude/settings.json` uses an unmatched `SessionStart` hook (no matcher field) for bootstrap version drift, which is a different invocation path. The hook reads the sentinel's mtime portably via GNU `stat -c %Y` with a BSD `stat -f %m` fallback, validates the result is numeric, and sets `SENTINEL_AGE` to a large value (999999) when the mtime cannot be parsed — fail-silent so an unparseable stat suppresses the reminder rather than firing a false-positive. The sentinel is gitignored (Step 6 adds `.bytewyrd/` to `.gitignore` if not already excluded).
 
-Both hooks are echo-only. They never modify project files, never invoke skills automatically, and never block anything. They are reminders surfaced into the agent's context — exactly the pattern the existing `.claude/settings.json` hooks use for `git commit`, `PreCompact`, `SessionStart` (bootstrap version drift), and `Stop` (session-end checklist).
+Both hooks are echo-only. They never modify project files, never invoke skills automatically, and never block anything. They are reminders surfaced into the agent's context — the same echo-only pattern the existing `.claude/settings.json` hooks use for `git commit`, `PreCompact`, `SessionStart` (bootstrap version drift, no matcher), and `Stop` (session-end checklist). The `SessionStart` `compact` matcher is the one new mechanism this RFC introduces; it is a documented Claude Code feature, not an existing project convention.
 
 #### Step 4 — Modify `.claude-plugin/plugin.json`
 
@@ -565,6 +575,7 @@ The current table is:
 |------|-------|
 | New features | feature-engineer |
 | Code reviews | code-reviewer |
+| Refactoring (deliberate) | refactoring-specialist (via `/refactor`) |
 | Architecture / RFCs | rfc-architect |
 | Documentation | documentation-writer |
 | Debugging | debugger |
@@ -577,6 +588,7 @@ Replace the "Documentation" row with two rows — one for scoped guide work (the
 |------|-------|
 | New features | feature-engineer |
 | Code reviews | code-reviewer |
+| Refactoring (deliberate) | refactoring-specialist (via `/refactor`) |
 | Architecture / RFCs | rfc-architect |
 | User-facing docs (`docs/guide/**`) | docs-agent (via `/docs-review`) |
 | General-purpose docs (ad-hoc) | documentation-writer |
@@ -620,7 +632,7 @@ Create an empty file at `docs/guide/.gitkeep` so the directory is present in the
 touch docs/guide/.gitkeep
 ```
 
-The first `/docs-review` invocation against this project deletes `.gitkeep` once it writes the first real file into `docs/guide/`. The agent's apply phase explicitly handles this cleanup (Phase 6 step 4).
+The first `/docs-review` invocation against this project deletes `.gitkeep` once it writes the first real file into `docs/guide/`. The agent's apply phase explicitly handles this cleanup (Phase 6 sub-step 5).
 
 #### Step 8 — Verification
 
@@ -754,19 +766,18 @@ After all changes, run these checks:
 
 - **Open question: how does `/docs-review` interact with `/refactor`?** A `/refactor` invocation may rename symbols that appear in `docs/guide/**` examples — the docs are now drifted, and `/refactor`'s report should ideally mention this. The current `/refactor` skill (from RFC `2026-05-10-refactor-command`) does not invoke `/docs-review`. **Resolution within this RFC:** out of scope. A follow-up could either (a) add a recommended-follow-up to `/refactor`'s report that suggests `/docs-review` when the refactor changed any symbol that grep finds referenced in `docs/guide/`, or (b) add a `SubagentStop` hook matcher for `refactoring-specialist` (the agent `/refactor` spawns), mirroring this RFC's `feature-engineer` matcher. Both are small additions but belong in their own RFC because they touch `/refactor`'s reporting surface or add a third hook handler.
 
-- **Risk: `.bytewyrd/last-feature-engineer-stop` sentinel cannot distinguish first-time setup from a long-idle project.** If a user installs the plugin into an existing project, runs nothing, then runs `/sync` for the first time, the `SessionStart compact` hook checks for a sentinel that does not exist and silently does nothing — which is the correct behavior. But the more subtle case: a project that was actively using `/rfc-implement` and then was idle for 25 hours; the sentinel exists but is older than the 24-hour threshold, so the reminder is silently dropped on the next compact-resume. **Mitigation:** the 24-hour threshold is tunable in the hook command (the `86400` literal); a follow-up could raise it to 7 days if real-world use shows 24 hours is too tight. Out of scope here.
+- **Risk: `.bytewyrd/last-feature-engineer-stop` sentinel lifecycle.** If a user installs the plugin into an existing project, runs nothing, then runs `/sync` for the first time, the `SessionStart compact` hook checks for a sentinel that does not exist and silently does nothing — which is the correct behavior. The sentinel is deleted by the `/docs-review` skill's Step 4 when the review completes or is cancelled, so repeated compact-resume sessions after a completed review do not re-echo. For the case where a project was actively using `/rfc-implement` and then was idle for 25+ hours, the sentinel ages out beyond the 24-hour threshold and the reminder is silently dropped — this is acceptable because the docs drift risk diminishes with time. **Mitigation:** the 24-hour threshold is tunable in the hook command (the `86400` literal); a follow-up could raise it to 7 days if real-world use shows 24 hours is too tight. Manual dismiss: `rm -f .bytewyrd/last-feature-engineer-stop`.
 
 - **Open question: should there be a docs-agent-version field in `plugin.json` so the version is centrally managed rather than embedded in the agent file?** Centralized versioning would make bulk updates easier (one place to change), but it decouples the version from the file it describes (changes to the agent file no longer prompt the maintainer to bump the version). **Resolution within this RFC:** keep the marker embedded in the agent file. It matches the established `bootstrap-content-version` pattern and keeps the version visually adjacent to the content it tracks.
 
-- **Risk: `stat` flag portability between GNU (Linux) and BSD (macOS).** The `SessionStart compact` hook reads the sentinel's mtime via `stat -c %Y` (GNU) with a fallback to `stat -f %m` (BSD); both forms are tried in order via `||` chaining, with a final fallback to "now" that produces a false-positive reminder (`SENTINEL_AGE = 0` matches the `< 86400` condition) rather than a silent failure. This is the safest degradation — the reminder is a one-line echo, so an extra firing is cheaper than a missed firing. The mtime approach also avoids the `date -u -d` GNU-only parser, which was the issue in an earlier iteration of this hook.
+- **Risk: `stat` flag portability between GNU (Linux) and BSD (macOS).** The `SessionStart compact` hook reads the sentinel's mtime via `stat -c %Y` (GNU) with a fallback to `stat -f %m` (BSD); both forms are tried in order via `||` chaining. The result is captured into `MTIME` and validated as numeric before arithmetic. If both `stat` invocations fail on an existing file (permission denied, broken filesystem) or return a non-numeric value, `SENTINEL_AGE` is set to a large value (999999) and the reminder is suppressed rather than falsely firing. This fail-silent posture is safer than the earlier fallback-to-now behavior, which would have produced false-positive reminders. The mtime approach also avoids the `date -u -d` GNU-only parser, which was the issue in an earlier iteration of this hook.
 
 ## Relationship to other RFCs
 
 This RFC builds on infrastructure established by prior RFCs and is sibling to in-flight ones:
 
-- **`2026-05-10-refactor-command`** (status: Approved) — established the "skill that spawns a model-pinned subagent with a structured protocol" pattern, including the plan-then-approval-then-apply gate. `/docs-review` is a direct application of that pattern to documentation work; the seven-phase protocol mirrors `/refactor`'s six-phase protocol with one extra phase (coverage audit) that has no `/refactor` analog because refactoring is bounded to existing code while documentation may require creating new files. Future work that adds new "skill spawns specialist subagent with approval gate" entry points should follow the shape both RFCs share.
+- **`2026-05-10-refactor-command`** (status: Done) — established the "skill that spawns a model-pinned subagent with a structured protocol" pattern, including the plan-then-approval-then-apply gate. `/docs-review` is a direct application of that pattern to documentation work; the seven-phase protocol mirrors `/refactor`'s six-phase protocol with one extra phase (coverage audit) that has no `/refactor` analog because refactoring is bounded to existing code while documentation may require creating new files. Future work that adds new "skill spawns specialist subagent with approval gate" entry points should follow the shape both RFCs share.
 - **`2026-05-10-project-brief-sync-source-of-truth`** (status: Done) — established `docs/project-brief.md` as the single source of truth for project identity, with `/sync` Step 2 as the gatekeeper. This RFC's Step 5 extends `/sync` with a new Step 1.5 (docs-agent version drift) that runs before Step 2; the two steps do not conflict (Step 1.5 is silent unless the marker differs; Step 2 only fires for identity gaps). The `bootstrap-content-version` pattern reused by Step 5 was implicitly established by the same RFC's evolution of the sync skill.
 - **`2026-05-10-best-practice-extraction-principles`** (status: Done, per the file list) — established the ownership of `docs/BEST_PRACTICES.md` via `/best-practices-extract` and `/best-practices-sync`. This RFC's reject-list reinforces that ownership: `docs-agent` never touches `BEST_PRACTICES.md`. The two skills are orthogonal and do not interact.
 - **`/rfc-implement` skill** — invokes `feature-engineer`. This RFC's `SubagentStop` hook on `feature-engineer` adds a downstream reminder; the existing skill is not modified. If a future RFC changes `/rfc-implement` to spawn a different agent name, this RFC's hook matcher would need to be updated correspondingly — a one-line change in `hooks.json`.
 - **Future RFC: `docs-review` follow-ups (not yet drafted).** The Risks section identifies several follow-ups that belong in their own RFCs: agent-scoped hook enforcement of the reject-list; `/refactor` → `/docs-review` cross-skill recommendation; code-example execution verification (compiling examples against the codebase rather than just grepping symbols). None block this RFC; all sharpen the docs review surface incrementally.
-</content>
