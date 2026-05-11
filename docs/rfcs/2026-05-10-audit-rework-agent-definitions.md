@@ -15,7 +15,7 @@ Run the `claude-agent-author` agent (introduced by RFC `2026-05-10-claude-agent-
 
 **Yes.** The current `agents/` directory is a vendored snapshot of `VoltAgent/awesome-claude-code-subagents` — a high-quality starting point, but written generically for any Claude Code project, not specifically for this plugin's environment. Three concrete pieces of evidence make the case for a systematic rework now:
 
-1. **Aspirational tool fields are pervasive.** 43 of 46 agents (93%) declare `tools:` fields listing external CLIs (`ast-grep`, `semgrep`, `eslint`, `prettier`, `jscodeshift`, `pytest`, `mypy`, `terraform`, `kubectl`, `docker`, `pagerduty`, `wandb`, etc.) that Claude Code does not surface as named tool primitives. Per the Claude Code subagent docs ("Tools the subagent can use. Inherits all tools if omitted"), this silently restricts each subagent to a tool set that does not exist — they cannot Read, Write, Edit, or Bash, which means they cannot do their job. RFC `2026-05-10-refactor-command` already established this for `refactoring-specialist` and removed the field as a one-off fix; doing this 42 more times by hand (without a shared author) is exactly the inconsistency the rework is meant to eliminate.
+1. **Aspirational tool fields are pervasive.** 42 of 46 agents (91%) declare `tools:` fields listing external CLIs (`ast-grep`, `semgrep`, `eslint`, `prettier`, `jscodeshift`, `pytest`, `mypy`, `terraform`, `kubectl`, `docker`, `pagerduty`, `wandb`, etc.) that Claude Code does not surface as named tool primitives. Per the Claude Code subagent docs ("Tools the subagent can use. Inherits all tools if omitted"), this silently restricts each subagent to a tool set that does not exist — they cannot Read, Write, Edit, or Bash, which means they cannot do their job. RFC `2026-05-10-refactor-command` already established this for `refactoring-specialist` and removed the field as a one-off fix; doing this 41 more times by hand (without a shared author) is exactly the inconsistency the rework is meant to eliminate.
 2. **No documented quality bar for "what a good agent looks like in this plugin".** Four agents have already been locally customized (`feature-engineer`, `documentation-writer`, `ux-design-architect`, `rfc-architect` — the four with `color:` fields and Anthropic-style `description` examples). The customization style differs from the VoltAgent style in concrete ways: structured `<example>` blocks in `description`, project-specific guidance in the body, omission of fake tool lists. These are good improvements, but they were applied agent-by-agent with no shared criteria, so it is not obvious to a future contributor what "Bytewyrd-style" looks like or which of the remaining 42 agents need the same treatment.
 3. **`/agents-update` was removed (per RFC `2026-05-10-refactor-command`).** The previous escape hatch — "if the local copy is wrong, pull upstream and start over" — is gone. The plugin now owns these files permanently. That ownership is empty until the files are systematically aligned with the plugin's actual environment and conventions; otherwise the project carries 46 inconsistent files indefinitely.
 
@@ -28,7 +28,7 @@ The `agents/` directory contains 46 markdown files, each defining one Claude Cod
 **Quantitative survey of the current set (as of 2026-05-10):**
 
 - **Total files:** 46
-- **Files with `tools:` field:** 43 (the three exceptions — `feature-engineer`, `documentation-writer`, `ux-design-architect` — were locally customized and dropped the field deliberately, plus `refactoring-specialist` from RFC `2026-05-10-refactor-command`'s cleanup, though that file still carries a tools field at the time of this audit because that RFC is not yet merged)
+- **Files with `tools:` field:** 42 (the four exceptions are `feature-engineer`, `documentation-writer`, `ux-design-architect`, and `refactoring-specialist` — the four locally-customized agents that already had their `tools:` fields removed)
 - **Files with `color:` field:** 4 (`feature-engineer`, `documentation-writer`, `ux-design-architect`, `rfc-architect` — the locally-customized ones)
 - **Files with `model:` field:** 2 (`ui-designer` → `sonnet`, `terragrunt-expert` → `sonnet`)
 - **Files with `effort:` field:** 0
@@ -46,7 +46,7 @@ The `agents/` directory contains 46 markdown files, each defining one Claude Cod
 
 **What is broken or missing:**
 
-1. **The 43 aspirational `tools:` fields each silently break the agent.** Subagents spawned with `tools: pytest, mypy` cannot Read or Edit any file. This is a latent bug that only surfaces when a user actually invokes the agent and watches it fail to do anything useful.
+1. **The 42 aspirational `tools:` fields each silently break the agent.** Subagents spawned with `tools: pytest, mypy` cannot Read or Edit any file. This is a latent bug that only surfaces when a user actually invokes the agent and watches it fail to do anything useful.
 2. **No quality bar.** Without a documented criteria file, "fix the agent" is an open-ended ask. Two contributors can audit the same agent and produce wildly different rewrites because they are anchored to different implicit standards.
 3. **No tracking.** Nobody can answer "which agents have been audited?" without diffing every file against the VoltAgent upstream. An audit footer in each file (with date, author, criteria version) makes that lookup local.
 4. **`claude-agent-author` does not exist yet.** This RFC depends on RFC `2026-05-10-claude-agent-author-agent` shipping first. Without that agent, the rework would be done ad-hoc by whichever agent or human happened to be available, reproducing the inconsistency the audit is meant to fix.
@@ -177,7 +177,6 @@ Rejected: this is what we have today (uncoordinated local customizations on four
 | Modify | `agents/*.md` (46 files, in tier order) | Per-agent audit: each PR modifies one file (or one batched group of files per Decision 3) to bring it into compliance with the current `docs/agent-audit-criteria.md` version. Each modified file gains an `<!-- Audit log -->` footer documenting the audit date, criteria version, auditor (`claude-agent-author`), and a one-paragraph summary of what changed and why |
 | Modify | `docs/agent-audit-criteria.md` tracking table | Update the row for the audited agent after each PR merges: set `Last audited`, `Criteria version`, and `Status: pass` |
 | Modify | `CLAUDE.md` (plugin root) | Add a short subsection to the "Agent delegation" area explaining that new agents must follow `docs/agent-audit-criteria.md`, and that existing agents may be re-audited when the criteria file is updated. One paragraph |
-| Modify | `docs/rfc-braindump.md` | Remove the "Audit and rework all agent definitions" entry (this RFC replaces it). Add a single-line entry "Re-audit Tier 3 agents after Tier 1 and Tier 2 land" if the audit ships incrementally and Tier 3 has not yet completed when this RFC closes |
 
 No new agents (this RFC depends on `claude-agent-author` from a separate RFC). No new skills. No hook changes. No `plugin.json` edits.
 
@@ -228,11 +227,13 @@ Choose the style per agent based on autoload-trigger needs:
 
 Per the plugin's `CLAUDE.md` Model Usage Optimization section, default is `haiku` unless the task requires more. The agent's frontmatter must explicitly pin `model: sonnet` or `model: opus` when those tiers are required:
 
-- **`model: "opus"`** — required for the Tier 1 agents that own design or review responsibility: `rfc-architect`, `code-reviewer`, `feature-engineer` (when implementing an RFC; pinned via the agent file, since `/rfc-implement`'s skill body invokes it on opus regardless), `refactoring-specialist` (already pinned via the skill body in RFC `2026-05-10-refactor-command`; the agent file can omit `model:` or set it to opus for clarity), and the rest of the Tier 1 set (`debugger`, `documentation-writer`, `security-engineer`, `penetration-tester`, `ai-engineer`, `llm-architect`, `mcp-developer`). Tier 1 agents are also pinned to opus because they are referenced from `docs/rfc-process.md`'s review-agent table and participate in `/rfc-consensus-review`, which requires opus-level reasoning per the RFC process.
+- **`model: "opus"`** — required for the Tier 1 agents that own design or review responsibility: `rfc-architect`, `code-reviewer`, `feature-engineer` (when implementing an RFC; pinned via the agent file, since `/rfc-implement`'s skill body invokes it on opus regardless), `refactoring-specialist` — the `/refactor` skill body pins `model: "opus"` at spawn time, which overrides the agent frontmatter. The agent file should also set `model: opus` in the frontmatter so standalone (non-skill) invocations default correctly. Plus the rest of the Tier 1 set (`debugger`, `documentation-writer`, `security-engineer`, `penetration-tester`, `ai-engineer`, `llm-architect`, `mcp-developer`). Tier 1 agents are also pinned to opus because they are referenced from `docs/rfc-process.md`'s review-agent table and participate in `/rfc-consensus-review`, which requires opus-level reasoning per the RFC process.
 - **`model: "sonnet"`** — required for the Tier 2 agents that participate in `/rfc-consensus-review` for their specific domain (per the review-agent table in `docs/rfc-process.md`: `frontend-developer`, `ux-design-architect`, `react-specialist`, `nextjs-developer`, `terraform-engineer`, `cloud-architect`, `kubernetes-specialist`, `database-administrator`, `postgres-pro`, `api-designer`, `graphql-architect`, `performance-engineer`, `sre-engineer`). These agents may be upgraded to opus if a specific domain's reasoning needs justify it; the audit footer documents the choice. Tier 2 agents not invoked by the RFC review system default to sonnet; Tier 3 agents that write production code (`python-pro`, `rust-engineer`, `golang-pro`, `typescript-pro`, `sql-pro`, `terragrunt-expert`) also default to sonnet.
 - **`model: "haiku"`** — recommended for exploration-only or formatting-only agents (no current agent qualifies; this tier is named for completeness in case future agents are added).
 
 When unsure, prefer the cheaper tier and pin it explicitly; under-pinning is a one-line edit to fix. Note that `docs/rfc-process.md` requires `model: opus` for *all* RFC-related agent tasks regardless of the agent's frontmatter — the skill body's spawn instruction takes precedence over the agent's default. The frontmatter `model:` is the default for non-RFC invocations.
+
+Note: when a skill body explicitly sets `model:` in its spawn instruction, that overrides the agent frontmatter. The frontmatter `model:` governs standalone invocations (user invokes the agent directly without going through a skill). Both should agree; if they differ, document why in the audit footer.
 
 ### H4 — No prose claims about coordinating with other subagents
 
@@ -284,7 +285,7 @@ Keep:
 - The agent's core mission statement.
 - The "When invoked" workflow if it adds discipline (numbered steps the agent should take).
 - Domain knowledge that the agent needs to do its job (e.g., for `code-reviewer`, the categories of issues to look for; for `refactoring-specialist`, the smell catalog).
-- Project-specific guidance per H6.5.
+- Project-specific guidance per H7.
 
 If the audited file ends up > 200 lines, the audit footer must state why (e.g., "kept at 247 lines because the domain spans three sub-disciplines that genuinely need separate sections").
 
@@ -347,6 +348,7 @@ The agent file's `name:` field is the natural Conventional Commits scope for cha
 | api-designer | 2 | — | — | pending |
 | backend-developer | 3 | — | — | pending |
 | build-engineer | 3 | — | — | pending |
+| claude-agent-author | 1 | — | — | pending (added after RFC 2026-05-10-claude-agent-author-agent merges) |
 | cli-developer | 3 | — | — | pending |
 | cloud-architect | 2 | — | — | pending |
 | code-reviewer | 1 | — | — | pending |
@@ -428,7 +430,7 @@ For each PR:
 4. Review the agent's proposal. If acceptable, write the modified file and append the footer. If the proposal removes deliberately-customized content (especially for `feature-engineer`, `documentation-writer`, `rfc-architect`, `ux-design-architect`), revise the proposal or push back to the agent with corrective instructions.
 5. Commit with the message format from S3: `chore(agents/<agent-name>): audit pass under criteria v<version>`. The commit body includes the rationale section verbatim.
 6. Open the PR. The PR description is the rationale section. Title format: `chore(agents): audit <agent-name> under criteria v<version>` (or `audit <batch-name> set` for batched PRs).
-7. Update `docs/agent-audit-criteria.md`'s tracking table for the audited agent(s) *in the same PR*. Keeping the tracking-table update atomic with the agent-file edit keeps the table truthful at every commit — a partial state where the file is audited but the table still says `pending` confuses future maintainers about completion status. The tracking-table update is a single-line edit per agent.
+7. After the PR merges, update `docs/agent-audit-criteria.md`'s tracking table for the audited agent(s) in a **separate follow-on commit directly to `main`** (or a small standalone PR). This avoids merge conflicts when multiple audit PRs are open simultaneously — two PRs each modifying `docs/agent-audit-criteria.md` at the same line will conflict. The tracking table lags the merge by one commit; the gap is brief and acceptable.
 
 If the audit reveals a category of issue that the criteria did not anticipate (e.g., the first PR exposes that several agents have plagiarized content from another non-MIT source), pause the audit, write a follow-up PR that updates the criteria file to v2 with the new requirement, and resume the audit under v2. The version skew is documented in the tracking table.
 
@@ -463,7 +465,7 @@ Tier 3 is complete when all 22 agents have shipped audit PRs and their tracking 
 When all three tiers are complete:
 
 1. Update this RFC's `status:` to `Done` (handled by `/rfc-implement` when it finishes, per the standard RFC lifecycle).
-2. Update `docs/rfc-braindump.md` to remove the "Audit and rework all agent definitions" entry (if not already removed in Step 1).
+2. Confirm `docs/rfc-braindump.md` has no stale entries referencing this RFC.
 3. Confirm `docs/agent-audit-criteria.md`'s tracking table shows every agent at `Status: pass` (or `pass with deviations`) under the same criteria version, or document the version skew explicitly.
 4. Update `CLAUDE.md` to add a paragraph in the "Agent delegation" area stating that new agents must follow `docs/agent-audit-criteria.md` and that the criteria file is the source of truth for agent quality.
 
@@ -474,16 +476,21 @@ After every individual PR, the audit's correctness is verified by:
 1. **The criteria file's hard requirements are met by the file:**
 
    ```bash
-   # H1: no aspirational tools
-   grep -E '^tools:.*\b(pytest|mypy|kubectl|terraform|wandb|langchain|ast-grep|semgrep|eslint|prettier|jscodeshift|docker|ansible|helm|pagerduty|jenkins)\b' agents/<agent-name>.md
+   # H1: no aspirational tools (allowlist inversion)
+   tools_line=$(grep -E '^tools:' agents/<agent-name>.md || true)
+   if [ -n "$tools_line" ]; then
+     # Extract tokens after 'tools:', strip list syntax, check each against allowed set
+     echo "$tools_line" | sed 's/^tools:[[:space:]]*//' | tr ',\[\]' '\n' | tr -d ' "' | grep -v '^$' | \
+       grep -Ev '^(Read|Write|Edit|MultiEdit|Bash|Grep|Glob|Task|WebFetch|WebSearch|TodoWrite|NotebookEdit|mcp__.*)$'
+   fi
    ```
 
-   Expected output: empty (no matches).
+   Expected output: empty (no tokens outside the allowed set).
 
 2. **H5: the audit footer is present:**
 
    ```bash
-   grep -F 'Audit log' agents/<agent-name>.md
+   grep -F '<!-- Audit log -->' agents/<agent-name>.md
    ```
 
    Expected output:
@@ -505,7 +512,15 @@ After the entire audit closes (Step 5), the global verification is:
 1. **No file has an aspirational `tools:` field:**
 
    ```bash
-   grep -lE '^tools:.*\b(pytest|mypy|kubectl|terraform|wandb|langchain|ast-grep|semgrep|eslint|prettier|jscodeshift|docker|ansible|helm|pagerduty|jenkins)\b' agents/*.md
+   # H1 global: list any agent with aspirational tools
+   for f in agents/*.md; do
+     tools_line=$(grep -E '^tools:' "$f" || true)
+     if [ -n "$tools_line" ]; then
+       offenders=$(echo "$tools_line" | sed 's/^tools:[[:space:]]*//' | tr ',\[\]' '\n' | tr -d ' "' | grep -v '^$' | \
+         grep -Ev '^(Read|Write|Edit|MultiEdit|Bash|Grep|Glob|Task|WebFetch|WebSearch|TodoWrite|NotebookEdit|mcp__.*)$')
+       [ -n "$offenders" ] && echo "$f: $offenders"
+     fi
+   done
    ```
 
    Expected output: empty.
@@ -513,7 +528,7 @@ After the entire audit closes (Step 5), the global verification is:
 2. **Every agent file has an audit footer:**
 
    ```bash
-   for f in agents/*.md; do grep -L 'Audit log' "$f"; done
+   grep -rL '<!-- Audit log -->' agents/*.md
    ```
 
    Expected output: empty (every file matches).
@@ -546,10 +561,10 @@ If any check fails, the audit is incomplete; the failing agents are identified a
 
 ## Relationship to other RFCs
 
-This RFC depends on **RFC `2026-05-10-claude-agent-author-agent`** (status: planned, captured in `docs/rfc-braindump.md`) shipping first. Without `claude-agent-author`, the audit driver does not exist and the audit would either be done by an ad-hoc agent (reproducing the inconsistency the audit is meant to fix) or by the human directly (defeating the cost-amortization of an audit). This RFC explicitly assumes `claude-agent-author` is available; if that RFC is rejected or significantly delayed, this RFC should be re-evaluated for whether a different driver (a human-only audit, an alternative agent) is workable.
+This RFC depends on **RFC `2026-05-10-claude-agent-author-agent`** (status: Draft — see `docs/rfcs/2026-05-10-claude-agent-author-agent.md`) shipping first. Without `claude-agent-author`, the audit driver does not exist and the audit would either be done by an ad-hoc agent (reproducing the inconsistency the audit is meant to fix) or by the human directly (defeating the cost-amortization of an audit). This RFC explicitly assumes `claude-agent-author` is available; if that RFC is rejected or significantly delayed, this RFC should be re-evaluated for whether a different driver (a human-only audit, an alternative agent) is workable.
 
-This RFC builds on **RFC `2026-05-10-refactor-command`** (status: approved), which established the local-ownership posture for `agents/` (removed `/agents-update`, added MIT attribution to `refactoring-specialist`). The audit completes the implication of that ownership: now that the project owns the files, the project is responsible for their quality. This RFC also picks up `refactoring-specialist`'s already-completed `tools:` cleanup as the prototype for the same edit across the remaining 42 files.
+This RFC builds on **RFC `2026-05-10-refactor-command`** (status: done), which established the local-ownership posture for `agents/` (removed `/agents-update`, added MIT attribution to `refactoring-specialist`). The audit completes the implication of that ownership: now that the project owns the files, the project is responsible for their quality. This RFC also picks up `refactoring-specialist`'s already-completed `tools:` cleanup as the prototype for the same edit across the remaining 42 files.
 
-This RFC informs (but does not block) the future **`/agents-diff`** RFC (captured in `docs/rfc-braindump.md`). When `/agents-diff` ships, it will surface upstream changes against the locally-audited files. The audit footer's criteria-version field tells the maintainer "this file is at v2 locally; upstream has its own version line — decide whether the upstream change is worth re-auditing this file under v3."
+This RFC informs (but does not block) the future **`/agents-diff`** RFC (status: Draft — see `docs/rfcs/2026-05-10-agents-diff-skill.md`). When `/agents-diff` ships, it will surface upstream changes against the locally-audited files. The audit footer's criteria-version field tells the maintainer "this file is at v2 locally; upstream has its own version line — decide whether the upstream change is worth re-auditing this file under v3."
 
 This RFC does not modify any skill or hook. It does not change `plugin.json`. It does not introduce new agents. It is purely a content-quality migration over the existing `agents/` directory, anchored by one new documentation file (`docs/agent-audit-criteria.md`).
