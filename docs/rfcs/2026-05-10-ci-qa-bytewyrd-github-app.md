@@ -150,7 +150,7 @@ This skill runs in the main conversation. Its job is to spawn a `bytewyrd:qa-rev
   BASE_REF=$(jq -r '.pull_request.base.ref' "$GITHUB_EVENT_PATH")
   HEAD_SHA=$(jq -r '.pull_request.head.sha' "$GITHUB_EVENT_PATH")
   ```
-  The base ref is checked out at the workflow's working directory (the workflow runs `actions/checkout@v6` with no `ref:`, which gives the base). When reading the diff, use `gh pr diff $PR_NUMBER` rather than relying on local refs — `gh` resolves the PR's head against the API regardless of what is checked out locally.
+  The workflow runs `actions/checkout@v4` with no `ref:`, so on a `pull_request` event the working directory contains the PR merge commit (`refs/pull/N/merge`) — i.e. the post-merge state of the files. File reads via the `Read` tool therefore return the merged-state content, which is appropriate for reviewing the PR's final impact. When reading the diff, use `gh pr diff $PR_NUMBER` rather than relying on local refs — `gh` resolves the PR's head against the API regardless of what is checked out locally.
 
 - **Local mode** (no `GITHUB_ACTIONS`): the PR comes from `$ARGUMENTS`. If `$ARGUMENTS` is empty, ask the user: "Which PR should I review? (PR number or URL)" and wait. Once a number or URL is provided, resolve to a number with `gh pr view <number-or-url> --json number,url,baseRefName,headRefOid -q .` and capture the same fields above. In local mode the PR is not checked out locally; the agent uses `gh pr diff` exclusively for the diff content, so no checkout is required.
 
@@ -218,6 +218,8 @@ For each finding decided in Phase 1:
     confirmed: true
   ```
   Inline comments should be specific: name what is wrong, why it matters, and what to do about it. Do not post inline comments with vague text like "consider refactoring this" — name the actual problem.
+
+  Note: inline comments can only be posted on lines that appear in the PR diff (added lines or context lines within a diff hunk). If a finding is on a line outside the diff window, include it in the top-level summary instead with a `<file>:<line>` reference.
 
 - **Top-level summary** (PR-wide observation): **do not** invoke `gh pr comment`. The top-level summary is emitted as the agent's final response message; the action's `track_progress: true` sticky comment uses that response as its body, posting it under the Bytewyrd QA Bot identity once the run completes. The final response must be Markdown formatted as:
 
@@ -375,6 +377,8 @@ mcp__github_inline_comment__create_inline_comment with:
   confirmed: true
 ```
 
+The line must be within the PR diff (an added line or context line within a diff hunk). If the line is outside the diff, surface the finding in the top-level summary with a `<file>:<line>` reference instead of posting inline.
+
 The `confirmed: true` flag tells the action to post immediately rather than buffer for the classification step. Use it for every inline comment you intend to post.
 
 ### Top-level summary — your final response message (no `gh pr comment` invocation)
@@ -495,11 +499,13 @@ jobs:
       # when using Bedrock/Vertex OIDC; this template uses the direct Anthropic
       # API. If you switch to Bedrock or Vertex AI, add `id-token: write` here.
     steps:
-      - name: Checkout repository (base ref only; do not check out PR head)
-        uses: actions/checkout@v6
+      - name: Checkout repository (PR merge commit; do not check out PR head separately)
+        uses: actions/checkout@v4
         with:
-          # Default ref (no `ref:`) = base branch. This is the safe pattern for
-          # pull_request events. The action handles fetching the PR diff via gh.
+          # Default ref (no `ref:`) on a pull_request event = PR merge commit
+          # (refs/pull/N/merge). File reads via the `Read` tool return the
+          # merged-state version of files, which is appropriate for reviewing
+          # the PR's final impact. The action handles fetching the PR diff via gh.
           fetch-depth: 1
           persist-credentials: false
 
@@ -531,9 +537,9 @@ jobs:
 Key configuration choices and their rationale:
 
 - **`on: pull_request` (not `pull_request_target`)** — fork PRs run *without* secrets, which means `ANTHROPIC_API_KEY` and `APP_PRIVATE_KEY` are unavailable and the workflow skips for forks. That is the intended safe default. The action's security docs warn that `pull_request_target` requires the "check out base ref at workspace root, head ref in subdirectory via `--add-dir`" pattern; we sidestep the whole class by using `pull_request`.
-- **`actions/checkout@v6` with no `ref:` and `persist-credentials: false`** — base ref only, no credentials persisted to `.git/config`. The action's logic reads the PR diff via `gh` (which uses the installation token from step `app-token`), not from local git refs.
+- **`actions/checkout@v4` with no `ref:` and `persist-credentials: false`** — on a `pull_request` event the default ref is the PR merge commit (`refs/pull/N/merge`), giving the post-merge view of the files; no credentials are persisted to `.git/config`. The action's logic reads the PR diff via `gh` (which uses the installation token from step `app-token`), not from local git refs.
 - **`actions/create-github-app-token@v3`** — uses the App's Client ID + private key to mint a 1-hour installation token scoped to the current repository. Token is short-lived by design.
-- **`permissions:` block** — minimum needed. `contents: read` to read the diff via gh, `pull-requests: write` to post comments, `id-token: write` for OIDC-internal use by the action. No `issues: write`, no `actions: write`, no `workflows: write`.
+- **`permissions:` block** — minimum needed. `contents: read` to read the diff via gh, `pull-requests: write` to post comments. `id-token: write` is intentionally NOT granted — it is only required for Bedrock/Vertex OIDC; this template uses the direct Anthropic API and a GitHub App installation token. No `issues: write`, no `actions: write`, no `workflows: write`.
 - **`concurrency:` block** — cancels stale runs when the PR is pushed to again. Prevents stacking QA runs on rapid pushes.
 - **`timeout-minutes: 15`** — bounds the worst-case run. The action's internal turn limit (`--max-turns 12`) is the soft limit; this is the hard cap.
 - **`if:` condition** — honours `[skip qa]` in the PR title at the workflow level (the agent also checks, as defence in depth).
@@ -678,9 +684,9 @@ This spawns the same `qa-reviewer` agent and posts the same comments, but under 
 
 #### Step 5 — Update `.claude-plugin/plugin.json`
 
-The current file is missing a `skills` array. The other RFC currently in flight (2026-05-10-refactor-command) introduces an explicit `skills` array; this RFC compatibly adds `./skills/qa` to that array. If that RFC has not yet landed, this RFC introduces the array.
+The current file is missing a `skills` array. Since `2026-05-10-refactor-command` has landed but did not add the skills array, this RFC introduces it.
 
-After this step the file must contain a `skills` array listing all 14 skills (the existing 12 + `refactor` from the prior RFC + `qa` from this RFC). The full file after this step:
+After this step the file must contain a `skills` array listing all 14 skills (the existing 13, including `refactor` already shipped, + `qa` from this RFC). The full file after this step:
 
 ```json
 {
@@ -710,7 +716,7 @@ After this step the file must contain a `skills` array listing all 14 skills (th
 }
 ```
 
-Note: skills are listed alphabetically. `qa` sorts between `git-branch-cleanup` and `refactor`. If the `skills` array is already present (because the refactor RFC landed first), insert `"./skills/qa"` between `"./skills/git-branch-cleanup"` and `"./skills/refactor"`. If the `skills` array is absent, create it with all 14 entries above.
+Note: skills are listed alphabetically. `qa` sorts between `git-branch-cleanup` and `refactor`. If the `skills` array is already present, insert `"./skills/qa"` between `"./skills/git-branch-cleanup"` and `"./skills/refactor"`. If the `skills` array is absent, create it with all 14 entries above.
 
 #### Step 6 — Update `CLAUDE.md` (plugin root)
 
@@ -718,19 +724,20 @@ Two changes to `/home/divoxx/code/bytewyrd/claude-bytewyrd-workflow/CLAUDE.md`:
 
 **Change 6a — Agent delegation table.**
 
-The current table is:
+The current table (after `2026-05-10-refactor-command` landed) is:
 
 ```markdown
 | Task | Agent |
 |------|-------|
 | New features | feature-engineer |
 | Code reviews | code-reviewer |
+| Refactoring (deliberate) | refactoring-specialist (via `/refactor`) |
 | Architecture / RFCs | rfc-architect |
 | Documentation | documentation-writer |
 | Debugging | debugger |
 ```
 
-After the refactor RFC and this RFC, the table is:
+After this RFC, the table is:
 
 ```markdown
 | Task | Agent |
@@ -748,7 +755,7 @@ The new row sits below "Code reviews" and above "Refactoring (deliberate)", grou
 
 **Change 6b — Workflow section.**
 
-Insert a new subsection between `### During work` and `### Considering /refactor` (the subsection introduced by the refactor RFC; if that RFC has not landed yet, insert between `### During work` and `### Session end`):
+Insert a new subsection between `### During work` and `### Considering /refactor` (the subsection introduced by the refactor RFC):
 
 ```markdown
 ### CI QA
@@ -880,7 +887,13 @@ After all changes, run these checks:
 
 - **Open question: where does the App's `.pem` get distributed to consumer projects?** Realistic options: (i) Bytewyrd ops shares the `.pem` via a one-time-view secret service (`onetimesecret.com`, `1Password` shared item with single-view, Doppler share link) on request; (ii) the App's installation page links to a self-service download for repo admins after install (requires a small Bytewyrd-hosted service to validate that the requesting user is a repo admin on the install — not free); (iii) every consumer project generates its own GitHub App. **Resolution within this RFC:** option (i) is the v1, with the specific constraint that the channel **must** be a one-time-view secret service that auto-destroys after first access — **not** email, **not** Slack DM, **not** chat, **not** any retention-prone channel. This is documented in `docs/guide/ci-qa.md`. Self-service distribution is a follow-up RFC if install volume warrants it. Option (iii) defeats the purpose of a Bytewyrd-branded identity entirely.
 
-- **Open question: should the workflow update QA findings on subsequent commits (delete superseded comments) or accrete?** Today, every `synchronize` event fires a fresh QA run that posts *new* comments without cleaning up the previous run's comments. On a long-lived PR with many commits, this could pile up. **Resolution within this RFC:** accrete. The action's `use_sticky_comment: true` already handles the top-level comment (each run replaces the previous top-level comment by editing it in place), and the inline comments are scoped to specific file:line positions so a stale comment on a line that no longer exists is auto-collapsed by GitHub's UI. If accumulation becomes a real problem in practice, a follow-up RFC can add cleanup logic. Out of scope here.
+- **Open question: should the workflow update QA findings on subsequent commits (delete superseded comments) or accrete?** Today, every `synchronize` event fires a fresh QA run that posts *new* comments without cleaning up the previous run's comments. On a long-lived PR with many commits, this could pile up. **Resolution within this RFC:** accrete. The action's `track_progress: true` already handles the top-level comment (each run replaces the previous top-level comment by editing it in place), and the inline comments are scoped to specific file:line positions so a stale comment on a line that no longer exists is auto-collapsed by GitHub's UI. If accumulation becomes a real problem in practice, a follow-up RFC can add cleanup logic. Out of scope here.
+
+- **Open question: does `mcp__github_inline_comment__create_inline_comment` accept a `confirmed: true` parameter, and what is the actual required parameter schema (particularly whether `commit_id` is needed)?** Multiple reviewers flagged that the `confirmed: true` parameter on the inline-comment MCP tool is unverified. Verify against the action's source or MCP server definition before implementation. If `confirmed: true` is not valid, remove it from the skill and agent definitions.
+
+- **Open question: verify the current stable major version of `actions/create-github-app-token` at implementation time.** The template currently uses `@v3`; reviewers suggest `@v1` may be the current stable major. Update to the verified current version before merging the implementation PR.
+
+- **Open question: verify that the `claude` CLI version installed by `anthropics/claude-code-action@v1` supports the `--fallback-model` flag.** If the flag does not exist, remove it from `claude_args`. If the action exposes a structured `fallback_model:` input, prefer that instead.
 
 ## Security Considerations
 
@@ -914,7 +927,7 @@ The system has these trust boundaries:
 - The `.pem` is stored in Bytewyrd's secret store (1Password / vault), not in the App's settings UI source code, not in any repo, not in any CI environment Bytewyrd controls.
 - GitHub Apps support multiple active private keys; rotation procedure: generate a new key in the App settings, distribute it to consumer projects via the same channel as initial distribution (Step 9 of the Verification section), give consumer projects a defined rotation window (e.g. one week), then revoke the old key in the App settings.
 - Suspected-leak rotation has the same procedure with the rotation window compressed to "as fast as the install base can rotate," and the old key revoked first if the leak is known-bad.
-- The App requests minimum permissions (Contents: Read, PRs: R/W, Issues: Read), so a compromised key can: read code in any repo that has the App installed, read all PR contents on those repos, write PR comments on those repos. It cannot push to branches, cannot open or close issues, cannot modify workflows, cannot read secrets.
+- The App requests minimum permissions (Contents: Read, PRs: R/W), so a compromised key can: read code in any repo that has the App installed, read all PR contents on those repos, write PR comments on those repos. It cannot read or modify issues (no Issues access), cannot push to branches, cannot modify workflows, cannot read secrets.
 
 #### Risk: leaked App private key (consumer-project side, i.e. the `APP_PRIVATE_KEY` repo secret)
 
@@ -979,8 +992,8 @@ When registering the App at https://github.com/settings/apps/new:
 
 ## Relationship to other RFCs
 
-- **2026-05-10-refactor-command** (status: Approved) — introduces the `/refactor` skill and `refactoring-specialist` agent, and adds an explicit `skills` array to `.claude-plugin/plugin.json`. This RFC builds on the same plugin-manifest pattern (insert `"./skills/qa"` into the skills array). If the refactor RFC has not landed when this one is implemented, this RFC introduces the skills array. The agent-delegation table in `CLAUDE.md` and the workflow subsection both compose with the refactor RFC's additions; the order of these two RFCs landing is irrelevant to the final state.
+- **2026-05-10-refactor-command** (status: Done) — introduced the `/refactor` skill and `refactoring-specialist` agent. This RFC builds on the same agent-delegation-table pattern (insert the `Per-PR QA review` row alongside the `Refactoring (deliberate)` row) and introduces the `skills` array in `.claude-plugin/plugin.json` that the refactor RFC did not add. The agent-delegation table in `CLAUDE.md` and the workflow subsection both compose with the refactor RFC's existing additions.
 - **`/rfc-implement` skill** (existing) — composes with this RFC: a PR opened by `/rfc-implement` automatically receives QA review from this workflow. The RFC implementation agent (`feature-engineer`) and the QA reviewer (`qa-reviewer`) run in different sessions with different goals; their interaction is "feature-engineer opens the PR, CI fires the QA workflow, qa-reviewer posts findings, the human (and/or feature-engineer in a new session) addresses them." No changes to `/rfc-implement` are needed.
 - **Auto-PR braindump** (the earlier ancestor of this RFC) — the braindump entry "Build a GitHub Actions workflow that runs a new `/qa` skill and QA agent against every PR" is fulfilled by this RFC and can be removed from `docs/rfc-braindump.md` once this RFC is approved (handled by the next `/sync` or by the human who runs `/rfc-approve`).
-- **`/agents-diff` braindump** (future, not in scope here) — when the project decides to add a way to see upstream changes to the vendored agents, that RFC will cover `qa-reviewer` only if we also vendor it from VoltAgent (we do not — `qa-reviewer` is a new, project-owned agent introduced by this RFC). `qa-expert` is the vendored agent that `/agents-diff` would cover for QA-adjacent updates.
+- **`/agents-diff` Draft RFC** (`2026-05-10-agents-diff-skill`, not in scope here) — when that RFC implements a way to see upstream changes to the vendored agents, it will cover `qa-reviewer` only if we also vendor it from VoltAgent (we do not — `qa-reviewer` is a new, project-owned agent introduced by this RFC). `qa-expert` is the vendored agent that `/agents-diff` would cover for QA-adjacent updates.
 - **`docs-agent` braindump** (future, not in scope here) — that RFC would introduce a documentation agent with lifecycle hooks; CI QA and CI docs could share the workflow-template pattern this RFC establishes, but they are independent capabilities and should not be folded into one RFC.
