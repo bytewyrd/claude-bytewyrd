@@ -2,9 +2,9 @@
 rfc: "2026-05-10-claude-plugin-author-agent"
 title: "Claude Plugin Author Agent"
 author: "Rodrigo Kochenburger"
-status: "Draft"
+status: "Dropped"
 created: "2026-05-10"
-drop_reason: ~
+drop_reason: "currently no need for it"
 ---
 
 ## Summary
