@@ -23,12 +23,9 @@ Read `skills/sync/SKILL.md` (the destination). Locate the language-and-section b
 
 For every entry in the global file, normalize it and compare against the matching section in the sync file.
 
-**Normalization rule:** strip from the start of each line, in order:
-1. Any `**[...]**` token matching the regex `\*\*\[.*?\]\*\*` followed by surrounding whitespace. This handles both forms:
-   - `**[2026-05-09]**` — concrete-date form, used in `~/.claude/BEST_PRACTICES.md`
-   - `**[<TODAY>]**` — placeholder form, used in `skills/sync/SKILL.md` (rendered at sync time)
-   A regex limited to `\[\d{4}-\d{2}-\d{2}\]` would leave `[<TODAY>]` in place and make every sync entry look unique — always strip the broader pattern.
-2. The italic-category prefix matching `_[^_]+_:` followed by surrounding whitespace. This collapses entries that differ only in label form (e.g., `_JS/TS_: Use bun install...` vs `_JavaScript / TypeScript_: Use bun install...`) into the same statement body for dedup purposes.
+**Normalization rule:** strip the italic-category prefix matching `_[^_]+_:` followed by surrounding whitespace from the start of each line. This collapses entries that differ only in label form (e.g., `_JS/TS_: Use bun install...` vs `_JavaScript / TypeScript_: Use bun install...`) into the same statement body for dedup purposes.
+
+Entries no longer carry a date prefix as of RFC 2026-05-12-drop-dates-from-best-practices. If a legacy entry is encountered with a residual `**[...]**` prefix (e.g., a `~/.claude/BEST_PRACTICES.md` not yet migrated), apply an additional one-shot strip of `\*\*\[.*?\]\*\* ` before the italic-category strip; this only matters for unmigrated files and is removable once all instances have been migrated.
 
 **Classification after normalization:**
 
@@ -151,19 +148,18 @@ Promote which? (numbers, "all", "none")
 Apply the outcomes from Steps 3 and 4 to `skills/sync/SKILL.md`:
 
 **For conflict resolutions where the sync entry must change (Global or Combined choice):**
-- Find the existing entry line in the sync file and replace it with the new text (using the `**[<TODAY>]**` placeholder and the canonical abbreviated category label).
+- Find the existing entry line in the sync file and replace it with the new text (using the canonical abbreviated category label, no date prefix).
 
 **For new entries being added:**
 - Append to the matching section. Insert the new line before the closing ` ``` ` of the section's code fence, after the last existing entry.
-- Use the `**[<TODAY>]**` date placeholder (not the concrete date from the global file).
-- Use the canonical abbreviated category label (e.g., `_JS/TS_`, not `_JavaScript / TypeScript_`).
+- Use the canonical abbreviated category label (e.g., `_JS/TS_`, not `_JavaScript / TypeScript_`). Do not include any date prefix.
 
 **Fence structure for reference:**
 ```
 ## <SectionName>
 
-- **[<TODAY>]** _<SectionName>_: ...
-- **[<TODAY>]** _<SectionName>_: ...   ← insert before the closing ``` fence
+- _<SectionName>_: ...
+- _<SectionName>_: ...   ← insert before the closing ``` fence
 ```
 
 **If the target section does not exist — create it automatically:**
@@ -175,7 +171,7 @@ Insert the new section immediately before the closing ` ``` ` of the base conten
 ```
 ## <SectionName>
 
-- **[<TODAY>]** _<SectionName>_: <entry text>
+- _<SectionName>_: <entry text>
 ```
 
 After creating the section, insert the entry as normal. Note in the Step 8 report which sections were auto-created.

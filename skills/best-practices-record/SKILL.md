@@ -116,10 +116,10 @@ recommendation tag. The user either accepts the recommendation (single confirm) 
 Format matches `best-practices-extract`:
 
 ```markdown
-- **[YYYY-MM-DD]** _<Category>_: One or two sentences max.
+- _<Category>_: One or two sentences max.
 ```
 
-`YYYY-MM-DD` is today's date. The italic category label uses a canonical abbreviated form for each section header — never the verbatim header text. Use this table:
+The italic category label uses a canonical abbreviated form for each section header — never the verbatim header text. Use this table:
 
 | Section header | Italic label to use |
 |---|---|
@@ -168,7 +168,10 @@ defined in the shared `TRIAGE-AND-LIFT.md` procedure.
 Project-specific entries (those that fail any portability question) never reach this file by
 design — they live only in the source project's `## Project-Specific` section.
 
-Format: _Category_: Concise statement (1–2 sentences max).
+Format matches `best-practices-extract`:
+
+```markdown
+- _<Category>_: One or two sentences max.
 ```
 
 If the target section header (`## <Category>`) does not exist, append it (with a blank line before) before writing the entry.

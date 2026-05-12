@@ -2,7 +2,7 @@
 rfc: "2026-05-12-auto-extract-best-practices-on-precompact"
 title: "Auto-Run /best-practices-extract on PreCompact"
 author: "Rodrigo Kochenburger"
-status: "Approved"
+status: "Done"
 created: "2026-05-12"
 drop_reason: ~
 ---
