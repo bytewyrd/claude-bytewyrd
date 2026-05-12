@@ -3,7 +3,7 @@ name: sync
 description: Set up or refresh a project repository with all standard conventions — idempotent, safe to re-run whenever the plugin updates. Triggered by "/sync".
 ---
 
-<!-- bootstrap-content-version: 2026-05-12-143d524 -->
+<!-- bootstrap-content-version: 2026-05-12-b9f3e2a -->
 
 # Sync
 
@@ -81,6 +81,39 @@ Store:
 - `missing`: recommended plugins not in `installed`
 
 If `github@claude-plugins-official` is missing from `installed`, warn but do not stop.
+
+---
+
+## Step 1.5 — Detect docs-agent version drift
+
+Read the plugin's `docs-agent-version` marker from `$CLAUDE_PLUGIN_ROOT/agents/docs-agent.md`:
+
+```bash
+PLUGIN_DOCS_VER=$(grep -m1 'docs-agent-version:' "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/agents/docs-agent.md" 2>/dev/null | sed -E 's/.*docs-agent-version: ([^ ]+).*/\1/')
+```
+
+Read the project's recorded marker from `.bytewyrd/docs-agent-version`:
+
+```bash
+PROJECT_DOCS_VER=$(cat .bytewyrd/docs-agent-version 2>/dev/null || echo "")
+```
+
+If `PLUGIN_DOCS_VER` is non-empty and differs from `PROJECT_DOCS_VER` (including the case where `PROJECT_DOCS_VER` is empty because the file does not exist yet), print this suggestion to the agent's output:
+
+```
+The plugin's docs-agent has improved (project=<PROJECT_DOCS_VER>, plugin=<PLUGIN_DOCS_VER>). Consider running /docs-review against docs/guide/** to re-audit user-facing documentation with the updated checks.
+```
+
+Then record the new version so subsequent sync runs do not re-prompt until the marker changes again. Only write the marker if `PLUGIN_DOCS_VER` is non-empty (guard with `[ -n "$PLUGIN_DOCS_VER" ]`) to prevent overwriting a valid marker with an empty string when the plugin's agent file is unreachable.
+
+```bash
+mkdir -p .bytewyrd
+echo "$PLUGIN_DOCS_VER" > .bytewyrd/docs-agent-version
+```
+
+Do **not** auto-invoke `/docs-review` — `/sync` only prints the suggestion. The decision to run the review belongs to the main agent or the user.
+
+If `PLUGIN_DOCS_VER` is empty (the plugin's `agents/docs-agent.md` does not yet exist or does not carry the marker), skip this step silently — the plugin may be on a version that predates this feature.
 
 ---
 

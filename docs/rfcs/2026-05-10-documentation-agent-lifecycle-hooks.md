@@ -2,7 +2,7 @@
 rfc: "2026-05-10-documentation-agent-lifecycle-hooks"
 title: "Documentation Agent with Lifecycle Hooks"
 author: "Rodrigo Kochenburger"
-status: "Approved"
+status: "Done"
 created: "2026-05-10"
 drop_reason: ~
 ---
