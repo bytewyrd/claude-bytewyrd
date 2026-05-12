@@ -2,7 +2,7 @@
 rfc: "2026-05-12-sync-enforce-github-branch-auto-delete"
 title: "/sync Enforces GitHub Branch Auto-Delete Setting"
 author: "Rodrigo Kochenburger"
-status: "Draft"
+status: "Approved"
 created: "2026-05-12"
 drop_reason: ~
 ---
