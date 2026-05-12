@@ -2,9 +2,9 @@
 rfc: "2026-05-10-agents-diff-skill"
 title: "/agents-diff: Upstream vs Local Diff for Vendored Agent Definitions"
 author: "Rodrigo Kochenburger"
-status: "Approved"
+status: "Dropped"
 created: "2026-05-10"
-drop_reason: ~
+drop_reason: "superseded by RFC 2026-05-10-audit-rework-agent-definitions, which makes agents/ fully locally-owned and criteria-driven — upstream diff visibility is no longer the right primitive"
 ---
 
 ## Summary
