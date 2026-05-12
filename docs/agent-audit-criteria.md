@@ -157,7 +157,7 @@ Upstream checklists frequently include items like "Coverage > 95%", "Response ti
 
 | Agent | Tier | Last audited | Criteria version | Status |
 |-------|------|--------------|------------------|--------|
-| ai-engineer | 1 | — | — | pending |
+| ai-engineer | 1 | 2026-05-12 | v1 | pass |
 | api-designer | 2 | — | — | pending |
 | backend-developer | 3 | — | — | pending |
 | build-engineer | 3 | — | — | pending |
