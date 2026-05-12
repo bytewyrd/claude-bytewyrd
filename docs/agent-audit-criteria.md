@@ -180,7 +180,7 @@ Upstream checklists frequently include items like "Coverage > 95%", "Response ti
 | graphql-architect | 2 | — | — | pending |
 | kubernetes-specialist | 2 | — | — | pending |
 | llm-architect | 1 | — | — | pending |
-| mcp-developer | 1 | — | — | pending |
+| mcp-developer | 1 | 2026-05-12 | v1 | pass |
 | microservices-architect | 3 | — | — | pending |
 | nextjs-developer | 2 | — | — | pending |
 | penetration-tester | 1 | 2026-05-12 | v1 | pass |
