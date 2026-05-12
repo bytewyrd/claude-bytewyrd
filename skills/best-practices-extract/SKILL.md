@@ -124,11 +124,33 @@ Verify the project's root `CLAUDE.md` references `BEST_PRACTICES.md`. If not, ad
 For accumulated session learnings, see [BEST_PRACTICES.md](BEST_PRACTICES.md).
 ```
 
+## Mark Extraction Done (Required — Last Step)
+
+After every invocation of this skill, regardless of whether any entries were added, run:
+
+```bash
+mkdir -p .bytewyrd && : > .bytewyrd/precompact-extraction-done
+```
+
+This writes the sentinel file the `PreCompact` hook uses as its release condition. The sentinel signals "extraction has run in this session" — the next compaction trigger will be allowed through without re-blocking.
+
+The sentinel-write runs on **every normally-completing exit path**:
+
+- After approved entries are written to `docs/BEST_PRACTICES.md`.
+- After the user declined all candidates (`none`).
+- After the skill exited with "Nothing new to capture this session" because nothing passed triage and filtering.
+- After any partial-success path (e.g., one entry approved, one declined).
+
+The only cases where the sentinel is **not** written are: a hard failure of the skill itself (e.g., the disk is full when writing `docs/BEST_PRACTICES.md`), or session termination mid-execution before the final step is reached. In either case, the next compaction will re-block, which is the correct behavior — the user re-runs the skill.
+
+Do not skip this step "because nothing was written." The skill ran; the gate is satisfied; the sentinel records that. Skipping the sentinel leaves the `PreCompact` hook in an unresolved-block state and the user has to bypass manually.
+
 ## When to Run
 
-- **Automatically:** `PreCompact` hook fires before conversation compaction (configured in `.claude/settings.json`)
-- **Manually:** Invoke this skill at any time, especially before ending a long design/feature session
-- **Branch completion:** Natural checkpoint in the `finishing-a-development-branch` workflow
+- **Automatically and enforced:** The `PreCompact` hook in `.claude/settings.json` blocks compaction until this skill runs. On the first compaction trigger of a session, the hook returns `{"decision": "block"}` and injects a system reminder instructing the agent to invoke `/best-practices-extract`. The skill then runs, the user approves or declines per-candidate, the skill writes the sentinel file at `.bytewyrd/precompact-extraction-done`, and the next compaction trigger is allowed through. The block-and-release pattern makes extraction a true gate rather than a suggestion.
+- **Manually:** Invoke this skill at any time, especially before ending a long design/feature session — running it manually also writes the sentinel, so the next automatic compaction passes through cleanly.
+- **Branch completion:** Natural checkpoint in the `finishing-a-development-branch` workflow.
+- **Bypass:** To compact without extraction (e.g., the session has no learnings worth capturing and the user wants to skip the gate), run `touch .bytewyrd/precompact-extraction-done` then `/compact`. The bypass is documented in the hook's `reason` field, surfaced to the user at the moment the block is encountered.
 
 ## Red Flags — Stop and Reconsider
 

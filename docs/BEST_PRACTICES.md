@@ -96,4 +96,5 @@ Use `/best-practices-extract` at the end of a session to add new entries.
 
 Entries below describe rules and gotchas specific to this codebase. They are not promoted to the global pool by `/best-practices-sync` and they are not transferable to other projects. Do not move entries into or out of this section without re-triaging — see [`skills/best-practices-extract/TRIAGE-AND-LIFT.md`](../skills/best-practices-extract/TRIAGE-AND-LIFT.md).
 
+- _Project-Specific_: The `PreCompact` hook blocks compaction until `/best-practices-extract` runs; release condition is the sentinel file `.bytewyrd/precompact-extraction-done`, written by the skill's final step. Bypass: `touch .bytewyrd/precompact-extraction-done` then `/compact`.
 - _Project-Specific_: claude-bytewyrd: the plugin namespace in Claude Code sessions is `bytewyrd:` (hence `/bytewyrd:sync`) but the install address is `bytewyrd/claude-bytewyrd` — these are distinct identifiers for distinct contexts and must not be conflated in docs or code.
