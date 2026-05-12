@@ -161,7 +161,7 @@ Upstream checklists frequently include items like "Coverage > 95%", "Response ti
 | api-designer | 2 | — | — | pending |
 | backend-developer | 3 | — | — | pending |
 | build-engineer | 3 | — | — | pending |
-| claude-agent-author | 1 | — | — | pending |
+| claude-agent-author | 1 | 2026-05-12 | v1 | pass with deviations |
 | cli-developer | 3 | — | — | pending |
 | cloud-architect | 2 | — | — | pending |
 | code-reviewer | 1 | 2026-05-12 | v1 | pass |
