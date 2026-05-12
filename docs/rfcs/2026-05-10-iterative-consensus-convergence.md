@@ -2,7 +2,7 @@
 rfc: "2026-05-10-iterative-consensus-convergence"
 title: "Iterative Consensus Convergence in /rfc-consensus-review"
 author: "Rodrigo Kochenburger"
-status: "Draft"
+status: "Approved"
 created: "2026-05-10"
 drop_reason: ~
 ---
