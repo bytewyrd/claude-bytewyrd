@@ -2,7 +2,7 @@
 rfc: "2026-05-10-sync-interactive-diff"
 title: "Make /sync Interactive: Diff Plugin vs Local, Confirm Changes"
 author: "Rodrigo Kochenburger"
-status: "Draft"
+status: "Approved"
 created: "2026-05-10"
 drop_reason: ~
 ---
