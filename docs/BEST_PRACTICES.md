@@ -27,6 +27,7 @@ Use `/best-practices-extract` at the end of a session to add new entries.
 - **[2026-05-09]** _Claude Code_: Gather actual error output and logs before diagnosing a problem — don't assume a cause from symptoms. State hypotheses explicitly ("I think X might be causing Y") rather than compressing them into stated facts.
 - **[2026-05-09]** _Claude Code_: Verify subagent outputs before reporting success. An agent's summary describes what it intended to do, not necessarily what it did — check the actual file changes or command output.
 - **[2026-05-09]** _Claude Code_: Prefer specialized agents (rust-engineer, python-pro, frontend-developer, etc.) for language- and domain-specific work. They have narrower prompts and better defaults for their domain.
+- **[2026-05-12]** _Claude Code_: Authorization for a preparatory action (rebasing, fixing a conflict, updating a file) does not imply authorization for the next step in the workflow (approving, merging). Each step that affects shared state or is hard to reverse requires its own explicit instruction — "resolve the conflict on #10" is not a mandate to approve or merge.
 
 ## Architecture
 
