@@ -168,8 +168,7 @@ Upstream checklists frequently include items like "Coverage > 95%", "Response ti
 | database-optimizer | 3 | 2026-05-12 | v1 | pass |
 | debugger | 1 | 2026-05-12 | v1 | pass |
 | deployment-engineer | 3 | 2026-05-12 | v1 | pass |
-| devops-engineer | 3 | — | — | pending |
-| devops-incident-responder | 3 | — | — | pending |
+| devops-engineer | 3 | 2026-05-12 | v1 | pass || devops-incident-responder | 3 | — | — | pending |
 | docs-agent | 1 | 2026-05-12 | v1 | pass |
 | documentation-writer | 1 | 2026-05-12 | v1 | pass |
 | feature-engineer | 1 | 2026-05-12 | v1 | pass |
