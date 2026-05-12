@@ -2,7 +2,7 @@
 rfc: "2026-05-10-agents-diff-skill"
 title: "/agents-diff: Upstream vs Local Diff for Vendored Agent Definitions"
 author: "Rodrigo Kochenburger"
-status: "Draft"
+status: "Approved"
 created: "2026-05-10"
 drop_reason: ~
 ---
