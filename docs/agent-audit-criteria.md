@@ -187,7 +187,7 @@ Upstream checklists frequently include items like "Coverage > 95%", "Response ti
 | performance-engineer | 2 | 2026-05-12 | v1 | pass |
 | platform-engineer | 3 | — | — | pending |
 | postgres-pro | 2 | 2026-05-12 | v1 | pass |
-| prompt-engineer | 3 | — | — | pending |
+| prompt-engineer | 3 | 2026-05-12 | v1 | pass |
 | python-pro | 3 | — | — | pending |
 | qa-expert | 3 | — | — | pending |
 | rails-expert | 3 | — | — | pending |
