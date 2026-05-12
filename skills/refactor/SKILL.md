@@ -6,6 +6,16 @@ argument-hint: "[scope-hint]"
 
 # /refactor — Deliberate Refactoring Pass
 
+## Requirement check
+
+This skill optionally invokes the `/review` slash command (from the `code-review@claude-plugins-official` plugin) for a pre-pass before refactoring. This pre-pass is added by this RFC; the companion plugin is a soft dependency:
+
+1. Before invoking `/review`, the orchestrating agent should check whether the `code-review` plugin is enabled by inspecting the user's `~/.claude/settings.json` `enabledPlugins` block or the project's `.claude/settings.json` block. The simplest probe is: `grep -q '"code-review@claude-plugins-official"[[:space:]]*:[[:space:]]*true' ~/.claude/settings.json .claude/settings.json 2>/dev/null`.
+2. If the plugin is not enabled, print exactly: `code-review@claude-plugins-official not enabled — running /refactor without pre-pass review.` and proceed directly to the analysis phase.
+3. If it is enabled, run the pre-pass as designed.
+
+The refactor must produce its primary output (the analysis + plan + approval gate + apply phases) regardless of whether the pre-pass ran.
+
 This skill runs in the main conversation. Its job is to spawn a `bytewyrd:refactoring-specialist` subagent with the six-phase refactoring protocol below as the prompt, then relay the subagent's questions, plan, and final report back to the user.
 
 ## Step 1 — Capture scope

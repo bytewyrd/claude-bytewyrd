@@ -117,6 +117,19 @@ Use `"./run *"` (with wildcard), not `"./run"`. Keep in `settings.local.json` (g
 2. Run `git fetch --all` before creating branches or worktrees.
 3. On `main` with new work: `git worktree add .worktrees/<branch> -b <branch>`.
 
+### Requirement-check hook
+
+The plugin ships a `SessionStart` hook (`hooks/hooks.json` → `scripts/check-requirements.sh`) that runs once per session in every project where the plugin is enabled. The hook probes:
+
+- Companion plugin enable-state (`github@claude-plugins-official`, `context7@claude-plugins-official`, `code-review@claude-plugins-official`) via `~/.claude/settings.json` and the project's `.claude/settings.json`.
+- MCP server configuration (Exa, Firefox MCP) via permission entries in user or project settings.
+- `git` and `gh` CLI availability on `PATH`.
+- Stale references in the project's `.claude/settings.json` pointing at uninstalled plugins.
+
+The hook outputs nothing when everything is satisfied. It outputs a warning bundle when soft dependencies are missing (session continues). It exits with status 2 only on two conditions: missing `git`, or a stale `claude-plugins-official` reference that Claude Code itself would error on later. Individual warnings can be suppressed via `BYTEWYRD_SKIP_WARN=<id1>,<id2>` in the user's shell environment.
+
+When you add a new skill or agent that depends on a specific external tool, decide whether to (a) add a probe to the skill body (the in-skill pattern used by `best-practices-extract`, `refactor`, and `rfc-implement`), or (b) extend `scripts/check-requirements.sh` to surface the gap at session start. Use (a) when the dependency is specific to one skill and the failure can be handled locally; use (b) when the dependency is plugin-wide and the user should know about it on day one rather than mid-task.
+
 ### During work
 
 - Use the RFC process (`/rfc-new`) for changes requiring design decisions — check for `docs/rfc-process.md` first.
