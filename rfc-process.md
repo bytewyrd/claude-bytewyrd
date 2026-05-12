@@ -204,6 +204,7 @@ Projects keep a `docs/rfc-process.md` that is a **self-contained copy** of this 
 | `/rfc-new` | Create a new RFC from template, run agent review, run consensus review, and fix critical findings |
 | `/rfc-consensus-review` | Spawn 5 parallel reviewers, synthesize findings by consensus, report tiered results |
 | `/rfc-read-feedback` | Address inline `FEEDBACK:` comments left by humans in an RFC |
+| `/rfc-summary` | List active RFCs (Draft and Approved) grouped by status for a quick standup snapshot |
 | `/rfc-approve` | Approve a Draft RFC (human-invoked) |
 | `/rfc-implement` | Begin implementing an Approved RFC |
 | `/rfc-drop` | Drop an RFC with a reason |
