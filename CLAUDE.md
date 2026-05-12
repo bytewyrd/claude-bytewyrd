@@ -35,6 +35,7 @@ claude-bytewyrd/
 | Refactoring (deliberate) | refactoring-specialist (via `/refactor`) |
 | Architecture / RFCs | rfc-architect |
 | Documentation | documentation-writer |
+| Claude agent authoring | claude-agent-author |
 | Debugging | debugger |
 
 ## Tool Usage

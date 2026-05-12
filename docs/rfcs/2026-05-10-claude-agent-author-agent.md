@@ -2,7 +2,7 @@
 rfc: "2026-05-10-claude-agent-author-agent"
 title: "Claude Agent Author Agent"
 author: "Rodrigo Kochenburger"
-status: "Approved"
+status: "Done"
 created: "2026-05-10"
 drop_reason: ~
 ---
