@@ -101,7 +101,7 @@ To promote a generalizable entry to the *global* file (`~/.claude/BEST_PRACTICES
 Append approved items under the appropriate section in `docs/BEST_PRACTICES.md`:
 
 ```markdown
-- **[YYYY-MM-DD]** _[Category]_: Concise statement. One or two sentences max.
+- _[Category]_: Concise statement. One or two sentences max.
 ```
 
 Categories for **generalizable** entries: `Testing`, `Architecture`, `Documentation`, `Security`, `Error Handling`, `Workflow`, `Pitfall`, `Claude Code`, plus language/stack categories (`Rust`, `Go`, `JS/TS`, `Svelte`, `Python`, `Ruby`, `Rails`, `K8s`, `K8s/CUE`, `kapply`, `Terraform`, `Terragrunt`). Match the canonical abbreviated label used in `skills/best-practices-record/SKILL.md` so entries are interchangeable across files.

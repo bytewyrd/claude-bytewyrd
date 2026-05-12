@@ -101,7 +101,7 @@ Present the entry as it will be written and ask for confirmation:
 ```
 About to append to ~/.claude/BEST_PRACTICES.md under "## <header>":
 
-- **[YYYY-MM-DD]** _<header>_: <user's statement, lightly edited for the standard format>.
+- _<header>_: <user's statement, lightly edited for the standard format>.
 
 Proceed? (yes / edit / cancel)
 ```
@@ -113,10 +113,10 @@ Proceed? (yes / edit / cancel)
 Format matches `best-practices-extract`:
 
 ```markdown
-- **[YYYY-MM-DD]** _<Category>_: One or two sentences max.
+- _<Category>_: One or two sentences max.
 ```
 
-`YYYY-MM-DD` is today's date. The italic category label uses a canonical abbreviated form for each section header — never the verbatim header text. Use this table:
+The italic category label uses a canonical abbreviated form for each section header — never the verbatim header text. Use this table:
 
 | Section header | Italic label to use |
 |---|---|
@@ -149,7 +149,7 @@ If `~/.claude/BEST_PRACTICES.md` does not exist, create it with this header befo
 
 Cross-project accumulator. Entries here are candidates for promotion into the bytewyrd plugin's sync content via `/best-practices-sync`. Once promoted, sync removes them from this file.
 
-Format: **[YYYY-MM-DD]** _Category_: Concise statement (1–2 sentences max).
+Format: _Category_: Concise statement (1–2 sentences max).
 ```
 
 If the target section header (`## <Category>`) does not exist, append it (with a blank line before) before writing the entry.
