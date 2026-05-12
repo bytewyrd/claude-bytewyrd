@@ -9,14 +9,12 @@ description: Use when the user wants to capture a single best practice into the 
 
 Append a single, user-confirmed best-practice entry to the **global** `~/.claude/BEST_PRACTICES.md`. This file is the cross-project pool — it accumulates lessons that future projects should ship with from day one. Entries from here are reviewed and pulled into the plugin's `sync/SKILL.md` via `/best-practices-sync`; once promoted, they are removed from the global file by the sync skill.
 
-This is the counterpart to `/best-practices-extract`:
+**When to use this skill vs. `/best-practices-extract`:**
 
-| Skill | Scope | Source | Target |
-|---|---|---|---|
-| `/best-practices-extract` | Project-specific | Current session | `docs/BEST_PRACTICES.md` (in the project) |
-| `/best-practices-record` | Cross-project | User-supplied statement | `~/.claude/BEST_PRACTICES.md` (global) |
+- **Mid-session, surfaced from work just done** → use `/best-practices-extract`. Its approval flow includes a bulk-checkbox Promotion Step that presents every generalizable entry with an agent-recommended default (checked for broadly generalizable, unchecked for narrowly generalizable). Confirming the batch writes the checked entries to both `docs/BEST_PRACTICES.md` and `~/.claude/BEST_PRACTICES.md` in one pass.
+- **Stated from scratch, not anchored to a session** → use this skill. Pattern recognized after the fact ("I keep seeing the same testing mistake across projects"), a stack-level lesson you want to record without a project session as its anchor, or a recovery path for an entry the bulk checkbox in `/best-practices-extract` missed or failed to write.
 
-If the rule describes how a single project is built, prefer `/best-practices-extract`. If the rule describes how a *technology, stack, or engineering practice* should be applied — and would be true for any future project using that stack — use this skill.
+Both skills run the same triage-and-lift procedure (see `../best-practices-extract/TRIAGE-AND-LIFT.md`), so the resulting entry has the same quality bar regardless of which path produced it. The confirmation UX is also aligned: in `record` the user confirms a one-row checkbox; in `extract` the user confirms a multi-row checkbox. Both surface the agent's recommendation (checked vs. unchecked) based on the triage result.
 
 ## Inputs
 
@@ -96,17 +94,22 @@ When the entry would have gone under a hypothetical `Design` or `Boundaries` hea
 
 ## Confirmation Step (Always Required)
 
-Present the entry as it will be written and ask for confirmation:
+The agent runs the three portability questions against the lifted entry (see Triage Step), then
+computes a *default* from the triage confidence:
 
-```
-About to append to ~/.claude/BEST_PRACTICES.md under "## <header>":
+- All three portability questions answered with high confidence "yes" → default the checkbox to
+  **checked** with tag `[recommended: record to global pool]`.
+- At least one portability question landed with lower confidence → default the checkbox to
+  **unchecked** with tag `[recommended: reconsider — entry may not transfer cleanly]`.
 
-- **[YYYY-MM-DD]** _<header>_: <user's statement, lightly edited for the standard format>.
+Issue one `AskUserQuestion` with `multiSelect: true` and a single row showing the entry and its
+recommendation tag. The user either accepts the recommendation (single confirm) or flips the box.
 
-Proceed? (yes / edit / cancel)
-```
-
-`yes` → write. `edit` → ask for the corrected text and re-confirm. `cancel` → stop, write nothing.
+- If the user confirms the box **checked** → write to `~/.claude/BEST_PRACTICES.md` as described
+  in Write Format below.
+- If the user confirms the box **unchecked** → abort the write and report: "Entry not recorded.
+  If this is a project-specific learning, consider using `/best-practices-extract` instead to
+  route it to the project's `docs/BEST_PRACTICES.md`."
 
 ## Write Format
 
@@ -147,12 +150,36 @@ If `~/.claude/BEST_PRACTICES.md` does not exist, create it with this header befo
 ```markdown
 # Global Best Practices
 
-Cross-project accumulator. Entries here are candidates for promotion into the bytewyrd plugin's sync content via `/best-practices-sync`. Once promoted, sync removes them from this file.
+## Where do entries live, and why?
 
-Format: **[YYYY-MM-DD]** _Category_: Concise statement (1–2 sentences max).
+This file is the **global cross-project pool**. It accumulates engineering principles that should
+ship with every future project — captured deliberately (via `/best-practices-record`) or promoted
+from a project's `docs/BEST_PRACTICES.md` (via the per-entry promotion prompt in
+`/best-practices-extract`). The quality bar here is intentionally higher than any project file's:
+every entry must have passed the three portability questions (framework / project / audience)
+defined in the shared `TRIAGE-AND-LIFT.md` procedure.
+
+| File | Scope | Source | Path of entries from here |
+|---|---|---|---|
+| `~/.claude/BEST_PRACTICES.md` (this file) | Cross-project | User statement OR project promotion | `/best-practices-sync` lifts vetted subset into `skills/sync/SKILL.md` |
+| `<project>/docs/BEST_PRACTICES.md` | Per-project | Session extraction | Generalizable entries may be promoted here via `/best-practices-extract`'s prompt |
+| `skills/sync/SKILL.md` (bootstrap content) | Distributed | `/best-practices-sync` from this file | Renders into every new project's starter `docs/BEST_PRACTICES.md` at `/sync` time |
+
+Project-specific entries (those that fail any portability question) never reach this file by
+design — they live only in the source project's `## Project-Specific` section.
+
+Format: _Category_: Concise statement (1–2 sentences max).
 ```
 
 If the target section header (`## <Category>`) does not exist, append it (with a blank line before) before writing the entry.
+
+**Header backfill for existing global files.** If the file exists but its top-of-file lacks the
+"## Where do entries live, and why?" header (any global file created before this RFC), insert the
+rationale block (everything from `## Where do entries live, and why?` through the line ending
+`Format: _Category_: Concise statement...`) immediately after the existing H1 (`# Global Best
+Practices` or whatever H1 the file already has) and before the first H2. Do not modify any
+existing entries. Run the backfill check on every invocation — it is idempotent (the block is
+either present or absent; presence skips the backfill).
 
 ## Red Flags — Stop and Reconsider
 

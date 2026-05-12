@@ -2,7 +2,7 @@
 rfc: "2026-05-12-unify-best-practices-destinations"
 title: "Unify Destination of /best-practices-record and /best-practices-extract"
 author: "Rodrigo Kochenburger"
-status: "Approved"
+status: "Done"
 created: "2026-05-12"
 drop_reason: ~
 ---

@@ -1,6 +1,6 @@
 ---
 name: best-practices-extract
-description: Use when a session contained design decisions, architectural choices, discovered pitfalls, or established patterns worth preserving — triggered automatically before compaction, manually at any time, or at the end of a development branch.
+description: Use at the end of a meaningful session to extract non-obvious learnings into the project's docs/BEST_PRACTICES.md. Generalizable entries can optionally be promoted to the global cross-project pool (~/.claude/BEST_PRACTICES.md) via a single bulk-checkbox prompt in the same approval flow — the agent pre-selects defaults from portability triage and the user confirms or adjusts in one step. Project-specific entries stay project-local under ## Project-Specific.
 ---
 
 # Extract Best Practices
@@ -8,7 +8,16 @@ description: Use when a session contained design decisions, architectural choice
 ## Overview
 
 Selectively extract non-obvious learnings from a session and append them to the project's
-`BEST_PRACTICES.md`. Quality over quantity — the value is in the filter, not the writing.
+`docs/BEST_PRACTICES.md`. Quality over quantity — the value is in the filter, not the writing.
+
+**Two destinations, one flow.** Generalizable entries land in a thematic section of the project file
+(`## Architecture`, `## Testing`, etc.) and — for every entry the user leaves checked in the bulk
+Promotion Step — are also written to the cross-project pool at `~/.claude/BEST_PRACTICES.md`. The
+agent pre-selects each checkbox based on portability triage (broadly generalizable → checked;
+narrowly generalizable → unchecked); the user audits and confirms once for the whole batch.
+Project-specific entries land in the project file's `## Project-Specific` section, are not shown
+in the checkbox list, and never reach the global pool. See the "Where do entries live, and why?"
+header at the top of either `BEST_PRACTICES.md` file for the full model.
 
 ## Extraction Pass
 
@@ -73,7 +82,7 @@ Present candidates as a numbered list with category and one-line context, groupe
 ```
 Found 3 candidates (2 generalizable, 1 project-specific):
 
-GENERALIZABLE → ~/.claude/BEST_PRACTICES.md (eligible) and docs/BEST_PRACTICES.md (this project)
+GENERALIZABLE → docs/BEST_PRACTICES.md (this project) [+ optional: ~/.claude/BEST_PRACTICES.md via Promotion Step]
 
 1. [Architecture] Subsystem boundaries own their domain assembly; configuration layers only
    resolve and forward inputs. Pushing assembly into a config layer creates a god module
@@ -94,7 +103,123 @@ The user can accept by index or by group. Generalizable entries are written to `
 
 Never write to `BEST_PRACTICES.md` without explicit user approval on specific items.
 
-To promote a generalizable entry to the *global* file (`~/.claude/BEST_PRACTICES.md`), the user invokes `/best-practices-record` separately — `best-practices-extract` writes only to the project file. This separation is intentional: extraction is high-velocity and per-session; recording into the global pool is a deliberate cross-project decision.
+## Promotion Step (Generalizable Entries Only)
+
+After the User Confirmation step, before any file writes, present **one** bulk-checkbox prompt
+that lists every entry the user approved that was *also* triaged as **generalizable** (not
+`## Project-Specific`). The user reviews the entire batch in a single view, flips any checkbox
+they disagree with, and confirms once. File writes then proceed project-first, global-second
+for every entry that ends up checked.
+
+### Determining the per-entry default (agent does this before showing the prompt)
+
+For each generalizable entry, re-run the three portability questions defined in
+`TRIAGE-AND-LIFT.md` against the *lifted* text (the same text that will be written to the
+project file):
+
+1. **Framework portability** — does this principle apply across language/framework choices, or
+   only inside one specific ecosystem?
+2. **Project portability** — does this principle apply to any project, or only to projects of a
+   specific type, scale, or domain?
+3. **Audience portability** — does this principle apply to any engineer reading it, or only to
+   engineers with project-specific context?
+
+Translate the answers into a confidence score and a default:
+
+- **All three questions answered "yes" with high confidence** → the entry is *broadly
+  generalizable* (would fit any tech stack the user is likely to touch) → default the checkbox
+  to **checked** with the recommendation tag `[recommended: global]`.
+- **Triage passed (the entry is in the generalizable bucket) but at least one portability
+  question landed with lower confidence — e.g., the entry is bound to a specific stack, language,
+  or workflow the user uses only sometimes** → the entry is *narrowly generalizable* → default
+  the checkbox to **unchecked** with the recommendation tag `[recommended: project-local]`.
+
+The defaults are recommendations, not enforcement. The user retains final say on every box.
+
+### Presenting the bulk checkbox prompt
+
+Issue a single `AskUserQuestion` call with `multiSelect: true`. Each row is one generalizable
+entry; the row's pre-selected state reflects the default the agent computed above. Example shape
+of the rendered prompt (the literal wording is illustrative — what matters is the structure):
+
+```
+Promote which entries to the global pool (~/.claude/BEST_PRACTICES.md)?
+
+The agent has pre-checked entries it recommends for the global pool based on portability triage.
+Adjust as needed; you can leave the defaults as-is or change individual boxes.
+
+[x] [Architecture] Subsystem boundaries own their domain assembly; configuration layers only
+    resolve and forward inputs.  [recommended: global]
+
+[x] [Testing] Treat flaky tests as production bugs — investigate root cause before retrying.
+    [recommended: global]
+
+[ ] [Workflow] Prefer one-tab terminals for SvelteKit dev so HMR reloads cleanly.
+    [recommended: project-local]
+```
+
+If there is exactly one generalizable entry to promote, the prompt is still issued (one-row
+checkbox); the bulk format collapses gracefully to a single row.
+
+If there are zero generalizable entries to promote (the entire approved set is `## Project-
+Specific`), skip the Promotion Step entirely.
+
+### Writing the entries
+
+For every row the user confirmed checked, write the entry to *both* the project file (the
+already-planned write) and `~/.claude/BEST_PRACTICES.md`. Write order is project-first,
+global-second across the whole batch:
+
+1. Write all approved entries (regardless of promotion state) to `docs/BEST_PRACTICES.md` in
+   their respective destination sections.
+2. After the project-file write succeeds, write each promoted entry (same lifted text, same
+   canonical category label) to `~/.claude/BEST_PRACTICES.md` in the matching section.
+
+If the global write fails, report the error to the user with this exact message:
+
+```
+Wrote N entries to docs/BEST_PRACTICES.md (succeeded).
+Failed to write M entries to ~/.claude/BEST_PRACTICES.md: <error>.
+
+The project file is up to date. Re-run /best-practices-record for the affected entries:
+  - <entry 1>
+  - <entry 2>
+  ...
+```
+
+The reverse ordering (global-first, project-second) is wrong — a successful global write paired
+with a failed project write would leave the entry promoted but unrecorded in its source project.
+
+### Project-specific entries
+
+Entries triaged as `## Project-Specific` do not appear in the checkbox list. They are not
+eligible for promotion (the global pool admits only generalizable entries — see
+`TRIAGE-AND-LIFT.md`).
+
+### Global file bootstrap
+
+If `~/.claude/BEST_PRACTICES.md` does not exist, create it with the header block defined in
+`skills/best-practices-record/SKILL.md`'s "File Bootstrap" section. If the file exists but
+lacks the "Where do entries live, and why?" rationale block (a one-time backfill for users
+whose global file was created before this RFC), prepend the rationale block after the existing
+H1 and before the first section header. Do not modify any existing entries.
+
+### Non-interactive invocations (e.g., auto-triggered by a PreCompact hook)
+
+If no interactive user is present when the skill runs, skip the bulk checkbox prompt entirely
+and treat every row as unchecked. The project-file write proceeds normally; no entry is
+promoted to the global pool. This ensures auto-extraction never blocks on user input. The user
+can manually promote any auto-extracted entry in a later interactive session via the promotion
+prompt (on the next manual `/best-practices-extract` run) or directly via
+`/best-practices-record`.
+
+### After the fact
+
+To promote a generalizable entry to the global pool after the fact (e.g., the user unchecked the
+box during this flow and changed their mind later), invoke `/best-practices-record` separately —
+that skill remains the canonical path for any standalone "I want to write a cross-project entry
+from scratch" use case, and it is also the recovery path for entries the bulk checkbox missed
+or that failed the global write.
 
 ## Write Format
 
@@ -138,3 +263,4 @@ For accumulated session learnings, see [BEST_PRACTICES.md](BEST_PRACTICES.md).
 - The lifted entry is so abstract it could appear in any project's best practices ("Use proper error handling") → Pass 2 over-lifted. Add the domain back, or skip — over-abstraction is just as bad as under-abstraction.
 - Entry is longer than 2 sentences → consolidate or skip.
 - You're adding without asking the user → violation.
+- You're about to leave every checkbox checked when the agent recommended only some → the global bar is stricter than the project bar. The agent's pre-checked defaults reflect triage confidence; if you find yourself overriding most defaults to "promote everything," your triage was permissive. Default to trusting the agent's recommendation and only flip boxes where your judgement diverges.

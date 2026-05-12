@@ -1,12 +1,31 @@
 # Best Practices
 
-<!-- bootstrap-content-version: 2026-05-10-8e478c1 -->
+<!-- bootstrap-content-version: 2026-05-12-586cc3f -->
 
-Accumulated non-obvious learnings from development sessions.
+## Where do entries live, and why?
 
-Format: **[YYYY-MM-DD]** _Category_: Concise statement (1–2 sentences max).
+This file is the **per-project accumulator**. It holds non-obvious learnings extracted from this
+project's sessions (via `/best-practices-extract`). Both *generalizable* and *project-specific*
+entries live here, separated by section:
 
-Use `/best-practices-extract` at the end of a session to add new entries.
+- **Thematic sections** (`## Testing`, `## Architecture`, `## Documentation`, etc.) hold
+  generalizable entries — they passed the three portability questions in `TRIAGE-AND-LIFT.md`
+  and could theoretically ship to any project that uses the matching stack. They are *eligible*
+  for promotion to the global pool.
+- **`## Project-Specific`** holds entries that failed any portability question. They are
+  valuable to this project (gotchas, internal conventions, project-name-specific quirks) but
+  do not transfer. They are never promoted.
+
+| File | Scope | Source | Path of entries from here |
+|---|---|---|---|
+| `docs/BEST_PRACTICES.md` (this file) | Per-project | Session extraction | Generalizable entries may be promoted to `~/.claude/BEST_PRACTICES.md` via `/best-practices-extract`'s per-entry prompt |
+| `~/.claude/BEST_PRACTICES.md` | Cross-project | User statement OR project promotion | `/best-practices-sync` lifts vetted subset into bootstrap content (plugin-author only) |
+| `skills/sync/SKILL.md` (bootstrap content, plugin-internal) | Distributed | `/best-practices-sync` from global pool | Renders here, in every new project's starter `docs/BEST_PRACTICES.md`, at `/sync` time |
+
+Format: _Category_: Concise statement (1–2 sentences max).
+
+Use `/best-practices-extract` at the end of a session to add new entries. Generalizable entries
+can be opted into the global pool via the per-entry prompt in that same flow.
 
 ## Pitfall
 

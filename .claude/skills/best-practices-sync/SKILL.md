@@ -9,6 +9,8 @@ description: Use inside the bytewyrd plugin's checkout to promote vetted global 
 
 Promote entries from the user's global pool (`~/.claude/BEST_PRACTICES.md`) into this plugin's distributed sync content (`skills/sync/SKILL.md`), and then remove the promoted entries from the global pool. This is the *only* path for a global entry to reach a freshly-synced project — the global file is private to the user; the plugin file is what consumers receive.
 
+For the full model of which file holds what and how entries move between files, see the "Where do entries live, and why?" header at the top of `~/.claude/BEST_PRACTICES.md` (or any project's `docs/BEST_PRACTICES.md` — both files carry the same rationale block).
+
 This skill is plugin-local: it lives at `.claude/skills/best-practices-sync/` inside the plugin checkout and is not exported via `.claude-plugin/plugin.json`. It is only invokable from within the bytewyrd plugin checkout. If the cwd does not contain `skills/sync/SKILL.md` and `.claude-plugin/plugin.json`, stop with: "best-practices-sync only runs inside the bytewyrd plugin checkout. cd into the plugin repo and try again."
 
 ## Step 1 — Read both files
