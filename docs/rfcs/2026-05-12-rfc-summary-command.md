@@ -2,7 +2,7 @@
 rfc: "2026-05-12-rfc-summary-command"
 title: "/rfc-summary Command for Active RFC Overview"
 author: "Rodrigo Kochenburger"
-status: "Approved"
+status: "Done"
 created: "2026-05-12"
 drop_reason: ~
 ---
