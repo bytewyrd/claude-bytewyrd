@@ -2,7 +2,7 @@
 rfc: "2026-05-12-evidence-based-research-rfc-architect"
 title: "Enforce Evidence-Based Research for rfc-architect"
 author: "Rodrigo Kochenburger"
-status: "Approved"
+status: "Done"
 created: "2026-05-12"
 drop_reason: ~
 ---
