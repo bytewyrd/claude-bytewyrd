@@ -39,6 +39,8 @@ claude-bytewyrd/
 | Claude agent authoring | claude-agent-author |
 | Debugging | debugger |
 
+New agents added to `agents/` must meet the criteria in [`docs/agent-audit-criteria.md`](docs/agent-audit-criteria.md). Existing agents may be re-audited when the criteria file is updated; the tracking table in that file shows each agent's last-audited criteria version.
+
 ## Tool Usage
 
 ### Exa — web search
