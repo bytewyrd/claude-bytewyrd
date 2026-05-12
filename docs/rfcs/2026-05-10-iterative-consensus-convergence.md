@@ -2,7 +2,7 @@
 rfc: "2026-05-10-iterative-consensus-convergence"
 title: "Iterative Consensus Convergence in /rfc-consensus-review"
 author: "Rodrigo Kochenburger"
-status: "Draft"
+status: "Approved"
 created: "2026-05-10"
 drop_reason: ~
 ---
@@ -140,7 +140,7 @@ Survives across main-agent context resets (e.g., a `/compact`). Adds a file-mana
 
 ## Drawbacks
 
-- **Cost in tokens and wall-clock time.** Each iteration is five parallel Opus reviewers plus one `rfc-architect` auto-fix pass plus one main-agent synthesis turn. A 3-iteration convergence costs roughly 3× a single-shot pass; the worst case (5 iterations + 1 final validation pass) costs ~6×. **Mitigation:** the hard cap bounds the worst case. The expected good-case is 1–2 iterations to converge plus 1 final validation pass — 2–3× the current single-shot cost — for a substantially stronger correctness guarantee. The current `/rfc-new` two-pass loop already pays ~2× for a weaker guarantee, so the marginal cost relative to the status quo is on the order of one additional pass in the good case. Bad-case cost is bounded by `max_iterations + 1`.
+- **Cost in tokens and wall-clock time.** Each iteration is five parallel Opus reviewers plus one `rfc-architect` auto-fix pass plus one main-agent synthesis turn. A 3-iteration convergence costs roughly 3× a single-shot pass; the worst case without re-entry (5 iterations + 1 final validation pass) costs ~6×; with re-entry, the absolute worst case is ~12×, but that requires the final validation pass to find new bugs on every re-entry, which is extremely unlikely in practice. **Mitigation:** the hard cap bounds the worst case. The expected good-case is 1–2 iterations to converge plus 1 final validation pass — 2–3× the current single-shot cost — for a substantially stronger correctness guarantee. The current `/rfc-new` two-pass loop already pays ~2× for a weaker guarantee, so the marginal cost relative to the status quo is on the order of one additional pass in the good case. Bad-case cost is bounded by `2 × (max_iterations + 1)` if the final validation pass triggers a re-entry (worst case: 12 passes total — two full loops each running to the hard cap, each followed by a final validation pass).
 
 - **Reviewer fatigue / convergence on subjective text.** If reviewers keep raising the same low-confidence finding each iteration (Confidence: medium or low, Type ambiguous), the skill could classify it as `bug` repeatedly and trigger fixes that other reviewers immediately reverse. **Mitigation:** Step 2d's verification step (carried over unchanged from the current skill's Step 4b) — every finding gets verified against code/docs before classification. Low-confidence findings on subjective text classify as `design` or `nit`, not `bug`, so they do not gate convergence. A bug that flips between "fixed" and "broken" across iterations is a real bug whose fix is wrong; the iteration ledger's verbatim-fix tracking surfaces it as an oscillation pattern in the iteration history, and the human sees the pattern in the final report.
 
@@ -196,7 +196,7 @@ Spawns five independent reviewer agents in an iterative loop. Each iteration aut
 | Constant | Value | Purpose |
 |----------|-------|---------|
 | `max_iterations` | `5` | Hard cap on convergence-loop iterations. Bounds the cost of a pathological loop where each pass introduces a new bug |
-| `reviewer_count` | `5` | Number of parallel reviewers per iteration. Unchanged from prior behavior |
+| `reviewer_count` | `5` | Number of parallel reviewers per iteration. Referenced explicitly in Steps 2c and 5a so changing it here propagates to the spawn instructions |
 | `reviewer_agent` | `bytewyrd:code-reviewer` | Agent type for reviewers. Each spawn is a fresh agent instance (no Claude conversation history); prior-round context reaches the reviewers only via the explicit previously-addressed block built in Step 2b |
 | `reviewer_model` | `"opus"` | Model for reviewers. Unchanged from prior behavior |
 | `fix_agent` | `bytewyrd:rfc-architect` | Agent type for the per-iteration auto-fix pass |
@@ -287,7 +287,7 @@ If `iteration_number == 1`, omit the previously-addressed block entirely (no pri
 
 #### 2c. Spawn 5 parallel reviewer agents
 
-Spawn five `bytewyrd:code-reviewer` agents (`model: "opus"`) in a **single message**. Do not ask for human confirmation first.
+Spawn `reviewer_count` (currently 5) `bytewyrd:code-reviewer` agents (`model: "opus"`) in a **single message**. Do not ask for human confirmation first.
 
 Each agent receives the full RFC text and this prompt:
 
@@ -358,9 +358,9 @@ Iteration <N> auto-fixed <count> verified bugs:
 
 #### 2g. Check convergence
 
-Decide whether to break out of the loop or continue to the next iteration.
+Evaluate the conditions below in order — the first match wins:
 
-- **True convergence:** `verified_bugs_this_iteration` is empty. The most recent reviewer pass found zero bugs, which means the prior iteration's fixes (or the RFC's initial state, on iteration 1) have been validated by an independent review. Set `converged_at_iteration = iteration_number`, `converged = true`, and **break** out of the loop.
+- **True convergence:** `verified_bugs_this_iteration` is empty. The most recent reviewer pass found zero bugs, which means the prior iteration's fixes (or the RFC's initial state, on iteration 1) have been validated by an independent review. Set `converged_at_iteration = iteration_number`, `converged = true`, and **break** out of the loop. (This condition is checked first, so the edge case `iteration_number == max_iterations AND verified_bugs.is_empty()` correctly classifies as True Convergence — converged at the cap — rather than Hard-cap termination.)
 - **Hard-cap termination:** `iteration_number == max_iterations` AND `verified_bugs_this_iteration` is not empty. The cap has fired before reviewers stopped finding bugs. The iteration's auto-fix (Step 2f) did run, so the bugs detected in this iteration *were* fixed — but those fixes were never independently re-reviewed because no further iteration will run. Leave `converged_at_iteration = null`, set `converged = false`, and **break** out of the loop. The final report (Step 6) will surface this case prominently as "convergence not reached" with the un-validated fixes from this iteration listed under "fixes applied in iteration `<max_iterations>` but not validated by a subsequent review pass."
 - **Continue:** otherwise (`iteration_number < max_iterations` AND `verified_bugs_this_iteration` is not empty), the iteration's auto-fix ran and the loop continues to iteration `iteration_number + 1` for re-review.
 
@@ -409,7 +409,7 @@ If at least one design opinion was addressed in Step 4 (i.e., `design_changes_ap
 
 #### 5a. Spawn 5 fresh reviewers on the post-design-walkthrough RFC
 
-Spawn five `bytewyrd:code-reviewer` agents (`model: "opus"`) in parallel, with the same prompt structure as Step 2c. Build a previously-addressed block from:
+Spawn `reviewer_count` (currently 5) `bytewyrd:code-reviewer` agents (`model: "opus"`) in parallel, with the same prompt structure as Step 2c. Build a previously-addressed block from:
 - All verified bugs from all convergence-loop iterations (with their `fix_applied`)
 - All deferred design opinions (with the action taken: `addressed` with the fix applied, or `skipped`)
 - All false-positives from all convergence-loop iterations
@@ -421,10 +421,24 @@ Run Step 2d's grouping, classification, and verification logic on the new findin
 #### 5c. Handle final-pass findings
 
 - If the final pass classifies any group as `bug`, **do not auto-fix in this pass**. Surface the bugs to the human in the final report (Step 6) under a distinct `### Post-design-walkthrough bugs introduced` heading and ask: "These bugs were introduced by the design-opinion incorporations. Re-enter the convergence loop, accept them as-is, or stop?" Wait for the human to choose.
-  - **Re-enter the loop:** restart from Step 2 with `iteration_number` reset to `0`. The post-design-walkthrough RFC is the new starting point. Carry the existing ledger over so the previously-addressed block in the re-entered loop's iteration 1 includes everything from the prior loop (verified bugs with their fixes, deferred design opinions with their resolution actions, false-positives with evidence) — reviewers in the re-entered loop should see the full history, not start blind. The hard cap of `max_iterations = 5` applies independently to the re-entered loop (i.e., the cap is per loop entry, not cumulative across re-entries). After re-entry, the loop runs through Step 2 → Step 3 → Step 4 → Step 5 again, with one important constraint: **Step 5 will not re-trigger a third loop entry.** If the second final validation pass also finds bugs, surface them in the final report and stop (the recursion depth is capped at 2 to prevent unbounded re-entry).
+  - **Re-enter the loop:** restart from Step 2 with `iteration_number` left at its current value (do not reset to 0). The loop continues numbering from where it left off (e.g., if the first loop ran 3 iterations and converged at iteration 3, the re-entered loop begins at iteration 4). Step 2b already builds the previously-addressed block for `iteration_number > 1`, so the re-entered loop's first iteration automatically includes full carryover context from all prior iterations. The post-design-walkthrough RFC is the new starting point. Carry the existing ledger over so the previously-addressed block in the re-entered loop's next iteration includes everything from the prior loop (verified bugs with their fixes, deferred design opinions with their resolution actions, false-positives with evidence) — reviewers in the re-entered loop should see the full history, not start blind. The hard cap of `max_iterations = 5` applies to the **total** iteration count across both loop entries (not independently per entry), so a loop that ran 3 iterations before re-entry has 2 remaining iterations in the re-entered loop. After re-entry, the loop runs through Step 2 → Step 3 → Step 4 → Step 5 again, with one important constraint: **Step 5 will not re-trigger a third loop entry.** If the second final validation pass also finds bugs, surface them in the final report and stop (the recursion depth is capped at 2 to prevent unbounded re-entry).
   - **Accept as-is:** record the bugs as known-unfixed in the final report (under the `### Post-design-walkthrough bugs introduced` heading with `User decision: accepted as-is`) and proceed to Step 6.
   - **Stop:** abort the skill; report what was done so far and what remains, then exit.
-- If the final pass classifies findings as `design` (new design opinions raised on the post-walkthrough RFC), treat them as net-new design opinions and walk through them via Step 4 once more, on these new opinions only — **do not re-trigger Step 5 after this second walk-through.** That would be infinite regress, and the human's design choices on a converged RFC are the boundary. The skill proceeds directly to Step 6 after the second walk-through.
+- If the final pass classifies findings as `design` (new design opinions raised on the post-walkthrough RFC), treat them as net-new design opinions and walk through them inline here (do not re-invoke Step 4 — present the opinions using the same format as Step 4 but without triggering Step 5 afterward):
+
+  ```
+  Design opinion (<N>/5 reviewers, raised in final validation pass) — <location>
+
+  RFC currently says:
+    <relevant excerpt, 3-8 lines>
+
+  Concern: <issue in 1-2 sentences>
+  Suggested change: <fix in 1-2 sentences>
+
+  Address this? (yes / no / skip all remaining)
+  ```
+
+  Apply confirmed fixes immediately (via direct edit or a targeted `bytewyrd:rfc-architect` call if the change is non-trivial). After the inline walk-through completes, proceed directly to Step 6 regardless of whether any opinions were addressed.
 - If the final pass produces zero `bug` findings AND zero new `design` findings, the validation pass passes cleanly and the skill proceeds to Step 6.
 
 ### 6. Final report
@@ -467,7 +481,7 @@ Per-iteration history (for context — earlier fixes were validated by the next 
 - …
 - Iteration <max_iterations>: <count> bugs fixed (NOT validated — cap reached)
 
-Design opinions were NOT walked through (the loop did not converge). The most likely cause is either (a) the auto-fix layer is producing fixes that introduce new bugs each iteration, or (b) the RFC has a structural issue the auto-fix cannot resolve. Read the iteration-<max_iterations> fixes above, decide whether they look correct, then either accept them and re-run /rfc-consensus-review (which validates them as a fresh pass) or revert them and edit the RFC manually.
+Design opinions collected during the convergence loop were walked through after the loop terminated. The fixes applied in iteration <max_iterations> were not independently re-reviewed (the cap fired before a validating pass could be spawned) — read them above, decide whether they look correct, then either accept them and re-run /rfc-consensus-review (which validates them as a fresh pass) or revert them and edit the RFC manually.
 ```
 
 If a final validation pass was run and surfaced post-walkthrough bugs (regardless of convergence-loop status):
@@ -578,7 +592,7 @@ The change tracks the new report structure from the rewritten `/rfc-consensus-re
 
 #### Step 5 — Update `docs/rfc-process.md` step 5 paragraph
 
-In `docs/rfc-process.md`, the "Writing a new RFC" subsection has a numbered list (currently lines 144–155). Step 5 of that list currently reads:
+In `docs/rfc-process.md`, the "Writing a new RFC" subsection has a numbered list (currently at approximately line 153 — the line beginning `5. \`/rfc-consensus-review\` runs:`). Step 5 of that list currently reads:
 
 ```markdown
 5. `/rfc-consensus-review` runs: five independent reviewers in parallel, findings synthesized by consensus. Critical findings (4–5/5 reviewers) are fixed by `rfc-architect` in a second pass; consensus runs once more to verify. If critical findings remain after two passes, they are surfaced to the human alongside the RFC.
@@ -615,10 +629,10 @@ After all changes, run these checks:
 3. **`max_iterations = 5` is set in the skill:**
 
    ```bash
-   grep -F 'max_iterations' skills/rfc-consensus-review/SKILL.md | head -1
+   grep 'max_iterations.*5' skills/rfc-consensus-review/SKILL.md | head -1
    ```
 
-   Expected output: a line containing `` `max_iterations` `` and `` `5` `` in the configuration table
+   Expected output: a line containing both `` `max_iterations` `` and `` `5` `` (the configuration table row `| max_iterations | 5 | Hard cap... |`)
 
 4. **`/rfc-new` step 8 no longer mentions the second-pass branch:**
 
@@ -628,7 +642,15 @@ After all changes, run these checks:
 
    Expected output: `0`
 
-5. **`/rfc-new` step 8 invokes the convergence loop description:**
+5. **`/rfc-new` step 8 no longer mentions "two fix passes":**
+
+   ```bash
+   grep -c 'two fix passes' skills/rfc-new/SKILL.md
+   ```
+
+   Expected output: `0`
+
+6. **`/rfc-new` step 8 invokes the convergence loop description:**
 
    ```bash
    grep -c 'convergence' skills/rfc-new/SKILL.md
@@ -636,7 +658,7 @@ After all changes, run these checks:
 
    Expected output: at least `3` (the rewritten Step 8 mentions "convergence" in: `(convergence)`, `convergence loop is internal`, `guarantees convergence`, and `"convergence not reached"`; Step 9 forwards the convergence report).
 
-6. **`docs/rfc-process.md` step 5 mentions convergence:**
+7. **`docs/rfc-process.md` step 5 mentions convergence:**
 
    ```bash
    grep -F 'iterates until reviewers produce zero verified bugs (convergence)' docs/rfc-process.md
@@ -648,7 +670,7 @@ After all changes, run these checks:
    5. `/rfc-consensus-review` runs: five independent reviewers in parallel, findings synthesized by consensus, the bug-fix pass iterates until reviewers produce zero verified bugs (convergence) or until the hard cap of 5 iterations is reached. Design opinions are deferred until after convergence and then walked through with the human one at a time; a final validation pass confirms the design-opinion incorporations did not introduce new bugs. If convergence is not reached within the hard cap, the persistent bugs are surfaced to the human verbatim alongside the RFC.
    ```
 
-7. **`docs/rfc-process.md` step 5 no longer mentions the prior "two passes" language:**
+8. **`docs/rfc-process.md` step 5 no longer mentions the prior "two passes" language:**
 
    ```bash
    grep -c 'after two passes' docs/rfc-process.md
@@ -656,7 +678,7 @@ After all changes, run these checks:
 
    Expected output: `0`
 
-8. **Manual smoke test (after `claude plugin update bytewyrd` and Claude Code restart):**
+9. **Manual smoke test (after `claude plugin update bytewyrd` and Claude Code restart):**
 
    - Run `/rfc-consensus-review` against an RFC known to have a recent reviewer-found bug (any RFC in `docs/rfcs/` from the last week is a good candidate). Confirm the iteration counter prints (`Iteration 1 of up to 5: spawning 5 reviewers…`).
    - After the auto-fix in iteration 1, confirm the skill spawns iteration 2 automatically — without any caller-side loop or human prompt — and prints the previously-addressed block to the new reviewers (visible via the agent invocation prompt).
