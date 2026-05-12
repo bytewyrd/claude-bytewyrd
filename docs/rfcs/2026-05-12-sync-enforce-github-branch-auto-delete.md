@@ -9,13 +9,13 @@ drop_reason: ~
 
 ## Summary
 
-Extend `/sync` Step 6 (GitHub artifacts) to inspect the project's GitHub repository settings and ensure `delete_branch_on_merge` is enabled, bringing remote configuration under the same idempotent convention-enforcement umbrella that currently only covers local files (`CLAUDE.md`, `.gitignore`, `docs/`, `.github/`, etc.) plus the existing `gh repo edit --description` call. The new sub-step detects the GitHub remote (reusing the `git remote get-url origin` check Step 1 already performs), reads the current setting via `gh repo view --json deleteBranchOnMerge`, and — when the setting is `false` — writes `true` via `gh repo edit --delete-branch-on-merge`. The setting change is announced to the conversation before it is applied and reported in Step 8 as a categorical outcome (`already enabled` / `enabled by /sync` / `skipped (gh not authenticated)` / `skipped (repo not visible)` / `skipped (insufficient permissions)`). When `gh` is missing or the remote is not GitHub, the sub-step is silently gated out with no Step 8 row. When the user is not authenticated or the GitHub API returns a 403/404, `/sync` skips the check with an explicit line in the report — never silently mutates the remote, never errors out the whole sync.
+Extend `/sync` Step 6 (GitHub artifacts) to inspect the project's GitHub repository settings and ensure `delete_branch_on_merge` is enabled, bringing remote configuration under the same idempotent convention-enforcement umbrella that currently only covers local files (`CLAUDE.md`, `.gitignore`, `docs/`, `.github/`, etc.) plus the existing `gh repo edit --description` call. The enforcement logic lives in a new dedicated `/github-verify` skill; `/sync` calls `/github-verify` internally as part of Step 6, so it remains the one-stop bootstrapping command while each verification concern has a clear single-responsibility home. The new sub-step detects the GitHub remote (reusing the `git remote get-url origin` check Step 1 already performs), reads the current setting via `gh repo view --json deleteBranchOnMerge`, and — when the setting is `false` — writes `true` via `gh repo edit --delete-branch-on-merge`. The setting change is announced to the conversation before it is applied and reported in Step 8 as a categorical outcome (`already enabled` / `enabled by /sync` / `skipped (gh not authenticated)` / `skipped (repo not visible)` / `skipped (insufficient permissions)`). When `gh` is missing or the remote is not GitHub, the sub-step is silently gated out with no Step 8 row. When the user is not authenticated or the GitHub API returns a 403/404, `/sync` skips the check with an explicit line in the report — never silently mutates the remote, never errors out the whole sync.
 
 ## Should we do this?
 
 **Yes.** Repositories created without "automatically delete head branches" enabled accumulate stale merged branches indefinitely — every PR's head branch survives the merge unless someone remembers to delete it, and "remembering" is precisely the kind of recurring small task that compounds into hundreds of dead branches in any project older than a few months. The setting exists for exactly this problem, and toggling it is a one-time action that requires the user to remember to do it at repo creation; in practice it is forgotten. The mismatch between *every* Bytewyrd project's stated convention (PRs are short-lived, branches die on merge, the worktree workflow assumes branches are reaped) and the *default* GitHub repo configuration (delete is off) is exactly the kind of drift `/sync` is designed to close.
 
-`/sync` already enforces the local half of this convention — `.worktrees/` directories, `CLAUDE.md` workflow guidance, `.gitignore` rules — and already mutates the remote in one specific way (`gh repo edit --description` propagates the brief's description). Adding a second remote check is structurally identical: read the current state, compare to the convention, write the missing value, report the outcome. The cost is roughly 25 lines added to Step 6 of `skills/sync/SKILL.md`, one new row in the Step 8 report table, and the verification checklist. The benefit accrues to every new project and to every existing project the next time `/sync` runs.
+`/sync` already enforces the local half of this convention — `.worktrees/` directories, `CLAUDE.md` workflow guidance, `.gitignore` rules — and already mutates the remote in one specific way (`gh repo edit --description` propagates the brief's description). Adding a second remote check is structurally identical: read the current state, compare to the convention, write the missing value, report the outcome. The cost is a new `skills/github-verify/SKILL.md` file (the branch-auto-delete enforcement sub-step) plus a Step 6 delegation call in `skills/sync/SKILL.md`, one new row in the Step 8 report table, and the verification checklist. The benefit accrues to every new project and to every existing project the next time `/sync` runs.
 
 The alternative is keeping the setting flip as informal tribal knowledge — a footnote in `CLAUDE.md` that nobody reads at the right moment. That is the worst kind of convention: stated but not enforced. This RFC ends that gap.
 
@@ -145,25 +145,25 @@ Rejected because the whole `/sync` flow is structured to be idempotent and parti
 
 ### Decision 4 — Should verification concerns be split into dedicated sub-commands?
 
-A reasonable design question: rather than bundling all verification and enforcement behind `/sync`, should the plugin expose focused sub-commands like `/git-verify` (local git conventions) and `/github-verify` (remote GitHub settings)? Each would have a single, clearly-scoped purpose, and the developer's workflow would compose them as needed.
+A reasonable design question: rather than bundling all verification and enforcement behind `/sync`, should the plugin expose focused sub-commands like `/git-verify` (local git conventions) and `/github-verify` (remote GitHub settings)? Each would have a single, clearly-scoped purpose, and the developer's workflow could invoke them independently when targeted verification is needed.
 
-**Option A — Keep everything in `/sync` (recommended).**
+**Option A — Split into `/github-verify` (and future peers); `/sync` orchestrates them (recommended).**
 
-`/sync` is already the idempotent project-bootstrapping convention enforcer. Its job is precisely to take a project and bring it up to all Bytewyrd conventions in a single pass — local files, remote settings, RFC scaffolding, CI workflows. Adding a sub-step for `delete_branch_on_merge` follows the exact same pattern as the existing `gh repo edit --description` call: read current state, compare to convention, apply the fix, report the outcome. The mental model the user already has of `/sync` ("one command brings a project fully up to convention") is preserved.
+Create `/github-verify` as a dedicated focused skill. `/sync` internally delegates to `/github-verify` as part of Step 6 — it remains the one-stop-shop for project bootstrapping, but the verification logic lives in the sub-command rather than being embedded directly in `skills/sync/SKILL.md`. Users who want surgical, targeted verification (e.g., "just re-check my GitHub settings without running the full sync") can invoke `/github-verify` directly. This architecture is extensible: a future `/repo-verify`, `/ci-verify`, or `/git-verify` skill for local git checks follows the same pattern. Each sub-command has a clear single responsibility, is testable and invokable in isolation, and `/sync` becomes an orchestrator that calls them in sequence.
 
-Creating separate `/git-verify` and `/github-verify` commands would fragment the developer workflow. Instead of one command that brings a project fully up to convention, users would need to remember to run multiple commands — `/sync`, then `/git-verify`, then `/github-verify`, possibly in some specific order, possibly with overlapping responsibilities. The value of `/sync` is that it is comprehensive and idempotent; splitting it reduces that value. The user has to know less when there is one entry point, not three.
+The `delete_branch_on_merge` enforcement sub-step described in this RFC's implementation spec is the initial content of `/github-verify`. `/sync` Step 6 calls `/github-verify` rather than embedding the logic directly.
 
-**Option B — Add dedicated `/git-verify` and `/github-verify` sub-commands.**
+**Option B — Keep everything in `/sync` (now rejected).**
 
-These could serve as focused "check only, don't mutate" verification passes, separate from `/sync`'s "check and fix" mode. A user could run `/github-verify` on a PR review to confirm a project's settings without applying changes, or in CI to audit drift.
+`/sync` is already the idempotent project-bootstrapping convention enforcer. The `delete_branch_on_merge` check could be added directly as another sub-section in Step 6, matching the structure of the existing `gh repo edit --description` call: read current state, compare to convention, apply the fix, report the outcome.
 
-Rejected for this RFC: the braindump's use case is **enforcement**, not audit-only verification, and enforcement belongs in `/sync` (where fixes are also applied). The audit-only use case is real but distinct from this RFC's scope — it can be a future RFC that introduces either a `/sync --check` mode (which audits without mutating) or a dedicated `/github-verify` command. Either approach can be designed cleanly once the underlying state-reading logic exists in `/sync`; introducing it here would conflate two concerns.
+Rejected because as `/sync` accumulates more verification and enforcement checks over time, the skill body grows without a natural decomposition boundary. The flat monolith is harder to invoke surgically — a user who wants to re-check only their GitHub settings must run the entire `/sync` flow. This approach was initially attractive for simplicity (no new files, no new skill discovery surface) but does not scale with more check types. The sub-command architecture is more composable and gives each concern a clean home.
 
-**Recommendation: Option A.** Keep the new sub-step inside `/sync`. The decomposition into focused verify-only commands is a reasonable future direction (a dedicated `/github-verify` or a `/sync --check` mode that audits without mutating) and is captured here as a possible follow-up RFC, but it is out of scope for this one.
+**Recommendation: Option A.** The sub-command architecture is more composable. `/sync` becomes an orchestrator that calls the sub-commands in sequence; each sub-command is independently invokable. This RFC establishes the first instance of `/github-verify` — the `delete_branch_on_merge` enforcement sub-step described in this RFC's implementation spec is the initial content of `/github-verify`. Future checks (merge-type policy, branch protection rules, etc.) are added to `/github-verify`; local git convention checks live in a future `/git-verify`.
 
 ## Drawbacks
 
-- **Adds 25–30 lines to `skills/sync/SKILL.md` Step 6 plus one row to the Step 8 report.** The skill body is already 1449 lines; growth is modest but real. **Mitigation:** the new sub-step is self-contained (it has no cross-references to other Step 6 logic and does not entangle with the `.github/*` file-creation logic that dominates Step 6), so the addition reads as a discrete block. The skill body is structured by step number; adding one bullet at the top of Step 6 does not increase cognitive load for the rest of the file.
+- **Adds a new `skills/github-verify/SKILL.md` file and a Step 6 delegation call in `skills/sync/SKILL.md`.** The introduction of a new top-level skill file is a modest structural addition (the plugin's skill discovery already handles any `skills/*/SKILL.md` via auto-discovery). **Mitigation:** the new file is self-contained; the delegation in `skills/sync/SKILL.md` is a single line referencing `/github-verify`. The file boundary also makes the skill independently discoverable, which is the intended design.
 
 - **Depends on `gh` CLI being installed and authenticated.** Users without `gh` (rare in Bytewyrd workflows, but possible in CI containers or fresh dev machines) get the skip path. **Mitigation:** the skip is graceful and the report explicitly tells the user how to fix it (`Run 'gh auth login' to enable this check.`). The existing `gh repo edit --description` step has the same dependency, so this RFC does not introduce a new requirement — it shares the existing one.
 
@@ -175,7 +175,7 @@ Rejected for this RFC: the braindump's use case is **enforcement**, not audit-on
 
 - **Adds latency to `/sync` Step 6.** Two `gh` API round-trips (one read, one write — when the write is needed) add ~500ms–2s per run. **Mitigation:** Step 6 already includes one `gh repo edit --description` call; adding one more read and (conditionally) one more write is incremental. `/sync` is interactive and not on a hot path.
 
-- **Claude Code sandbox compatibility: the `gh` CLI writes cache/session files to `~/.cache/gh`.** In Claude Code's default sandbox (bwrap/bubblewrap), this path may not be writable, causing `gh` commands to fail with misleading errors (often surfacing as "authentication required" or generic network errors rather than as a sandbox permission denial). **Mitigation:** the Implementation spec includes a "Claude Code sandbox accommodation" subsection that documents the required `.claude/settings.local.json` change (adding `"gh *"` to `sandbox.excludedCommands`). This is a manual, user-local step (`settings.local.json` is gitignored), so it must be communicated as part of rollout — the SKILL.md instructions can detect sandbox-related failures and direct the user to the accommodation, but cannot auto-apply it.
+- **Claude Code sandbox compatibility: the `gh` CLI writes cache/session files to `~/.cache/gh`.** In Claude Code's default sandbox (bwrap/bubblewrap), this path may not be writable, causing `gh` commands to fail with misleading errors (often surfacing as "authentication required" or generic network errors rather than as a sandbox permission denial). This makes the failure mode hard to diagnose: the user sees `skipped (gh not authenticated — run 'gh auth login')` even when `gh auth status` outside the sandbox reports success. **Mitigation:** the Implementation spec includes a "Claude Code sandbox accommodation" subsection that documents the required `.claude/settings.local.json` change (adding `"gh *"` to `sandbox.excludedCommands`). This is a manual, user-local step (`settings.local.json` is gitignored), so it must be communicated as part of rollout — the SKILL.md instructions can detect sandbox-related failures and direct the user to the accommodation, but cannot auto-apply it.
 
 ## Implementation spec
 
@@ -183,28 +183,44 @@ Rejected for this RFC: the braindump's use case is **enforcement**, not audit-on
 
 | Action | Path | Responsibility |
 |--------|------|----------------|
-| Modify | `skills/sync/SKILL.md` | Add a new sub-step "GitHub branch auto-delete" inside Step 6, immediately after the existing "GitHub repository metadata" sub-section (lines 1166–1185 of the current SKILL.md). Update the Step 8 report table to include one new row for the auto-delete outcome. |
-| Modify | `docs/BEST_PRACTICES.md` | Add one bullet to the existing `## Workflow` section noting that `/sync` enforces `delete_branch_on_merge=true`. (One-line note; no new section.) Suggested text: `**[YYYY-MM-DD]** _Workflow_: \`/sync\` automatically enables GitHub's "delete branch on merge" setting (\`delete_branch_on_merge=true\`) on every project — no manual toggle needed.` |
+| Create | `skills/github-verify/SKILL.md` | New dedicated skill containing the GitHub branch auto-delete enforcement sub-step (the `delete_branch_on_merge` read-announce-write logic described in this RFC). This is the initial content of `/github-verify`; future GitHub-side checks are added here. |
+| Modify | `skills/sync/SKILL.md` | Step 6 gains a delegation call to `/github-verify` immediately after the existing "GitHub repository metadata" sub-section (lines 1166–1185 of the current SKILL.md), rather than directly embedding the sub-step logic. Update the Step 8 report table to include one new row for the auto-delete outcome. |
+| Modify | `docs/BEST_PRACTICES.md` | Add one bullet to the existing `## Workflow` section noting that `/sync` enforces `delete_branch_on_merge=true` via `/github-verify`. (One-line note; no new section.) Suggested text: `**[YYYY-MM-DD]** _Workflow_: \`/sync\` automatically enables GitHub's "delete branch on merge" setting (\`delete_branch_on_merge=true\`) on every project via \`/github-verify\` — no manual toggle needed.` |
 
-No new files are created. No files are deleted. The change is additive to existing files.
+No files are deleted. The `skills/github-verify/SKILL.md` file is the only net-new file.
 
 ### Exact additions to `skills/sync/SKILL.md`
 
-The new sub-step is inserted into Step 6 immediately after the existing **`### GitHub repository metadata`** subsection (i.e., after the paragraph that currently ends with `... any pre-existing GitHub description is left untouched.` at line 1185 of the current SKILL.md). The new subsection is a sibling at the same H3 level, before the existing `### .github/workflows/ci.yml` subsection.
+The delegation call is inserted into Step 6 immediately after the existing **`### GitHub repository metadata`** subsection (i.e., after the paragraph that currently ends with `... any pre-existing GitHub description is left untouched.` at line 1185 of the current SKILL.md). The new subsection is a sibling at the same H3 level, before the existing `### .github/workflows/ci.yml` subsection.
 
 The literal text to insert:
 
 ```markdown
 ### GitHub branch auto-delete setting
 
-If the remote is a GitHub repo (the same `github.com` URL check used by the description update above), ensure the repository's `delete_branch_on_merge` setting is `true`. The Bytewyrd worktree workflow expects feature branches to be deleted on merge; this setting automates that on the server side and is the counterpart to the local-side `/clean_gone` skill that reaps `[gone]` branches.
+Delegate to `/github-verify` for the `delete_branch_on_merge` enforcement sub-step. `/github-verify` handles the full read-announce-write cycle and returns a categorical outcome string. Record that outcome in the Step 8 report row for "GitHub branch auto-delete".
 
-**Skip the entire sub-step (no read, no write, no report row) when any of the following is true:**
+Run `/github-verify` now. Capture its outcome and include it in the Step 8 report.
+```
 
-- The remote URL does not contain `github.com` (the same check that gates the description update).
+(End of new sub-section. The existing `### .github/workflows/ci.yml` H3 follows immediately after.)
+
+### Content of `skills/github-verify/SKILL.md`
+
+The new skill file contains the full `delete_branch_on_merge` read-announce-write logic. The enforcement behavior is identical to what was originally described as an in-line addition to `skills/sync/SKILL.md`; the difference is that it now lives in its own file and can be invoked independently.
+
+The skill body implements the same gate, read, announce, write, and categorize flow described in the pseudocode and classification tables below. When invoked standalone, `/github-verify` runs from the current working directory's git remote (same resolution as `/sync`); when invoked from `/sync` Step 6, the working directory is already set correctly.
+
+The skill produces:
+
+- An optional announcement line printed to the conversation immediately before any write (only when the read returns `false`).
+- A categorical outcome string (`already enabled`, `enabled by /github-verify`, `skipped (gh not authenticated — run 'gh auth login')`, `skipped (repo not visible to authenticated user)`, `skipped (insufficient permissions — must be repo admin or org owner)`, `skipped (gh repo view failed: <snippet>)`, `skipped (gh repo edit failed: <snippet>)`). When the sub-step is gated out entirely (no GitHub remote or `gh` unavailable), no outcome string and no report row — the skill exits silently.
+- When invoked standalone, the outcome is displayed as a brief report to the conversation. When invoked from `/sync`, the outcome is captured and incorporated into the Step 8 report row.
+
+**Skip the entire skill (no read, no write, no output) when any of the following is true:**
+
+- The remote URL does not contain `github.com` (the same check that gates the description update in `/sync` Step 6).
 - The `gh` CLI is unavailable (`command -v gh` exits non-zero).
-
-In both skip-entirely cases, do not record any outcome in the Step 8 report row for this sub-step — there is no row to fill in because the sub-step never ran. The sub-step's report row only exists when a GitHub remote *and* `gh` are both present.
 
 **When both gates pass, run the read command:**
 
@@ -214,8 +230,8 @@ gh repo view --json deleteBranchOnMerge --jq '.deleteBranchOnMerge' 2>&1
 
 Capture stdout, stderr, and exit code. Classify the outcome and proceed:
 
-| Read outcome | Step 8 outcome | Action |
-|--------------|----------------|--------|
+| Read outcome | Outcome | Action |
+|--------------|---------|--------|
 | Exit 0, stdout is `true` | `already enabled` | No write. Report and continue. |
 | Exit 0, stdout is `false` | (proceed to write) | Run the write command below. |
 | Exit non-zero, stderr mentions `authentication` / `Not authenticated` / `gh auth login` | `skipped (gh not authenticated — run 'gh auth login')` | No write. Report and continue. |
@@ -238,9 +254,9 @@ gh repo edit --delete-branch-on-merge 2>&1
 
 Capture stdout, stderr, and exit code. Classify the outcome:
 
-| Write outcome | Step 8 outcome |
-|---------------|----------------|
-| Exit 0 | `enabled by /sync` |
+| Write outcome | Outcome |
+|---------------|---------|
+| Exit 0 | `enabled by /github-verify` |
 | Exit non-zero, stderr mentions `403` / `Forbidden` / `must have admin rights` / `Must have admin` / `must be an organization owner` | `skipped (insufficient permissions — must be repo admin or org owner)` |
 | Exit non-zero, stderr mentions `unknown flag` / `unknown option` (older `gh` versions) | (fall back to `gh api` — see below) |
 | Exit non-zero, any other reason | `skipped (gh repo edit failed: <first 80 chars of stderr>)` |
@@ -253,14 +269,9 @@ owner_repo=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 gh api "repos/$owner_repo" -X PATCH -f delete_branch_on_merge=true 2>&1
 ```
 
-Classify the fallback's exit code with the same rules as the `gh repo edit` write outcome (403 → insufficient permissions, exit 0 → enabled, else → failed). The Step 8 report row uses the same outcome strings — the user does not see which path was taken.
+Classify the fallback's exit code with the same rules as the `gh repo edit` write outcome (403 → insufficient permissions, exit 0 → enabled, else → failed). The outcome string uses `enabled by /github-verify` for the success case — the user does not see which internal path was taken.
 
-**Idempotence:** the read happens first on every `/sync` run; if the setting is already `true`, the write is never attempted. Re-running `/sync` on a fully-up-to-date repo produces the `already enabled` row and no API mutation.
-
-**Permissions note:** the `gh` CLI inherits the user's token scope. The required token scope for the write is `repo` (full repo access); the read works with any token that can see the repo (`repo` or, for public repos, `public_repo` / no scope at all). If the user has only `public_repo` and the repo is private, the read fails with the "repo not visible" outcome above and no write is attempted. This is correct behavior — `/sync` cannot mutate what it cannot read.
-```
-
-(End of new sub-section. The existing `### .github/workflows/ci.yml` H3 follows immediately after.)
+**Idempotence:** the read happens first on every invocation; if the setting is already `true`, the write is never attempted. Re-running `/github-verify` (or `/sync`, which calls it) on a fully-up-to-date repo produces the `already enabled` outcome and no API mutation.
 
 ### Claude Code sandbox accommodation
 
@@ -282,71 +293,73 @@ Claude Code runs commands inside a bwrap (bubblewrap) sandbox that restricts fil
 - Keep this configuration in `settings.local.json` (gitignored, user-local), **not** `settings.json` (checked in, shared). Sandbox accommodations are per-user environmental concerns, not project conventions.
 - Alternative (less preferred): add `~/.cache/gh` to the sandbox's `filesystem.allowWrite` paths. This is more surgical but does not cover other paths `gh` may write (state files under `~/.config/gh`, temporary files in `$TMPDIR`). The `excludedCommands` approach is simpler and more robust.
 
-**This is a manual, user-local step** that the SKILL.md implementation cannot auto-apply (`.claude/settings.local.json` is gitignored, so it must be edited by each user on each machine). The SKILL.md instructions should document this as part of the sub-step's preconditions: if `gh` commands fail with what appear to be authentication errors inside `/sync` but succeed when run outside the Claude Code sandbox, the user should add the `"gh *"` exclusion to `.claude/settings.local.json` and re-run `/sync`.
+**This is a manual, user-local step** that the SKILL.md implementation cannot auto-apply (`.claude/settings.local.json` is gitignored, so it must be edited by each user on each machine). The `skills/github-verify/SKILL.md` instructions should document this as part of the skill's preconditions: if `gh` commands fail with what appear to be authentication errors inside `/github-verify` (or `/sync`, which calls it) but succeed when run outside the Claude Code sandbox, the user should add the `"gh *"` exclusion to `.claude/settings.local.json` and re-run.
 
-The Step 8 report's `skipped (gh not authenticated — ...)` row should include a hint pointing users to this accommodation when sandbox-related failures are suspected. A pragmatic implementation: if the read fails with auth-style errors AND `gh auth status` invoked separately reports success, the report row's hint should read `Run 'gh auth login' to enable this check, or add "gh *" to sandbox.excludedCommands in .claude/settings.local.json if running inside Claude Code's sandbox.` (Detecting this discrepancy is best-effort; the SKILL.md prose should describe the symptom — auth error inside sandbox but `gh` works outside — so the user can self-diagnose even if the heuristic does not catch every case.)
+The `skipped (gh not authenticated — ...)` outcome should include a hint pointing users to this accommodation when sandbox-related failures are suspected. A pragmatic implementation: if the read fails with auth-style errors AND `gh auth status` invoked separately reports success, the outcome hint should read `Run 'gh auth login' to enable this check, or add "gh *" to sandbox.excludedCommands in .claude/settings.local.json if running inside Claude Code's sandbox.` (Detecting this discrepancy is best-effort; the SKILL.md prose should describe the symptom — auth error inside sandbox but `gh` works outside — so the user can self-diagnose even if the heuristic does not catch every case.)
 
 ### Exact additions to the Step 8 report
 
 The current Step 8 report table (lines 1411–1431 of SKILL.md) has a row for `GitHub repo description`. Add one new row immediately below it:
 
 ```markdown
-| GitHub branch auto-delete | `already enabled` / `enabled by /sync` / `skipped (gh not authenticated — run 'gh auth login')` / `skipped (repo not visible to authenticated user)` / `skipped (insufficient permissions — must be repo admin or org owner)` / `skipped (gh repo view failed)` / `skipped (gh repo edit failed)` — only if GitHub=yes and `gh` is available |
+| GitHub branch auto-delete | `already enabled` / `enabled by /github-verify` / `skipped (gh not authenticated — run 'gh auth login')` / `skipped (repo not visible to authenticated user)` / `skipped (insufficient permissions — must be repo admin or org owner)` / `skipped (gh repo view failed)` / `skipped (gh repo edit failed)` — only if GitHub=yes and `gh` is available |
 ```
 
 The row is omitted entirely when the entire sub-step was skipped (no GitHub remote, or `gh` unavailable) — consistent with how the existing `GitHub repo description` row is conditional on the same gates.
 
 ### Pseudocode for the implementer
 
-The skill body is prose-driven (it instructs the agent in English); the following pseudocode captures the control flow for the implementer who edits SKILL.md:
+The skill body is prose-driven (it instructs the agent in English); the following pseudocode captures the control flow for the implementer who writes `skills/github-verify/SKILL.md`:
 
 ```
-# Preconditions (already established earlier in Step 6 / Step 1):
+# Preconditions (established by /sync Step 1, or resolved fresh when run standalone):
 remote_url = $(git remote get-url origin 2>/dev/null)
 gh_available = command -v gh >/dev/null 2>&1
 github_remote = remote_url contains "github.com"
 
-# Gate the sub-step
+# Gate the skill
 if not github_remote or not gh_available:
-    # Sub-step is entirely skipped — no Step 8 row.
+    # Skill is entirely skipped — no output, no report row.
     pass
 else:
     # Read current setting
     read_output, read_exit = gh repo view --json deleteBranchOnMerge --jq '.deleteBranchOnMerge'
 
     if read_exit == 0 and read_output.strip() == "true":
-        report_row = "already enabled"
+        outcome = "already enabled"
     elif read_exit == 0 and read_output.strip() == "false":
         print "GitHub repo setting \"delete_branch_on_merge\" is currently disabled. Enabling now via gh repo edit --delete-branch-on-merge."
         write_output, write_exit = gh repo edit --delete-branch-on-merge
 
         if write_exit == 0:
-            report_row = "enabled by /sync"
+            outcome = "enabled by /github-verify"
         elif write_exit != 0 and "unknown flag" in write_output:
             # Fallback for older gh CLI versions
             owner_repo, _ = gh repo view --json nameWithOwner --jq '.nameWithOwner'
             fb_output, fb_exit = gh api "repos/{owner_repo}" -X PATCH -f delete_branch_on_merge=true
             if fb_exit == 0:
-                report_row = "enabled by /sync"
+                outcome = "enabled by /github-verify"
             elif "403" in fb_output or "Forbidden" in fb_output or "admin" in fb_output:
-                report_row = "skipped (insufficient permissions — must be repo admin or org owner)"
+                outcome = "skipped (insufficient permissions — must be repo admin or org owner)"
             else:
-                report_row = "skipped (gh repo edit failed: " + first_80_chars(fb_output) + ")"
+                outcome = "skipped (gh repo edit failed: " + first_80_chars(fb_output) + ")"
         elif "403" in write_output or "Forbidden" in write_output or "admin" in write_output or "organization owner" in write_output:
-            report_row = "skipped (insufficient permissions — must be repo admin or org owner)"
+            outcome = "skipped (insufficient permissions — must be repo admin or org owner)"
         else:
-            report_row = "skipped (gh repo edit failed: " + first_80_chars(write_output) + ")"
+            outcome = "skipped (gh repo edit failed: " + first_80_chars(write_output) + ")"
     elif read_exit != 0 and ("authentication" in read_output or "Not authenticated" in read_output or "gh auth login" in read_output):
-        report_row = "skipped (gh not authenticated — run 'gh auth login')"
+        outcome = "skipped (gh not authenticated — run 'gh auth login')"
     elif read_exit != 0 and ("404" in read_output or "Could not resolve" in read_output or "Not Found" in read_output):
-        report_row = "skipped (repo not visible to authenticated user)"
+        outcome = "skipped (repo not visible to authenticated user)"
     else:
-        report_row = "skipped (gh repo view failed: " + first_80_chars(read_output) + ")"
+        outcome = "skipped (gh repo view failed: " + first_80_chars(read_output) + ")"
 
-    # Append the row to the Step 8 report's GitHub block.
+    # Return/display the outcome.
+    # When called from /sync: captured by Step 6 and appended to the Step 8 report row.
+    # When called standalone: displayed as a brief report to the conversation.
 ```
 
-The implementer pastes this control flow into the SKILL.md addition as Markdown prose with the embedded commands and the table. The pseudocode above is for review clarity; it is not embedded verbatim in the SKILL.md (the SKILL.md is the agent-readable instructions, not Python).
+The implementer pastes this control flow into the `skills/github-verify/SKILL.md` as Markdown prose with the embedded commands and the table. The pseudocode above is for review clarity; it is not embedded verbatim in the SKILL.md (the SKILL.md is the agent-readable instructions, not Python).
 
 ### Exact user-facing output
 
@@ -358,7 +371,9 @@ The conversation shows nothing during Step 6 (this sub-step prints nothing when 
 GitHub branch auto-delete  already enabled
 ```
 
-**Case 2: setting was disabled and `/sync` enabled it.**
+When invoked as `/github-verify` standalone, the skill prints a brief one-line confirmation: `GitHub branch auto-delete: already enabled`.
+
+**Case 2: setting was disabled and `/sync` (via `/github-verify`) enabled it.**
 
 During Step 6, between the description-update line and the start of `.github/` file creation, the conversation prints:
 
@@ -369,7 +384,7 @@ GitHub repo setting "delete_branch_on_merge" is currently disabled. Enabling now
 After the write succeeds, the next interactive output is the start of `.github/` file creation (no additional confirmation). The Step 8 report row reads:
 
 ```
-GitHub branch auto-delete  enabled by /sync
+GitHub branch auto-delete  enabled by /github-verify
 ```
 
 **Case 3: user is not authenticated (`gh auth status` fails or read returns auth error).**
@@ -382,29 +397,29 @@ GitHub branch auto-delete  skipped (gh not authenticated — run 'gh auth login'
 
 **Case 4: user lacks repo admin / org owner rights to set the value.**
 
-During Step 6, the announcement line *is* printed (the read succeeded with `false`, so `/sync` attempts the write). The write fails with 403. The Step 8 report row reads:
+During Step 6, the announcement line *is* printed (the read succeeded with `false`, so `/github-verify` attempts the write). The write fails with 403. The Step 8 report row reads:
 
 ```
 GitHub branch auto-delete  skipped (insufficient permissions — must be repo admin or org owner)
 ```
 
-The user sees both the announcement and the report row — they know `/sync` tried, and they know why it could not complete.
+The user sees both the announcement and the report row — they know `/github-verify` tried, and they know why it could not complete.
 
 **Case 5: non-GitHub remote (e.g., GitLab) or no `gh` CLI installed.**
 
-The sub-step is gated out entirely. No announcement, no report row. Step 8's GitHub block lists only the rows for sub-steps that actually ran — consistent with how `GitHub repo description` is omitted today when no GitHub remote is detected.
+The skill is gated out entirely. No announcement, no report row. Step 8's GitHub block lists only the rows for sub-steps that actually ran — consistent with how `GitHub repo description` is omitted today when no GitHub remote is detected.
 
 ### Verification
 
 After implementing, run these checks. The first three exercise the happy path on a real GitHub repo; the rest exercise the failure modes.
 
-1. **Already-enabled idempotence.** In a GitHub repo where `delete_branch_on_merge=true` is already set, run `/sync`. Expected: no announcement line in Step 6; Step 8 report row reads `GitHub branch auto-delete  already enabled`. No `gh repo edit` call is made (verify by running with `GH_DEBUG=1` and checking the `gh` log).
+1. **Already-enabled idempotence.** In a GitHub repo where `delete_branch_on_merge=true` is already set, run `/sync`. Expected: no announcement line in Step 6; Step 8 report row reads `GitHub branch auto-delete  already enabled`. No `gh repo edit` call is made (verify by running with `GH_DEBUG=1` and checking the `gh` log). Also run `/github-verify` standalone — it should print `GitHub branch auto-delete: already enabled` without any write.
 
-2. **Enable on a fresh repo.** Create a new GitHub repo (with the default `delete_branch_on_merge=false`). Clone it. Run `/sync`. Expected: announcement line is printed during Step 6; `gh repo view --json deleteBranchOnMerge --jq '.deleteBranchOnMerge'` after the run returns `true`; Step 8 report row reads `GitHub branch auto-delete  enabled by /sync`. Re-run `/sync`. Expected: this run reports `already enabled` (verifies idempotence after the first enable).
+2. **Enable on a fresh repo.** Create a new GitHub repo (with the default `delete_branch_on_merge=false`). Clone it. Run `/sync`. Expected: announcement line is printed during Step 6; `gh repo view --json deleteBranchOnMerge --jq '.deleteBranchOnMerge'` after the run returns `true`; Step 8 report row reads `GitHub branch auto-delete  enabled by /github-verify`. Re-run `/sync`. Expected: this run reports `already enabled` (verifies idempotence after the first enable). Also verify that running `/github-verify` standalone on a repo with the setting already enabled prints the brief confirmation and makes no API write.
 
-3. **Older `gh` fallback.** With `gh` 1.x installed (or with the `--delete-branch-on-merge` flag artificially stripped via `gh_path=mock-gh`), run `/sync` on a repo with the setting disabled. Expected: the primary `gh repo edit --delete-branch-on-merge` call exits non-zero with "unknown flag"; the fallback `gh api repos/{owner_repo} -X PATCH -f delete_branch_on_merge=true` runs and succeeds; Step 8 reports `enabled by /sync`.
+3. **Older `gh` fallback.** With `gh` 1.x installed (or with the `--delete-branch-on-merge` flag artificially stripped via `gh_path=mock-gh`), run `/sync` on a repo with the setting disabled. Expected: the primary `gh repo edit --delete-branch-on-merge` call exits non-zero with "unknown flag"; the fallback `gh api repos/{owner_repo} -X PATCH -f delete_branch_on_merge=true` runs and succeeds; Step 8 reports `enabled by /github-verify`.
 
-4. **No GitHub remote.** Create a repo with only a GitLab or a non-GitHub remote (`git remote add origin git@gitlab.com:foo/bar.git`). Run `/sync`. Expected: no announcement, no report row for `GitHub branch auto-delete`. The Step 8 GitHub block still shows other rows that are gated on different conditions (e.g., the description update is also gated out, but the row for it is also omitted).
+4. **No GitHub remote.** Create a repo with only a GitLab or a non-GitHub remote (`git remote add origin git@gitlab.com:foo/bar.git`). Run `/sync`. Expected: no announcement, no report row for `GitHub branch auto-delete`. The Step 8 GitHub block still shows other rows that are gated on different conditions (e.g., the description update is also gated out, but the row for it is also omitted). Also run `/github-verify` standalone — it should exit silently with no output.
 
 5. **No `gh` CLI.** Temporarily remove `gh` from `$PATH` (`PATH=$(echo $PATH | sed 's|:[^:]*github-cli[^:]*||g')`). Run `/sync`. Expected: no announcement, no report row for `GitHub branch auto-delete`. The Step 8 GitHub block similarly omits the description row.
 
@@ -418,13 +433,15 @@ After implementing, run these checks. The first three exercise the happy path on
 
 10. **Sub-step does not stop the rest of `/sync`.** Force any failure case (4 through 9). Verify that Step 7 (RFC process sync) and the rest of Step 8 (file outcome rows) still execute. Specifically: the `docs/rfc-process.md` file is still synced, the `.github/workflows/ci.yml` is still created if missing, and the final Step 8 report still prints.
 
-11. **Sandbox accommodation.** Inside Claude Code's sandbox without the `"gh *"` exclusion, run `/sync` on a GitHub repo where `gh auth status` (outside the sandbox) confirms authentication. Expected: the read may fail with what appears to be an authentication error; the user follows the documented accommodation (add `"gh *"` to `sandbox.excludedCommands` in `.claude/settings.local.json`); re-run `/sync`. Expected: the sub-step now completes normally and the Step 8 row reads `already enabled` or `enabled by /sync` depending on prior state.
+11. **Sandbox accommodation.** Inside Claude Code's sandbox without the `"gh *"` exclusion, run `/sync` on a GitHub repo where `gh auth status` (outside the sandbox) confirms authentication. Expected: the read may fail with what appears to be an authentication error; the user follows the documented accommodation (add `"gh *"` to `sandbox.excludedCommands` in `.claude/settings.local.json`); re-run `/sync`. Expected: the sub-step now completes normally and the Step 8 row reads `already enabled` or `enabled by /github-verify` depending on prior state.
 
-If any verification step fails, the failure points to one of: (a) the gate logic is wrong (the sub-step runs when it should not, or skips when it should not), (b) the categorization of `gh` stderr is wrong (a specific failure does not match the substring patterns), (c) the write happens despite the read returning `true` (idempotence bug), or (d) a failure case halts the overall `/sync` run (the sub-step is leaking exceptions instead of skipping cleanly).
+12. **Standalone `/github-verify` invocation.** Run `/github-verify` directly (not via `/sync`) on a GitHub repo. Expected: the skill executes the full read-announce-write cycle independently, prints its outcome to the conversation, and exits without running any `/sync` steps. Verify that the outcome string matches what would appear in the Step 8 report row if run via `/sync`.
+
+If any verification step fails, the failure points to one of: (a) the gate logic is wrong (the sub-step runs when it should not, or skips when it should not), (b) the categorization of `gh` stderr is wrong (a specific failure does not match the substring patterns), (c) the write happens despite the read returning `true` (idempotence bug), (d) a failure case halts the overall `/sync` run (the sub-step is leaking exceptions instead of skipping cleanly), or (e) the delegation from `/sync` to `/github-verify` is broken (the outcome string is not captured or is not passed through to the Step 8 report).
 
 ### Compatibility check: existing `gh repo edit --description` call
 
-The new sub-step runs *after* the existing `gh repo edit --description "<description>"` call inside Step 6. The two calls are independent: one mutates the description field, the other mutates the `delete_branch_on_merge` field. The GitHub PATCH `/repos/{owner}/{repo}` endpoint accepts both fields in the same body, but `gh repo edit` issues a separate PATCH per invocation. The implementation keeps the two calls separate (matching the current Step 6 structure of "one sub-section per mutation") rather than batching them, because:
+The new delegation call runs *after* the existing `gh repo edit --description "<description>"` call inside Step 6. The two calls are independent: one mutates the description field, the other mutates the `delete_branch_on_merge` field. The GitHub PATCH `/repos/{owner}/{repo}` endpoint accepts both fields in the same body, but `gh repo edit` issues a separate PATCH per invocation. The implementation keeps the two calls separate (matching the current Step 6 structure of "one sub-section per mutation") rather than batching them, because:
 
 - The two calls have different skip conditions (description is gated on `description` being non-empty; auto-delete has no analogous content gate).
 - The two calls have different failure modes (description failure does not block auto-delete; auto-delete failure does not block description).
@@ -446,7 +463,7 @@ The two PATCHes incur a total of ~1–2 seconds extra latency per `/sync` run wh
 
 - **Open question: should `/sync` also report any pre-existing merged-branches that need cleanup (a one-time backfill of branches the setting did not delete because it was off)?** That would be a separate "list stale branches and offer to delete them" operation. **Resolution within this RFC:** out of scope. The existing `clean_gone` skill (`commit-commands:clean_gone`) already handles the local-side cleanup of `[gone]` branches; the GitHub-side backfill is a different problem and would require a new skill (`/github-cleanup-merged-branches` or similar). Captured as a follow-up in the braindump.
 
-- **Open question: should `/sync` also enforce `allow_squash_merge` / `allow_rebase_merge` / `allow_merge_commit` settings?** Bytewyrd projects use `squash` as the merge method (per `CLAUDE.md` workflow guidance: "Squash merge to keep history clean"). The repo settings for which merge types are allowed could be similarly enforced. **Resolution within this RFC:** out of scope. This RFC focuses on `delete_branch_on_merge` because the braindump explicitly named it. Enforcing merge-type settings is a separate convention check; a follow-up braindump can capture it.
+- **Open question: should `/sync` also enforce `allow_squash_merge` / `allow_rebase_merge` / `allow_merge_commit` settings?** Bytewyrd projects use `squash` as the merge method (per `CLAUDE.md` workflow guidance: "Squash merge to keep history clean"). The repo settings for which merge types are allowed could be similarly enforced. **Resolution within this RFC:** out of scope. This RFC focuses on `delete_branch_on_merge` because the braindump explicitly named it. Enforcing merge-type settings is a separate convention check that belongs in a future iteration of `/github-verify`; a follow-up braindump can capture it.
 
 - **Open question: should the sub-step be opt-in via a project flag (e.g., a line in `docs/project-brief.md` or `.claude/settings.json`)?** A user whose project is an archive (frozen content, no active PRs) might prefer to leave the setting off. **Resolution within this RFC:** keep the sub-step always-on by default. Per the analysis above, the cost of being wrong (a project that has the setting wrongly enabled) is near-zero — the user can just disable it manually after `/sync` completes. The cost of being wrong in the other direction (a project that needed the setting and never got it) is the accumulation problem the RFC is solving. The defaults favor enforcement. A future RFC can add an opt-out flag if real cases emerge.
 
@@ -460,8 +477,8 @@ The two PATCHes incur a total of ~1–2 seconds extra latency per `/sync` run wh
 
 - **`commit-commands:clean_gone` skill** — locally prunes branches marked `[gone]` (branches the remote no longer has). This RFC's setting (`delete_branch_on_merge=true`) ensures the remote *creates* the `[gone]` state in the first place (by deleting the head branch after merge), so the two work together: the server-side setting reaps remote branches; `/clean_gone` reaps the local pointers. This RFC does not modify `clean_gone`; it just removes the need for the user to remember to delete branches via the PR UI.
 
-- **Future RFC — GitHub merge-type policy enforcement** (potential braindump entry) — would extend `/sync` to enforce `allow_squash_merge=true`, `allow_rebase_merge=false`, `allow_merge_commit=false` per Bytewyrd's "squash merge to keep history clean" convention. The implementation pattern in this RFC (read → categorize → announce → write → categorize outcome) is directly reusable. This RFC does not implement merge-type enforcement; it just demonstrates the pattern.
+- **Future RFC — GitHub merge-type policy enforcement** (potential braindump entry) — would extend `/github-verify` to enforce `allow_squash_merge=true`, `allow_rebase_merge=false`, `allow_merge_commit=false` per Bytewyrd's "squash merge to keep history clean" convention. The implementation pattern in this RFC (read → categorize → announce → write → categorize outcome) is directly reusable as a second check inside `/github-verify`. This RFC does not implement merge-type enforcement; it just demonstrates the pattern and establishes the skill that future checks will extend.
 
 - **Future RFC — bulk backfill of stale merged branches** (mentioned in Risks and open questions) — would add a separate skill that, on demand, lists branches whose PRs have been merged but the branch still exists on the remote, and offers to delete them. This RFC does not address backfill; new repos and repos that get the setting flipped today will accumulate cleanly going forward. The backfill is a separate concern.
 
-- **Future RFC — `/sync --check` mode or dedicated `/github-verify` command** (potential follow-up) — would introduce an audit-only mode that reads and reports remote settings without mutating them, useful for CI checks and PR reviews. This RFC's Decision 4 explicitly leaves this design space open: the underlying read logic introduced here would be directly reusable by an audit-only entry point. Scope, ergonomics, and naming (`/sync --check`, `/github-verify`, or a focused split into `/git-verify` + `/github-verify`) are intentionally deferred.
+- **`/github-verify` as a first-class skill** — this RFC establishes `/github-verify` as the home for GitHub-side convention enforcement. Future RFCs can add more checks to it (merge-type policy, branch protection rules, required status checks) following the same read-announce-write pattern. A future `/git-verify` skill for local git convention checks (e.g., verifying `.gitattributes`, confirming `core.autocrlf` settings, checking hook installation) would follow the same sub-command architecture and would also be callable from `/sync`.
