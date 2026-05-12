@@ -2,7 +2,7 @@
 rfc: "2026-05-12-drop-dates-from-best-practices"
 title: "Drop Dates from BEST_PRACTICES Entries"
 author: "Rodrigo Kochenburger"
-status: "Approved"
+status: "Done"
 created: "2026-05-12"
 drop_reason: ~
 ---
