@@ -204,6 +204,6 @@ Upstream checklists frequently include items like "Coverage > 95%", "Response ti
 | typescript-pro | 3 | — | — | pending |
 | ui-designer | 3 | — | — | pending |
 | ux-design-architect | 2 | 2026-05-12 | v1 | pass |
-| websocket-engineer | 3 | — | — | pending |
+| websocket-engineer | 3 | 2026-05-12 | v1 | pass |
 
 After each PR merges, update the row: set `Last audited` to the merge date, `Criteria version` to the version the audit ran under, and `Status` to `pass` (or `pass with deviations` if soft recommendations were not followed; the deviations are documented in the file's footer).
