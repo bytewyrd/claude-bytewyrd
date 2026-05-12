@@ -21,23 +21,26 @@ If the file does not exist: stop and suggest `/sync` (which creates it automatic
 
 ### 2. Sync `docs/rfc-process.md`
 
-Determine the upstream source root:
+Determine the upstream source root and locate the manifest:
 
 ```bash
 echo "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}"
 ```
 
-Use the printed path as `PLUGIN_ROOT`. Read `$PLUGIN_ROOT/rfc-process.md` (upstream) and `docs/rfc-process.md` (project file) in full.
+Use the printed path as `PLUGIN_ROOT`. Read the bootstrap manifest at `$PLUGIN_ROOT/.claude-plugin/bootstrap-manifest.json` and find the entry with `upstream_key` matching `"bytewyrd/docs/rfc-process.md@v1"`.
 
-Find `<!-- END_UPSTREAM_CONTENT -->` in the project file:
-- Everything before = core section (to be replaced)
-- Everything after = extensions section (to be preserved)
+The manifest entry has `extension_strategy: "region"` and `region_end_marker: "<!-- END_UPSTREAM_CONTENT -->"`. Apply the **region merge strategy**:
 
-Extract the raw RFC process text from the core section (strip sync header lines and the marker). Compare to upstream.
+1. Read the `source` field from the manifest entry to locate the upstream file (e.g. `rfc-process.md` — resolved relative to `$PLUGIN_ROOT`).
+2. Read `$PLUGIN_ROOT/<source>` (upstream) and `docs/rfc-process.md` (project file) in full.
+3. Split the project file at `<!-- END_UPSTREAM_CONTENT -->`:
+   - Everything before and including that line = upstream region (to be replaced)
+   - Everything after = project-extension region (to be preserved verbatim)
+4. Extract the raw RFC process text from the upstream region (strip the sync header comment lines and the marker line). Compare to the upstream file content.
 
 **If identical:** note "docs/rfc-process.md already up to date."
 
-**If different:** summarize what changed (added/removed sections, updated wording — no full diff). Rebuild (substitute the literal `$PLUGIN_ROOT` path in the header):
+**If different:** summarize what changed (added/removed sections, updated wording — no full diff). Rebuild using the region merge strategy (substitute the literal `$PLUGIN_ROOT` path in the header):
 
 ```
 <!-- UPSTREAM: <$PLUGIN_ROOT>/rfc-process.md -->
