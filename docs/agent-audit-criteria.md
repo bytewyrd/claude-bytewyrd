@@ -185,7 +185,7 @@ Upstream checklists frequently include items like "Coverage > 95%", "Response ti
 | nextjs-developer | 2 | 2026-05-12 | v1 | pass |
 | penetration-tester | 1 | 2026-05-12 | v1 | pass |
 | performance-engineer | 2 | 2026-05-12 | v1 | pass |
-| platform-engineer | 3 | — | — | pending |
+| platform-engineer | 3 | 2026-05-12 | v1 | pass |
 | postgres-pro | 2 | 2026-05-12 | v1 | pass |
 | prompt-engineer | 3 | — | — | pending |
 | python-pro | 3 | — | — | pending |
