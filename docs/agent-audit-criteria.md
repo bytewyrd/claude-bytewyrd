@@ -174,8 +174,7 @@ Upstream checklists frequently include items like "Coverage > 95%", "Response ti
 | feature-engineer | 1 | 2026-05-12 | v1 | pass |
 | frontend-developer | 2 | 2026-05-12 | v1 | pass |
 | fullstack-developer | 3 | 2026-05-12 | v1 | pass |
-| golang-pro | 3 | — | — | pending |
-| graphql-architect | 2 | 2026-05-12 | v1 | pass |
+| golang-pro | 3 | 2026-05-12 | v1 | pass || graphql-architect | 2 | 2026-05-12 | v1 | pass |
 | kubernetes-specialist | 2 | 2026-05-12 | v1 | pass |
 | llm-architect | 1 | 2026-05-12 | v1 | pass |
 | mcp-developer | 1 | 2026-05-12 | v1 | pass |
