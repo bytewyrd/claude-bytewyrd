@@ -2,7 +2,7 @@
 rfc: "2026-05-10-audit-rework-agent-definitions"
 title: "Audit and Rework All Agent Definitions"
 author: "Rodrigo Kochenburger"
-status: "Approved"
+status: "Done"
 created: "2026-05-10"
 drop_reason: ~
 ---
