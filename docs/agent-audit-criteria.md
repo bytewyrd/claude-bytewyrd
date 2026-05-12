@@ -196,7 +196,7 @@ Upstream checklists frequently include items like "Coverage > 95%", "Response ti
 | rfc-architect | 1 | 2026-05-12 | v1 | pass |
 | rust-engineer | 3 | 2026-05-12 | v1 | pass |
 | security-engineer | 1 | 2026-05-12 | v1 | pass |
-| sql-pro | 3 | — | — | pending |
+| sql-pro | 3 | 2026-05-12 | v1 | pass |
 | sre-engineer | 2 | 2026-05-12 | v1 | pass |
 | terraform-engineer | 2 | 2026-05-12 | v1 | pass |
 | terragrunt-expert | 3 | — | — | pending |
