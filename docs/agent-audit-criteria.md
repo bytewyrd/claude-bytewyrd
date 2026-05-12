@@ -198,7 +198,7 @@ Upstream checklists frequently include items like "Coverage > 95%", "Response ti
 | security-engineer | 1 | 2026-05-12 | v1 | pass |
 | sql-pro | 3 | — | — | pending |
 | sre-engineer | 2 | 2026-05-12 | v1 | pass |
-| terraform-engineer | 2 | — | — | pending |
+| terraform-engineer | 2 | 2026-05-12 | v1 | pass |
 | terragrunt-expert | 3 | — | — | pending |
 | test-automator | 3 | — | — | pending |
 | typescript-pro | 3 | — | — | pending |
