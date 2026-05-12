@@ -34,7 +34,8 @@ claude-bytewyrd/
 | Code reviews | code-reviewer |
 | Refactoring (deliberate) | refactoring-specialist (via `/refactor`) |
 | Architecture / RFCs | rfc-architect |
-| Documentation | documentation-writer |
+| User-facing docs (`docs/guide/**`) | docs-agent (via `/docs-review`) |
+| General-purpose docs (ad-hoc) | documentation-writer |
 | Claude agent authoring | claude-agent-author |
 | Debugging | debugger |
 
@@ -135,6 +136,19 @@ Before extending or modifying existing code, consider whether a deliberate refac
 `/refactor` instructs the main agent to spawn the `refactoring-specialist` subagent on Opus with `max` effort. It is deliberately expensive — use it for genuine refactoring passes, not for tiny renames (just edit the files for those).
 
 The skill enforces a six-phase protocol: pre-flight (resolve scope, discover test command) → analyze → characterization tests → plan → **approval gate** → apply → report. The approval gate stops the subagent before any mutation; review the plan, approve specific steps, and the subagent applies them one commit at a time.
+
+### Considering /docs-review
+
+Run `/docs-review <scope-hint>` when:
+
+- A `/rfc-implement` just landed user-visible changes (a new skill, an agent change, a new flag, a new workflow) — check whether `docs/guide/**` needs updates to match. (A `SubagentStop` hook on `feature-engineer` surfaces a reminder at this moment.)
+- `/sync` reports the docs-agent definition has improved — re-audit `docs/guide/**` with the updated checks.
+- A user reports a tutorial does not work, a how-to guide references a missing flag, or a reference page is out of date.
+- Before a release — sweep `docs/guide/**` to confirm no broken examples or stale references ship to users.
+
+`/docs-review` spawns the `docs-agent` subagent on Sonnet. It is scoped strictly to `docs/guide/**` and the contributor section — it never touches `docs/ARCHITECTURE.md`, `docs/CONTRIBUTING.md`, `docs/BEST_PRACTICES.md`, `docs/project-brief.md`, or anything under `docs/rfcs/`. Those files have separate owners.
+
+The skill enforces a seven-phase protocol: resolve scope → coverage audit → drift detection → plan → **approval gate** → apply → report. The approval gate stops the subagent before any mutation; review the plan, approve specific findings, and the subagent applies them one commit at a time.
 
 ### Session end
 
