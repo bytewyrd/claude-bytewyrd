@@ -5,6 +5,16 @@ description: Use at the end of a meaningful session to extract non-obvious learn
 
 # Extract Best Practices
 
+## Requirement check
+
+This skill optionally enriches its output with PR context from the GitHub CLI. The CLI is a soft dependency:
+
+1. Before invoking `gh`, run `command -v gh >/dev/null 2>&1` to verify it is on `PATH`.
+2. If `gh` is missing, print exactly: `gh CLI not on PATH — extracting without PR context.` and continue with the rest of the extraction.
+3. If `gh` is present but unauthenticated (`gh auth status` exits non-zero), print exactly: `gh CLI not logged in — extracting without PR context.` and continue.
+
+The skill must not fail or block on this missing dependency; it must produce its primary output regardless.
+
 ## Overview
 
 Selectively extract non-obvious learnings from a session and append them to the project's

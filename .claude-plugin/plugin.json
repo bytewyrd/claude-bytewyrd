@@ -2,9 +2,9 @@
   "name": "bytewyrd",
   "description": "Opinionated Claude Code workflow for Bytewyrd projects and teams: skills, agents, hooks, and operating principles for evidence-based development with RFC-driven design.",
   "version": "0.1.0",
+  "hooks": "./hooks/hooks.json",
   "author": {
     "name": "Bytewyrd",
     "email": "divoxx@gmail.com"
-  },
-  "hooks": "./.claude-plugin/hooks/hooks.json"
+  }
 }

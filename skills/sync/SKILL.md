@@ -74,6 +74,8 @@ Then read `~/.claude/plugins/installed_plugins.json`. Extract the `plugins` obje
 | Context7 | `context7@claude-plugins-official` | Recommended |
 | Code Review | `code-review@claude-plugins-official` | Recommended |
 
+The `bytewyrd@bytewyrd` plugin is NOT in this table — its installation is asserted at user scope on the developer's machine, not in the project's `.claude/settings.json`. The plugin's own `SessionStart` hook (shipped in `hooks/hooks.json`) detects whether it is enabled and surfaces a hard failure to the user if it is referenced in `.claude/settings.json` but missing from the installed-plugin registry.
+
 Note: Exa is a separate MCP server (not a plugin) — its permissions go unconditionally in `settings.local.json`.
 
 Store:
@@ -580,7 +582,11 @@ The `rfc-process.md` source (`bytewyrd/docs/rfc-process.md@v1`) is read directly
 
 **`settings.json.tpl` rendering:**
 
-The `enabledPlugins` object always includes `"bytewyrd@bytewyrd": true`. Add `"github@claude-plugins-official": true`, `"context7@claude-plugins-official": true`, `"code-review@claude-plugins-official": true` only for plugins in `installed`.
+**Do NOT include `bytewyrd@bytewyrd`.** The plugin is installed at user scope (`~/.claude/settings.json`); projects do not assert plugin enablement in `.claude/settings.json`. The plugin's own `SessionStart` requirement-check hook surfaces gaps per session. (Teams that want to mandate plugin enablement at project scope can manually add `"bytewyrd@bytewyrd": true` to their `.claude/settings.json`'s `enabledPlugins` block; this is documented in `docs/guide/installation.md` but is not the default.)
+
+**Cleanup of legacy entries (always run before writing):** If the existing `.claude/settings.json` contains a `bytewyrd@bytewyrd` entry under `enabledPlugins`, remove it. This is a forward-only migration: pre-RFC projects had the entry; post-RFC projects must not. The cleanup is idempotent — re-running `/sync` on a clean post-RFC project is a no-op. Use `jq -e 'del(.enabledPlugins["bytewyrd@bytewyrd"])'` if `jq` is available (bracket notation is required — dot notation with `@` in the key is non-portable across jq versions); otherwise hand-edit.
+
+**Include only if installed** — an uninstalled `claude-plugins-official` plugin causes Claude Code to error on startup. Read `~/.claude/plugins/installed_plugins.json` and include each entry only if its identifier is present in the registry. Add `"github@claude-plugins-official": true`, `"context7@claude-plugins-official": true`, `"code-review@claude-plugins-official": true` only for plugins in `installed`.
 
 The `PreToolUse` hook's quality-gate command chains gate commands for all detected languages with `&&`. Skip Shell/Infra. Wrap non-root component paths in a subshell. If no languages with a standard gate are detected, omit the `PreToolUse` hook entirely.
 
@@ -619,7 +625,6 @@ Per language:
 - Shell/Infra: `.terragrunt-cache/`, `.terraform/`, `.terraform.lock.hcl` (tagged under `# bytewyrd:infra`)
 
 **Language tooling files** (not in the manifest — created as needed, not diff-tracked):
-
 **If Rust is detected** — create `rust-toolchain.toml` if absent (do NOT add Rust to mise):
 ```toml
 [toolchain]
@@ -631,6 +636,19 @@ components = ["rustfmt", "rust-analyzer", "clippy"]
 
 - `<PREREQUISITES_SECTION>` and `<INSTALL_COMMAND>`: expand per detected languages. Multi-language: list each non-trivial install step.
 - `<QUALITY_GATE_DESCRIPTION>` per language: Rust: `` `cargo fmt --all --check`, `cargo clippy --workspace --locked -- -D warnings`, `cargo test --workspace --locked` ``; JS/TS: `` `bun run typecheck`, `bun run lint`, `bun test` ``; etc.
+- **Bytewyrd plugin install hint (always include):** After the `## Prerequisites` heading and before the `## Development Setup` heading, insert the following block (idempotent: skip if `claude plugin marketplace add bytewyrd/claude-bytewyrd` is already present in the file):
+
+```markdown
+This project uses the [Bytewyrd Claude Code plugin](https://github.com/bytewyrd/claude-bytewyrd) for its dev workflow. Install once per machine (user scope; no per-project install needed):
+
+\`\`\`bash
+claude plugin marketplace add bytewyrd/claude-bytewyrd
+claude plugin install bytewyrd@bytewyrd
+\`\`\`
+
+The plugin's `SessionStart` hook will warn you if any required companion plugins or MCP servers are missing in this project — follow the printed fix command for each.
+```
+
 
 **ci.yml rendering:**
 

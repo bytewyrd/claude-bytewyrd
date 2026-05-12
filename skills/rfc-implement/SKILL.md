@@ -5,6 +5,17 @@ description: Use to begin implementing an Approved RFC. Spawns a feature-enginee
 
 # RFC Implement
 
+## Requirement check
+
+This skill creates a pull request at the end of implementation. PR creation uses the GitHub MCP when available, falling back to the `gh` CLI:
+
+1. Probe whether the GitHub MCP is enabled: `grep -q '"github@claude-plugins-official"[[:space:]]*:[[:space:]]*true' ~/.claude/settings.json .claude/settings.json 2>/dev/null`.
+2. If enabled, use the `mcp__plugin_github_github__create_pull_request` MCP tool. Print: `Using GitHub MCP for PR creation.`
+3. If not enabled, fall back to `gh pr create`. Before invoking, run `command -v gh >/dev/null 2>&1` to verify the CLI is present and `gh auth status` to verify it is logged in. Print exactly: `GitHub MCP not enabled — using gh CLI for PR creation.`
+4. If neither is available, abort PR creation with: `Cannot create PR: neither GitHub MCP nor gh CLI is available. Fix: install github@claude-plugins-official OR install gh CLI and run gh auth login.`
+
+The implementation itself (code edits, commit, push) completes regardless of which PR-creation path is taken.
+
 Implements an Approved RFC by spawning a `feature-engineer` agent and marking the RFC `Done` when complete.
 
 ## Steps
