@@ -163,7 +163,7 @@ Upstream checklists frequently include items like "Coverage > 95%", "Response ti
 | build-engineer | 3 | — | — | pending |
 | claude-agent-author | 1 | 2026-05-12 | v1 | pass with deviations |
 | cli-developer | 3 | — | — | pending |
-| cloud-architect | 2 | — | — | pending |
+| cloud-architect | 2 | 2026-05-12 | v1 | pass |
 | code-reviewer | 1 | 2026-05-12 | v1 | pass |
 | database-administrator | 2 | — | — | pending |
 | database-optimizer | 3 | — | — | pending |
