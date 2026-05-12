@@ -1,2 +1,5 @@
 .worktrees/
 .claude/settings.local.json
+
+# bytewyrd plugin local state (PreCompact sentinel, etc.)
+.bytewyrd/
