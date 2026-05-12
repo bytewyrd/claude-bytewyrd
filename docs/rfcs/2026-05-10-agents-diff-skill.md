@@ -2,7 +2,7 @@
 rfc: "2026-05-10-agents-diff-skill"
 title: "/agents-diff: Upstream vs Local Diff for Vendored Agent Definitions"
 author: "Rodrigo Kochenburger"
-status: "Draft"
+status: "Approved"
 created: "2026-05-10"
 drop_reason: ~
 ---
@@ -22,17 +22,17 @@ Add a plugin-local `/agents-diff` skill that fetches the current contents of eve
 **What exists today:**
 
 - `agents/` — 46 agent definition files (`*.md`), each with YAML frontmatter (`name`, `description`, optional `tools`, optional `color`) followed by the agent's system prompt. The local copies are the source of truth for any agent shipped by this plugin.
-- `.claude/skills/agents-update/SKILL.md` — still present in the working tree even though RFC `2026-05-10-refactor-command` (Approved) specifies its deletion in Step 3 of that RFC's implementation spec. This skill defines the prior auto-sync workflow: fetch the upstream tree via the GitHub Trees API, diff filenames, prompt for which files to overwrite, then download the approved files to `agents/`. The RFC's implementation has not yet landed (the RFC is Approved, not Done); `/agents-diff` is being designed in parallel and will be added by a separate implementation pass.
+- `.claude/skills/agents-update/SKILL.md` — has been deleted as specified by RFC `2026-05-10-refactor-command` (status: Done). The prior auto-sync workflow it defined (fetch the upstream tree via the GitHub Trees API, diff filenames, prompt for which files to overwrite, then download the approved files to `agents/`) is no longer available. `/agents-diff` is being designed as the read-only replacement for the visibility that workflow provided, with no overwrite step.
 - Upstream repository: `https://github.com/VoltAgent/awesome-claude-code-subagents`. Agent files live under `categories/<category>/<agent-name>.md` (e.g., `categories/02-language-specialists/python-pro.md`). The repository's default branch is `main`. License is MIT, which permits the use, modification, and redistribution this plugin already relies on.
-- `.claude/skills/` directory — already established as the location for plugin-local maintenance skills that are not exported to plugin consumers (the `agents-update` and `best-practices-sync` skills both live here). The directory is not registered in `.claude-plugin/plugin.json`; Claude Code discovers skills in `.claude/skills/` automatically when invoked inside the checkout.
+- `.claude/skills/` directory — already established as the location for plugin-local maintenance skills that are not exported to plugin consumers (the `best-practices-sync` skill lives here). The directory is not registered in `.claude-plugin/plugin.json`; Claude Code discovers skills in `.claude/skills/` automatically when invoked inside the checkout.
 
 **What is broken or missing:**
 
 1. **No upstream visibility.** A maintainer has no way to know which local agent files have diverged from their upstream counterparts (whether because the local copy was customized or because upstream evolved), which agents are new upstream and could be considered for adoption, or which previously-vendored agents have been removed upstream. The information exists — it is one HTTP fetch away — but there is no command that surfaces it.
 2. **No safe diff workflow.** The only command that previously touched upstream (`/agents-update`) was destructive: it overwrote local files after a yes/no approval. RFC `2026-05-10-refactor-command` removed it precisely because that destructiveness is incompatible with local-ownership semantics. The plugin currently has no read-only counterpart that surfaces the same information without the mutation.
-3. **Lost institutional knowledge.** The fetch and tree-walk patterns in the now-removed `/agents-update` skill encoded operational details (Trees API endpoint, raw content URL pattern, category lookup, rate-limit avoidance) that would otherwise need to be rediscovered when building any future upstream-visibility skill. `/agents-diff` is the natural place to re-host that knowledge in a non-destructive form.
+3. **Lost institutional knowledge.** The fetch and tree-walk patterns in the now-deleted skill encoded operational details (Trees API endpoint, raw content URL pattern, category lookup, rate-limit avoidance) that would otherwise need to be rediscovered when building any future upstream-visibility skill. `/agents-diff` is the natural place to re-host that knowledge in a non-destructive form.
 
-The plugin's other plugin-local skills (`agents-update`, `best-practices-sync`) demonstrate the precedent for this RFC's chosen location: a `SKILL.md` under `.claude/skills/<skill-name>/` that documents an in-checkout maintenance workflow.
+The plugin's other plugin-local skill (`best-practices-sync`) demonstrates the precedent for this RFC's chosen location: a `SKILL.md` under `.claude/skills/<skill-name>/` that documents an in-checkout maintenance workflow.
 
 ## Analysis / Options
 
@@ -162,7 +162,6 @@ Too brittle for the long-tail case where one file in a hundred fails transiently
 | Action | Path | Responsibility |
 |--------|------|----------------|
 | Create | `.claude/skills/agents-diff/SKILL.md` | New plugin-local skill: fetches upstream tree via GitHub Trees API, fetches per-file content from raw.githubusercontent.com, compares against local `agents/`, prints a unified diff grouped by modified/new/removed/identical categories. Read-only — no `agents/` modifications, no `plugin.json` registration |
-| Modify | `docs/rfc-braindump.md` | Remove the bullet that began this RFC: the line starting `* **/agents-diff: read-only upstream-vs-local diff for vendored agent definitions.**` |
 
 No new agent files. No `plugin.json` changes. No edits to existing skills. No hook changes. No changes to `agents/`.
 
@@ -226,16 +225,15 @@ TREE_JSON="$(curl -sf -H 'Accept: application/vnd.github+json' \
 }
 
 # Fetch the head commit SHA for the report header. Failure here is non-fatal —
-# fall back to the tree SHA from the tree response, or "unknown" as a last resort.
+# fall back to "unknown".
 HEAD_SHA="$(curl -sf -H 'Accept: application/vnd.github+json' \
     'https://api.github.com/repos/VoltAgent/awesome-claude-code-subagents/commits/main' \
     2>/dev/null \
     | python3 -c "import json,sys; print(json.load(sys.stdin)['sha'][:7])" 2>/dev/null || \
-    echo "$TREE_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin).get('sha','unknown')[:7])" 2>/dev/null || \
     echo 'unknown')"
 ```
 
-`curl -sf` causes curl to exit non-zero on HTTP 4xx/5xx (the `-f` flag) while still suppressing the progress bar (`-s`). The Trees API call is mandatory; failure aborts. The commits API call is optional (for the report header); failure falls back to the tree SHA, then to `"unknown"`.
+`curl -sf` causes curl to exit non-zero on HTTP 4xx/5xx (the `-f` flag) while still suppressing the progress bar (`-s`). The Trees API call is mandatory; failure aborts. The commits API call is optional (for the report header); failure falls back to `'unknown'`. The tree-SHA fallback was removed because the Trees API response's `sha` field is a tree object SHA, not a commit SHA — displaying it as `commit <sha>` would mislead a maintainer trying to look up that ref on GitHub.
 
 Validate the tree response and extract agent file paths:
 
@@ -298,6 +296,19 @@ Build three lists:
 # Upstream filenames (first column of TSV)
 cut -f1 "$WORKDIR/upstream-list.tsv" | LC_ALL=C sort > "$WORKDIR/upstream-names.txt"
 
+# Duplicate-basename guard: abort if upstream has two agent files with the same basename
+# in different category folders. The awk lookup in Step 4 only returns the first match,
+# so a duplicate would silently drop the second file from the diff.
+dupes="$(cut -f1 "$WORKDIR/upstream-list.tsv" | LC_ALL=C sort | uniq -d)"
+if [ -n "$dupes" ]; then
+    echo "ERROR: upstream contains duplicate agent basenames. The diff cannot be produced safely." >&2
+    echo "Duplicates found:" >&2
+    while IFS= read -r dup; do
+        grep -F "$dup" "$WORKDIR/upstream-list.tsv" | awk -F'\t' '{print "  " $1 "  (" $2 ")"}' >&2
+    done <<< "$dupes"
+    exit 2
+fi
+
 # Set operations. `comm` requires sorted input; LC_ALL=C ensures byte-ordering
 # consistency between the sort and comm passes.
 LC_ALL=C comm -12 "$WORKDIR/local-list.txt" "$WORKDIR/upstream-names.txt" > "$WORKDIR/both.txt"
@@ -309,7 +320,7 @@ The `LC_ALL=C` calls on both `sort` and `comm` are required for correctness on s
 
 ## Step 4 — Fetch upstream content for files in `both.txt`
 
-For each filename in `both.txt`, look up its upstream path in `upstream-list.tsv` and fetch the raw content. Serial fetch, 200 ms pause between requests, never in parallel:
+For each filename in `both.txt`, look up its upstream path in `upstream-list.tsv` and fetch the raw content. Serial fetch, 200 ms pause between requests, never in parallel. The curl call uses `--max-time 30` to prevent hung connections from stalling the skill indefinitely:
 
 ```bash
 > "$WORKDIR/fetch-failures.txt"  # truncate / create the failures log
@@ -325,7 +336,7 @@ while IFS= read -r filename; do
 
     url="https://raw.githubusercontent.com/VoltAgent/awesome-claude-code-subagents/main/${upstream_path}"
 
-    http_code="$(curl -s -o "$WORKDIR/upstream/$filename" -w '%{http_code}' "$url")"
+    http_code="$(curl -s --max-time 30 -o "$WORKDIR/upstream/$filename" -w '%{http_code}' "$url")"
 
     if [ "$http_code" = "429" ]; then
         echo "ERROR: hit rate limit (HTTP 429) while fetching $filename. Aborting; re-run later." >&2
@@ -340,11 +351,22 @@ while IFS= read -r filename; do
         rm -f "$WORKDIR/upstream/$filename"
     fi
 
+    # Curl can report HTTP 200 (the header arrived successfully) but then the
+    # connection drops mid-transfer, leaving an empty or partial file on disk.
+    # Treat a zero-byte response as a fetch failure and remove the empty file
+    # so Step 5's cmp does not classify it as a (false-positive) modification.
+    # The failure code "200-empty" is what the report's "Failed to fetch"
+    # section will display for these cases.
+    if [ "$http_code" = "200" ] && [ ! -s "$WORKDIR/upstream/$filename" ]; then
+        printf '%s\t%s\n' "$filename" "200-empty" >> "$WORKDIR/fetch-failures.txt"
+        rm -f "$WORKDIR/upstream/$filename"
+    fi
+
     sleep 0.2
 done < "$WORKDIR/both.txt"
 ```
 
-After this loop, `"$WORKDIR/upstream/"` contains one file per successfully-fetched upstream agent, and `"$WORKDIR/fetch-failures.txt"` lists any files that failed (one `<filename>\t<http_code>` per line).
+After this loop, `"$WORKDIR/upstream/"` contains one file per successfully-fetched upstream agent, and `"$WORKDIR/fetch-failures.txt"` lists any files that failed (one `<filename>\t<http_code>` per line). Zero-byte responses (curl returned HTTP 200 but the transfer produced an empty file — typically a connection reset after headers arrived) are recorded with the synthetic code `200-empty` in the failures log; the report's "Failed to fetch" section may show this code alongside genuine HTTP error codes.
 
 ## Step 5 — Classify modified vs identical, and build per-file diffs
 
@@ -392,9 +414,39 @@ removed_count="$(wc -l < "$WORKDIR/removed-upstream.txt" | tr -d ' ')"
 identical_count="$(wc -l < "$WORKDIR/identical.txt" | tr -d ' ')"
 failed_count="$(wc -l < "$WORKDIR/fetch-failures.txt" | tr -d ' ')"
 fetched_at="$(date -u '+%Y-%m-%d %H:%M UTC')"
+
+# 25% failure warning (per Red Flags). If more than a quarter of the per-file
+# fetches failed, prepend a prominent warning so the maintainer knows the
+# modified-vs-identical classification may be incomplete.
+if [ "$failed_count" -gt 0 ] && [ "$( (cd agents && ls -1 *.md 2>/dev/null) | wc -l | tr -d ' ')" -gt 0 ]; then
+    both_count="$(wc -l < "$WORKDIR/both.txt" | tr -d ' ')"
+    if [ "$both_count" -gt 0 ] && [ "$((failed_count * 4))" -gt "$both_count" ]; then
+        echo "Warning: ${failed_count}/${both_count} per-file fetches failed; the modified-vs-identical classification may be incomplete."
+        echo
+    fi
+fi
 ```
 
-Then print, in this exact structure:
+Then print the report header and summary. The "Failed to fetch" line in the summary is only emitted when at least one fetch failed:
+
+```bash
+echo "upstream: VoltAgent/awesome-claude-code-subagents @ main (commit ${HEAD_SHA})"
+echo "fetched: ${fetched_at}"
+echo
+echo "Summary"
+echo "-------"
+echo "  ${upstream_count} files upstream, ${local_count} files local"
+echo "   ${modified_count} modified (local differs from upstream)"
+echo "   ${new_count} new upstream (not in local agents/)"
+echo "   ${removed_count} removed upstream (still in local agents/)"
+echo "   ${identical_count} identical"
+
+if [ "$failed_count" -gt 0 ]; then
+    echo "   ${failed_count} failed to fetch"
+fi
+```
+
+The full structure of the rendered report is:
 
 ```
 upstream: VoltAgent/awesome-claude-code-subagents @ main (commit <HEAD_SHA>)
@@ -453,17 +505,23 @@ while IFS= read -r filename; do
 done < "$WORKDIR/removed-upstream.txt"
 ```
 
-For failed fetches (only if non-empty):
+For failed fetches, the section header and loop are guarded so no empty section is emitted when every fetch succeeded:
 
 ```bash
-while IFS=$'\t' read -r filename code; do
-    printf '! %-40s (HTTP %s)\n' "$filename" "$code"
-done < "$WORKDIR/fetch-failures.txt"
+if [ "$failed_count" -gt 0 ]; then
+    echo ""
+    echo "Failed to fetch ($failed_count)"
+    echo "================================"
+    echo ""
+    while IFS=$'\t' read -r filename code; do
+        printf '! %-40s (HTTP %s)\n' "$filename" "$code"
+    done < "$WORKDIR/fetch-failures.txt"
+fi
 ```
 
 ## Step 7 — `--verbose` mode (optional)
 
-The skill checks the invocation arguments for `--verbose`. The arguments are available via the `$ARGUMENTS` token that Claude Code substitutes into the skill body at invocation time:
+The skill checks the invocation arguments for `--verbose`. The arguments are available via the `$ARGUMENTS` token that Claude Code substitutes **textually** into the skill body at invocation time — it is not a shell environment variable; Claude Code performs the substitution before the bash block is executed, replacing `$ARGUMENTS` with the literal string of arguments the user provided (empty string if none). The sibling `.claude/skills/best-practices-sync/SKILL.md` uses the same token for reference.
 
 ```bash
 VERBOSE=0
@@ -509,19 +567,7 @@ The skill produces no on-disk artifacts outside `$TMPDIR`. `agents/` is never to
 
 The skill's audience is a maintainer running it inside the plugin checkout. The output is structured for terminal reading, not for piping to another tool.
 
-#### Step 2 — Remove the promoted braindump entry
-
-Open `docs/rfc-braindump.md` and remove the bullet that began this RFC. The line to remove (verbatim, including the leading `* `):
-
-```
-* **/agents-diff: read-only upstream-vs-local diff for vendored agent definitions.** The project owns the agent files in `agents/` locally (originally vendored from VoltAgent/awesome-claude-code-subagents under MIT), and the previous `/agents-update` was removed to keep ownership explicit rather than auto-overwriting local changes. The gap left behind is discoverability — a maintainer has no easy way to know when interesting upstream improvements exist. `/agents-diff` would fetch the current upstream copies and surface a per-file diff against the local versions, without applying anything. The maintainer reviews the diff and decides what (if anything) to port over manually, preserving local ownership while restoring visibility into upstream evolution.
-```
-
-Delete the entire bullet (one line in the file, may wrap in some editors). Leave all other entries and the file header intact.
-
-Note: This step is performed by the parent `/rfc-new` skill in its post-write phase (Step 6 of `skills/rfc-new/SKILL.md`), not by the implementer of this RFC. It is listed here only for traceability — the RFC's implementation responsibility is Step 1 (the skill file itself).
-
-#### Step 3 — Verification
+#### Step 2 — Verification
 
 After Step 1, run these checks. Each is a single command with an expected output line.
 
@@ -561,7 +607,7 @@ After Step 1, run these checks. Each is a single command with an expected output
    - Expected: the skill emits the report described in Step 6 of the skill body. Check the two count identities that must hold:
      - `modified + identical + failed == both` (every file that appears in both upstream and local is classified into exactly one of those three buckets, including failed fetches).
      - `both + new_upstream == upstream_count` and `both + removed_upstream == local_count` (set-cover identities: `both` is the intersection; `new_upstream` and `removed_upstream` are the two exclusive halves).
-   - Confirm the upstream commit SHA in the report header is a 7-character hex string (or the literal `unknown` if the optional commits-API call failed).
+   - Confirm the upstream SHA in the report header is a 7-character hex string (if the commits API call succeeded) or the literal `unknown` (if it failed). No other values are expected.
    - Run `/agents-diff --verbose` and confirm the identical-files section lists filenames one per line.
    - Run the skill from a directory that does not contain `agents/` and confirm it exits with the "plugin checkout only" message.
 
@@ -584,13 +630,13 @@ After Step 1, run these checks. Each is a single command with an expected output
 
 - **Open question: should the skill diff agent prompt bodies semantically (e.g., ignoring whitespace, ignoring frontmatter reordering)?** **Resolution within this RFC:** no. `diff -u` byte-comparison is the right default; semantic diff would invent a notion of "meaningful change" that the maintainer should be the one to apply. If a whitespace-only change is shown in the diff, the maintainer sees that it's whitespace-only and moves on — a few seconds of human judgment.
 
-- **Risk: relationship to RFC `2026-05-10-refactor-command`'s as-yet-unimplemented Step 3 (delete `/agents-update`).** If `/agents-diff` is implemented before the `/agents-update` deletion is implemented, both skills coexist briefly; this is harmless because `/agents-diff` is read-only and `/agents-update` only runs when explicitly invoked. **Resolution within this RFC:** no coordination required. The two RFCs' implementation passes can land in either order; the post-state is the intended one regardless of order.
+- **Relationship to RFC `2026-05-10-refactor-command`'s deletion of `/agents-update`.** That deletion is complete: `.claude/skills/agents-update/` no longer exists in the working tree, the RFC's status is Done, and there is no coexistence to manage. No coordination is required between the two RFCs — `/agents-diff` lands on a tree where `/agents-update` is already gone.
 
 - **Open question: does this skill need a hook (e.g., to remind the maintainer to run `/agents-diff` periodically)?** **Resolution within this RFC:** no. Reminders for "you might want to check upstream this week" are noise without a clear trigger condition. The skill is run when the maintainer wants to know; that's the right cadence.
 
 ## Relationship to other RFCs
 
-- **2026-05-10-refactor-command** (status: Approved) — this RFC is the direct follow-up that RFC explicitly anticipated. RFC `2026-05-10-refactor-command` removed `/agents-update` to lock in local ownership of `agents/`, and its "open questions" section concludes: "If a future RFC wants a more structured 'see what's changed upstream' workflow, it can add a read-only diff command (`/agents-diff` or similar) that surfaces changes without overwriting." This RFC delivers exactly that. The two RFCs are complementary, not conflicting: `/agents-diff` does not restore any auto-overwrite behavior, and the local-ownership posture remains intact.
-- **`/agents-update` (removed)** — the prior auto-sync skill whose deletion is specified in RFC `2026-05-10-refactor-command`. This RFC reuses the same fetch pattern (GitHub Trees API + raw CDN), but inverts the safety profile: `/agents-update` ended in a file write; `/agents-diff` ends in a report.
+- **2026-05-10-refactor-command** (status: Done) — this RFC is the direct follow-up that RFC explicitly anticipated. RFC `2026-05-10-refactor-command` removed `/agents-update` to lock in local ownership of `agents/` (the deletion has already landed), and its "open questions" section concludes: "If a future RFC wants a more structured 'see what's changed upstream' workflow, it can add a read-only diff command (`/agents-diff` or similar) that surfaces changes without overwriting." This RFC delivers exactly that. The two RFCs are complementary, not conflicting: `/agents-diff` does not restore any auto-overwrite behavior, and the local-ownership posture remains intact.
+- **`/agents-update` (removed)** — the prior auto-sync skill, deleted as specified by RFC `2026-05-10-refactor-command`. This RFC reuses the same fetch pattern (GitHub Trees API + raw CDN), but inverts the safety profile: `/agents-update` ended in a file write; `/agents-diff` ends in a report.
 - **`/sync` and `/best-practices-sync`** — sibling plugin-local maintenance skills under `.claude/skills/`. This RFC follows the same placement convention but is not coupled to either: `/agents-diff` does not call them, and they do not call it.
 - **Potential future `/agents-port <agent-name>`** — a per-file overwrite skill that would be a deliberate companion to `/agents-diff` (review with the diff, port with `/agents-port`). Not proposed in this RFC; mentioned as the natural next step if real-world use shows the manual port step is a recurring friction. Any such follow-up RFC would need to re-litigate the local-ownership boundary that `2026-05-10-refactor-command` established, with a per-file scope rather than the wholesale-overwrite scope that was rejected.
