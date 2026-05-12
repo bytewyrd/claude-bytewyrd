@@ -2,7 +2,7 @@
 rfc: "2026-05-12-post-approval-discretionary-revisions"
 title: "Post-Approval Discretionary Revisions Section in RFC Template"
 author: "Rodrigo Kochenburger"
-status: "Draft"
+status: "Approved"
 created: "2026-05-12"
 drop_reason: ~
 ---
