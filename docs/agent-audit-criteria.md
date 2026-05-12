@@ -193,7 +193,7 @@ Upstream checklists frequently include items like "Coverage > 95%", "Response ti
 | rails-expert | 3 | — | — | pending |
 | react-specialist | 2 | — | — | pending |
 | refactoring-specialist | 1 | — | — | pending |
-| rfc-architect | 1 | — | — | pending |
+| rfc-architect | 1 | 2026-05-12 | v1 | pass |
 | rust-engineer | 3 | — | — | pending |
 | security-engineer | 1 | — | — | pending |
 | sql-pro | 3 | — | — | pending |
