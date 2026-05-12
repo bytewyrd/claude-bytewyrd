@@ -45,7 +45,7 @@ The bytewyrd plugin's `CLAUDE.md` (line 1 of the project root) lists the worktre
 
 ## Analysis / Options
 
-Three decisions: (1) how to check and mutate the setting (which tool — GitHub MCP, `gh api`, `gh repo view` / `gh repo edit`), (2) when to mutate (silent vs. announce-then-apply vs. ask), and (3) how to handle the failure modes (missing CLI, missing auth, organization-owner restriction, non-GitHub remote).
+Four decisions: (1) how to check and mutate the setting (which tool — GitHub MCP, `gh api`, `gh repo view` / `gh repo edit`), (2) when to mutate (silent vs. announce-then-apply vs. ask), (3) how to handle the failure modes (missing CLI, missing auth, organization-owner restriction, non-GitHub remote), and (4) whether the verification belongs inside `/sync` at all or in a dedicated sub-command (`/git-verify`, `/github-verify`).
 
 ### Decision 1 — Which tool reads and writes the setting?
 
@@ -143,6 +143,24 @@ Rejected because the whole `/sync` flow is structured to be idempotent and parti
 
 **Recommendation: Option A.** Categorical skip reasons. The categorization is implemented in the SKILL.md additions and reported per-category in Step 8.
 
+### Decision 4 — Should verification concerns be split into dedicated sub-commands?
+
+A reasonable design question: rather than bundling all verification and enforcement behind `/sync`, should the plugin expose focused sub-commands like `/git-verify` (local git conventions) and `/github-verify` (remote GitHub settings)? Each would have a single, clearly-scoped purpose, and the developer's workflow would compose them as needed.
+
+**Option A — Keep everything in `/sync` (recommended).**
+
+`/sync` is already the idempotent project-bootstrapping convention enforcer. Its job is precisely to take a project and bring it up to all Bytewyrd conventions in a single pass — local files, remote settings, RFC scaffolding, CI workflows. Adding a sub-step for `delete_branch_on_merge` follows the exact same pattern as the existing `gh repo edit --description` call: read current state, compare to convention, apply the fix, report the outcome. The mental model the user already has of `/sync` ("one command brings a project fully up to convention") is preserved.
+
+Creating separate `/git-verify` and `/github-verify` commands would fragment the developer workflow. Instead of one command that brings a project fully up to convention, users would need to remember to run multiple commands — `/sync`, then `/git-verify`, then `/github-verify`, possibly in some specific order, possibly with overlapping responsibilities. The value of `/sync` is that it is comprehensive and idempotent; splitting it reduces that value. The user has to know less when there is one entry point, not three.
+
+**Option B — Add dedicated `/git-verify` and `/github-verify` sub-commands.**
+
+These could serve as focused "check only, don't mutate" verification passes, separate from `/sync`'s "check and fix" mode. A user could run `/github-verify` on a PR review to confirm a project's settings without applying changes, or in CI to audit drift.
+
+Rejected for this RFC: the braindump's use case is **enforcement**, not audit-only verification, and enforcement belongs in `/sync` (where fixes are also applied). The audit-only use case is real but distinct from this RFC's scope — it can be a future RFC that introduces either a `/sync --check` mode (which audits without mutating) or a dedicated `/github-verify` command. Either approach can be designed cleanly once the underlying state-reading logic exists in `/sync`; introducing it here would conflate two concerns.
+
+**Recommendation: Option A.** Keep the new sub-step inside `/sync`. The decomposition into focused verify-only commands is a reasonable future direction (a dedicated `/github-verify` or a `/sync --check` mode that audits without mutating) and is captured here as a possible follow-up RFC, but it is out of scope for this one.
+
 ## Drawbacks
 
 - **Adds 25–30 lines to `skills/sync/SKILL.md` Step 6 plus one row to the Step 8 report.** The skill body is already 1449 lines; growth is modest but real. **Mitigation:** the new sub-step is self-contained (it has no cross-references to other Step 6 logic and does not entangle with the `.github/*` file-creation logic that dominates Step 6), so the addition reads as a discrete block. The skill body is structured by step number; adding one bullet at the top of Step 6 does not increase cognitive load for the rest of the file.
@@ -156,6 +174,8 @@ Rejected because the whole `/sync` flow is structured to be idempotent and parti
 - **The GitHub MCP cannot perform the write.** This RFC commits to `gh` CLI for the write path, which means if a future plugin update wires `/sync` to use the GitHub MCP for *other* operations (e.g., creating issues, opening PRs), this sub-step remains on the CLI. **Mitigation:** when the GitHub MCP adds an `update_repository` tool (proposed in [github/github-mcp-server#1476](https://github.com/github/github-mcp-server/issues/1476) and adjacent issues — the MCP team has explicitly expressed interest in repo-settings tooling), the implementation in SKILL.md can switch transparently. The classification matrix in Implementation spec preserves the option to swap tools without changing the user-facing report.
 
 - **Adds latency to `/sync` Step 6.** Two `gh` API round-trips (one read, one write — when the write is needed) add ~500ms–2s per run. **Mitigation:** Step 6 already includes one `gh repo edit --description` call; adding one more read and (conditionally) one more write is incremental. `/sync` is interactive and not on a hot path.
+
+- **Claude Code sandbox compatibility: the `gh` CLI writes cache/session files to `~/.cache/gh`.** In Claude Code's default sandbox (bwrap/bubblewrap), this path may not be writable, causing `gh` commands to fail with misleading errors (often surfacing as "authentication required" or generic network errors rather than as a sandbox permission denial). **Mitigation:** the Implementation spec includes a "Claude Code sandbox accommodation" subsection that documents the required `.claude/settings.local.json` change (adding `"gh *"` to `sandbox.excludedCommands`). This is a manual, user-local step (`settings.local.json` is gitignored), so it must be communicated as part of rollout — the SKILL.md instructions can detect sandbox-related failures and direct the user to the accommodation, but cannot auto-apply it.
 
 ## Implementation spec
 
@@ -241,6 +261,30 @@ Classify the fallback's exit code with the same rules as the `gh repo edit` writ
 ```
 
 (End of new sub-section. The existing `### .github/workflows/ci.yml` H3 follows immediately after.)
+
+### Claude Code sandbox accommodation
+
+Claude Code runs commands inside a bwrap (bubblewrap) sandbox that restricts filesystem writes by default. The `gh` CLI writes session/cache state to `~/.cache/gh` (token cache, response cache, update-check timestamps). If `~/.cache/gh` is not in the sandbox's allowed-write paths, `gh repo view` and `gh repo edit` may fail with permission errors that look like authentication failures rather than sandbox errors. This makes the failure mode hard to diagnose: the user sees `skipped (gh not authenticated — run 'gh auth login')` even when `gh auth status` outside the sandbox reports success.
+
+**The fix is to add `gh` to `sandbox.excludedCommands` in `.claude/settings.local.json`.** The exact snippet:
+
+```json
+{
+  "sandbox": {
+    "excludedCommands": ["gh *"]
+  }
+}
+```
+
+**Important conventions for this entry:**
+
+- Use the wildcard form `"gh *"` (with a trailing space and `*`), not the bare `"gh"`. This matches the existing pattern documented in `docs/BEST_PRACTICES.md` for wrapper scripts (`"./run *"`, `"./deploy *"`) and is required for arguments to be passed through.
+- Keep this configuration in `settings.local.json` (gitignored, user-local), **not** `settings.json` (checked in, shared). Sandbox accommodations are per-user environmental concerns, not project conventions.
+- Alternative (less preferred): add `~/.cache/gh` to the sandbox's `filesystem.allowWrite` paths. This is more surgical but does not cover other paths `gh` may write (state files under `~/.config/gh`, temporary files in `$TMPDIR`). The `excludedCommands` approach is simpler and more robust.
+
+**This is a manual, user-local step** that the SKILL.md implementation cannot auto-apply (`.claude/settings.local.json` is gitignored, so it must be edited by each user on each machine). The SKILL.md instructions should document this as part of the sub-step's preconditions: if `gh` commands fail with what appear to be authentication errors inside `/sync` but succeed when run outside the Claude Code sandbox, the user should add the `"gh *"` exclusion to `.claude/settings.local.json` and re-run `/sync`.
+
+The Step 8 report's `skipped (gh not authenticated — ...)` row should include a hint pointing users to this accommodation when sandbox-related failures are suspected. A pragmatic implementation: if the read fails with auth-style errors AND `gh auth status` invoked separately reports success, the report row's hint should read `Run 'gh auth login' to enable this check, or add "gh *" to sandbox.excludedCommands in .claude/settings.local.json if running inside Claude Code's sandbox.` (Detecting this discrepancy is best-effort; the SKILL.md prose should describe the symptom — auth error inside sandbox but `gh` works outside — so the user can self-diagnose even if the heuristic does not catch every case.)
 
 ### Exact additions to the Step 8 report
 
@@ -374,6 +418,8 @@ After implementing, run these checks. The first three exercise the happy path on
 
 10. **Sub-step does not stop the rest of `/sync`.** Force any failure case (4 through 9). Verify that Step 7 (RFC process sync) and the rest of Step 8 (file outcome rows) still execute. Specifically: the `docs/rfc-process.md` file is still synced, the `.github/workflows/ci.yml` is still created if missing, and the final Step 8 report still prints.
 
+11. **Sandbox accommodation.** Inside Claude Code's sandbox without the `"gh *"` exclusion, run `/sync` on a GitHub repo where `gh auth status` (outside the sandbox) confirms authentication. Expected: the read may fail with what appears to be an authentication error; the user follows the documented accommodation (add `"gh *"` to `sandbox.excludedCommands` in `.claude/settings.local.json`); re-run `/sync`. Expected: the sub-step now completes normally and the Step 8 row reads `already enabled` or `enabled by /sync` depending on prior state.
+
 If any verification step fails, the failure points to one of: (a) the gate logic is wrong (the sub-step runs when it should not, or skips when it should not), (b) the categorization of `gh` stderr is wrong (a specific failure does not match the substring patterns), (c) the write happens despite the read returning `true` (idempotence bug), or (d) a failure case halts the overall `/sync` run (the sub-step is leaking exceptions instead of skipping cleanly).
 
 ### Compatibility check: existing `gh repo edit --description` call
@@ -417,3 +463,5 @@ The two PATCHes incur a total of ~1–2 seconds extra latency per `/sync` run wh
 - **Future RFC — GitHub merge-type policy enforcement** (potential braindump entry) — would extend `/sync` to enforce `allow_squash_merge=true`, `allow_rebase_merge=false`, `allow_merge_commit=false` per Bytewyrd's "squash merge to keep history clean" convention. The implementation pattern in this RFC (read → categorize → announce → write → categorize outcome) is directly reusable. This RFC does not implement merge-type enforcement; it just demonstrates the pattern.
 
 - **Future RFC — bulk backfill of stale merged branches** (mentioned in Risks and open questions) — would add a separate skill that, on demand, lists branches whose PRs have been merged but the branch still exists on the remote, and offers to delete them. This RFC does not address backfill; new repos and repos that get the setting flipped today will accumulate cleanly going forward. The backfill is a separate concern.
+
+- **Future RFC — `/sync --check` mode or dedicated `/github-verify` command** (potential follow-up) — would introduce an audit-only mode that reads and reports remote settings without mutating them, useful for CI checks and PR reviews. This RFC's Decision 4 explicitly leaves this design space open: the underlying read logic introduced here would be directly reusable by an audit-only entry point. Scope, ergonomics, and naming (`/sync --check`, `/github-verify`, or a focused split into `/git-verify` + `/github-verify`) are intentionally deferred.
