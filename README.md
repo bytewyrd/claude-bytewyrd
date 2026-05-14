@@ -5,7 +5,7 @@
   </h1>
   <p>Opinionated Claude Code workflow — RFC-driven development, specialist agents, and best-practices capture, ready to install in any project</p>
   <br/>
-  <code>claude plugin install bytewyrd/claude-bytewyrd --scope project</code>
+  <code>claude plugin install bytewyrd/claude-bytewyrd</code>
   &nbsp;&nbsp;then&nbsp;&nbsp;
   <code>/bytewyrd:sync</code>
 </div>
@@ -18,7 +18,7 @@ Install once. Run `/sync`. Everything else follows.
 
 ## What you get
 
-**13 slash-command skills** covering the full development lifecycle — from project bootstrap to design review to deliberate refactoring.
+**15 slash-command skills** covering the full development lifecycle — from project bootstrap to design review to deliberate refactoring.
 
 **50+ specialist agents** — each with a focused role, curated tool list, and right-sized model. Backend, frontend, DevOps, database, security, and architecture. Claude delegates to the right one automatically.
 
@@ -63,12 +63,11 @@ Install once. Run `/sync`. Everything else follows.
 ## Getting started
 
 ```bash
-# Recommended: scoped to the project so teammates get prompted to install automatically
-claude plugin install bytewyrd/claude-bytewyrd --scope project
-
-# Or: install for your user globally across all projects
-claude plugin install bytewyrd/claude-bytewyrd --scope user
+# Install once at user scope — available in every project you open
+claude plugin install bytewyrd/claude-bytewyrd
 ```
+
+See [docs/guide/installation.md](docs/guide/installation.md) for team-wide enforcement options.
 
 Then in any Claude Code session:
 
@@ -91,8 +90,10 @@ RFC docs, best-practices file, agent delegation table, and CI are set up in one 
 | `/rfc-read-feedback` | Incorporate inline `FEEDBACK:` comments from reviewers |
 | `/rfc-consensus-review` | Run independent critic agents, surface gaps |
 | `/rfc-drop` | Drop an RFC and record the reason |
+| `/rfc-summary` | List all Draft and Approved RFCs at a glance |
 | `/best-practices-record` | Capture a session learning |
 | `/best-practices-extract` | Extract all non-obvious learnings from a session |
+| `/docs-review` | Audit `docs/guide/**` for drift and coverage gaps |
 | `/refactor` | Deliberate phased refactor (Opus, with approval gate) |
 | `/git-branch-cleanup` | Prune stale branches and associated worktrees |
 

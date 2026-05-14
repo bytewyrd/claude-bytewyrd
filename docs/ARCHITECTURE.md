@@ -48,13 +48,25 @@ Current plugin-local skills:
 **Purpose:** Defines the plugin's identity. This is the entrypoint the Claude Code plugin system reads; skills and agents are auto-discovered from their respective root directories.
 **Location:** `.claude-plugin/plugin.json`
 
+### Hooks (`hooks/`, `scripts/`)
+
+**Purpose:** Shell-level automation that Claude Code executes in response to session lifecycle events. The plugin currently ships one hook: a `SessionStart` probe that runs once per session in every project where the plugin is enabled.
+**Location:** `hooks/hooks.json` (hook declarations) + `scripts/check-requirements.sh` (probe logic)
+**Key behavior:** The hook is silent when all requirements are met. It emits a warning bundle for soft-dependency gaps (companion plugins not enabled, MCP servers not configured, optional CLI tools absent) and exits with status 2 only for hard failures (`git` missing, or a stale `claude-plugins-official` reference that Claude Code would error on later). Individual warnings can be suppressed via `BYTEWYRD_SKIP_WARN=<id>` in the user's shell environment.
+
 ## Data Flow
 
 Skills → executed by Claude Code in-session. No persistent side effects unless the skill writes files.
 
 Agents → spawned as subtask processes. Receive a goal and a tool allow-list from the calling skill; return a result message.
 
-`best-practices-record` (skill) → `~/.claude/BEST_PRACTICES.md` (user-global file) → `best-practices-sync` (plugin-local skill) → `skills/sync/SKILL.md` → future `/sync` runs in consumer projects.
+`SessionStart` hook → `scripts/check-requirements.sh` → warns or blocks when companion plugins, MCP servers, or required CLI tools are missing.
+
+`best-practices-extract` (skill) → `docs/BEST_PRACTICES.md` (project file); entries the user marks as generalizable → optional Promotion Step → `~/.claude/BEST_PRACTICES.md` (user-global file).
+
+`best-practices-record` (skill) → `~/.claude/BEST_PRACTICES.md` (user-global file).
+
+`~/.claude/BEST_PRACTICES.md` → `best-practices-sync` (plugin-local skill) → `skills/sync/SKILL.md` → future `/sync` runs in consumer projects.
 
 `/sync` (skill) → `$CLAUDE_PLUGIN_ROOT/rfc-process.md` (canonical template) → `docs/rfc-process.md` in consumer project (created or updated with upstream sync markers).
 
