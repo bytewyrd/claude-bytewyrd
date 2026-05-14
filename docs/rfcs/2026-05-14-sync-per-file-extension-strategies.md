@@ -9,85 +9,119 @@ drop_reason: ~
 
 ## Summary
 
-Move four plugin-managed files — `CLAUDE.md`, `docs/CONTRIBUTING.md`, `docs/ARCHITECTURE.md`, `docs/rfc-process.md` — onto `extension_strategy` values that correctly partition plugin-owned content from project-owned content. The current state mixes one file already declared `section` whose owned-section list is too aggressive (it claims headings the project has substantially customized), two files declared `whole` that have rich local content the plugin template only stubs out, and one file declared `region` whose project copy never received the `bootstrap-content-version` marker so it still classifies as legacy. All four collide with the diff engine's classification matrix on every `/sync` run and re-surface as `conflict_legacy`; resolving them as "keep local" stamps no marker, so the cycle never terminates (verified: skills/sync/SKILL.md:L429). This RFC narrows what the plugin claims to own in each file, adds a `section`-strategy ownership boundary inside `docs/CONTRIBUTING.md`, replaces the `whole` strategy on `docs/ARCHITECTURE.md` with a thin `region`-strategy header, and confirms `docs/rfc-process.md`'s existing region delimiter is what the diff engine respects. After the change, the **first** `/sync` after the RFC ships classifies all four files as `unchanged_legacy` (content matches plugin canonical form under the new strategies; marker injection only, no body rewrite); the **second** `/sync` classifies them as `unchanged` (marker present, ancestor matches plugin) and the `conflict_legacy` cycle ends.
+Introduce three named extension strategies — `additive-merge`, `bootstrap`, and `authoritative` — and assign each of the four currently-stuck plugin-managed files to the strategy that matches how the plugin actually relates to that file's content. `CLAUDE.md` becomes `additive-merge`: the plugin is the authoritative source for every concept it ships, but it adds new items rather than replacing the file. `docs/CONTRIBUTING.md` and `docs/ARCHITECTURE.md` become `bootstrap`: the plugin writes a starter template once, and from that point forward the file is local-owned and the plugin never touches it again. `docs/rfc-process.md` becomes `authoritative`: the plugin's content is always the file's content, applied silently with no per-run prompts and no local extensions section. After the change, the `conflict_legacy` loop (the "Keep local version" action explicitly does not stamp the marker — verified: skills/sync/SKILL.md:L420) terminates for all four files: the next `/sync` either classifies each file as `unchanged` (it already matches plugin canonical content) or applies the strategy's deterministic decision with no per-run prompting. The three strategies replace the file-level conflation that today routes substantively different ownership models through the same `whole`/`section`/`region`/`structured` matrix.
 
 ## Should we do this?
 
-**Yes.** The `conflict_legacy` loop is not a hypothetical: every project that ran `/sync` after the per-file marker system shipped sees these four files re-listed as conflicts on every subsequent run, regardless of whether the user has touched them since. The user's only escape today is to pick "Adopt plugin version" — which overwrites real local content with the plugin's stub — or "Keep local version," which leaves the marker unwritten and guarantees the same prompt next time (verified: skills/sync/SKILL.md:L429). There is no acknowledgment path that lets the user say "the plugin's intended contribution is a strict subset of what's in this file, mark it acknowledged and move on." The fix is to make the manifest tell the truth about what the plugin actually contributes to each file. Once the manifest declares precise ownership, the diff engine's existing `section` and `region` code paths handle the rest correctly — no new strategy types, no new resolution options, no new marker formats. The only new code path is a small first-run marker-injection branch for `region`-strategy files that don't yet carry the region delimiter (`docs/ARCHITECTURE.md`); the branch is invoked once per project and the standard region-strategy path takes over on subsequent runs. The cost is one manifest edit per file, the small diff-engine extension for first-run marker injection, a template rewrite for `ARCHITECTURE.md` so the plugin's region matches what it claims to own, and a `<!-- bootstrap-content-version: ... -->` marker injection on the next `/sync` run.
+**Yes.** The current behavior is a hard regression for every consumer project that has run `/sync` after the per-file marker system shipped. Each of the four files re-surfaces as `conflict_legacy` on every subsequent `/sync` run regardless of whether the user has touched the file since (verified: skills/sync/SKILL.md:L323-L332 — the classification matrix routes any file lacking a `<!-- bootstrap-content-version: ... -->` marker to either `unchanged_legacy` or `conflict_legacy` depending on whether canonical content matches). The only escape paths today are "Adopt plugin version" (which overwrites real local content with the plugin's stub) or "Keep local version" (which does not stamp the marker, so the same prompt re-surfaces on the next run — the action description at `skills/sync/SKILL.md:L420` says this explicitly: "no write; marker not updated; conflict re-surfaces on next run"). The loop is structural: the manifest declares ownership semantics that do not match how the plugin actually relates to the file's content, so the diff engine's classification matrix produces a wrong answer every time. The fix is to make the manifest describe the actual relationships — three different relationships, three named strategies, one per file (or pair of files). Two of the three strategies introduce no per-file user prompts at all, eliminating an entire class of routine interruption.
 
 ## Current state
 
-`skills/sync/SKILL.md` defines four `extension_strategy` values — `whole`, `section`, `region`, `structured` — and the diff engine's classification matrix routes every file to one of them at canonicalization time (verified: skills/sync/SKILL.md:L344-L348). The Step 4b resolution menu has exactly four options for `conflict` (plus a fifth `Adopt plugin and add marker` option exclusive to `conflict_legacy`); none of those options offers "keep local content and stamp the marker so we stop asking" for the case where the plugin's intended contribution genuinely does not overlap the local file's content (verified: skills/sync/SKILL.md:L416-L425). The "Keep local version" action explicitly does not update the marker, and the comment immediately after the action description confirms the consequence: "conflict re-surfaces on next run" (verified: skills/sync/SKILL.md:L429).
+The diff engine recognizes four `extension_strategy` values today — `whole`, `section`, `region`, `structured` — and the canonicalization rules at `skills/sync/SKILL.md:L334-L340` (verified) treat them as pure structural partitions of file content. None of the four values encode anything about *how* the plugin's contribution relates to local content. The Step 4b resolution menu for `conflict` and `conflict_legacy` cases has four resolution options (Adopt / Keep / Merge / Skip) plus a fifth `Adopt plugin and add marker` option exclusive to `conflict_legacy` (verified: skills/sync/SKILL.md:L408-L415). None of those options expresses "the plugin's contribution and the local file's contribution are both intended to coexist, and the plugin's job is to add or update only what it owns without prompting." That semantic — the one most of these files actually need — has nowhere to live in the current model.
 
-**The four files and their current manifest declarations** (verified by reading `.claude-plugin/bootstrap-manifest.json`):
+**The four files and their current manifest declarations** (each row verified against `.claude-plugin/bootstrap-manifest.json`):
 
-| File | Manifest strategy | Manifest `owned_*` (verified excerpt) | Local file (verified) |
-|------|---|---|---|
-| `CLAUDE.md` | `section` (verified: .claude-plugin/bootstrap-manifest.json:L84) | `owned_sections` lists 10 H2 headings: `## Toolchain`, `## File structure`, `## Agent delegation`, `## Tool Usage`, `## RFC Process`, `## Evidence-Based Development`, `## Model Usage Optimization`, `## Claude Code Sandbox — Container Tool Compatibility`, `## Security`, `## Conventions` (verified: .claude-plugin/bootstrap-manifest.json:L85-L96) | Local has all 10 of those PLUS `## Workflow` (with five subsections including `### Session start`, `### Requirement-check hook`, `### During work`, `### Considering /refactor`, `### Considering /docs-review`, `### Session end`) — none of which are declared plugin-owned. The `## Security` section in the local file is also longer and reads differently from the template body. |
-| `docs/CONTRIBUTING.md` | `whole` (verified: .claude-plugin/bootstrap-manifest.json:L176) | No section/region metadata (whole-file strategy) | Local has full project-specific setup (plugin local install, edit cycle, agents pulldown procedure, sync description) — none of which appears in the template. The template only has a generic Prerequisites / Setup / Workflow / Quality Gate / PR Process / RFC Process skeleton with `<PREREQUISITES_SECTION>` and `<INSTALL_COMMAND>` placeholders (verified: .claude-plugin/scripts/templates/CONTRIBUTING.md.tpl). |
-| `docs/ARCHITECTURE.md` | `whole` (verified: .claude-plugin/bootstrap-manifest.json:L131) | No section/region metadata (whole-file strategy) | Local has real architecture documentation: Overview, four detailed Components sections, Data Flow, six Design Decisions, an extended note on "Plugin installation scope," and a Dependencies table. The template is placeholder-only — every value is `<...>` (verified: .claude-plugin/scripts/templates/ARCHITECTURE.md.tpl). |
-| `docs/rfc-process.md` | `region` (verified: .claude-plugin/bootstrap-manifest.json:L184) with `region_end_marker: "<!-- END_UPSTREAM_CONTENT -->"` (verified: .claude-plugin/bootstrap-manifest.json:L185) | `region_end_marker` boundary correctly delimits where the plugin's upstream ends and project extensions begin | Local has the upstream region (the bulk of the file) plus a `## Project Extensions` section after the `<!-- END_UPSTREAM_CONTENT -->` marker (verified: docs/rfc-process.md:L226-L233). The file does **not** carry a `<!-- bootstrap-content-version: ... -->` marker on line 2; instead it has `<!-- UPSTREAM: ... -->` and `<!-- LAST_SYNCED: ... -->` comments from an earlier marker convention (verified: docs/rfc-process.md:L1-L3). |
+| File | Current `extension_strategy` | Current `owned_*` (verified excerpt) | Local file body (verified) |
+|------|------------------------------|---------------------------------------|----------------------------|
+| `CLAUDE.md` | `section` (verified: .claude-plugin/bootstrap-manifest.json:L84) | `owned_sections` lists ten H2 headings: `## Toolchain`, `## File structure`, `## Agent delegation`, `## Tool Usage`, `## RFC Process`, `## Evidence-Based Development`, `## Model Usage Optimization`, `## Claude Code Sandbox — Container Tool Compatibility`, `## Security`, `## Conventions` (verified: .claude-plugin/bootstrap-manifest.json:L85-L96) | Local carries all ten plugin-owned sections plus a `## Workflow` section with five subsections (Session start, Requirement-check hook, During work, Considering /refactor, Considering /docs-review, Session end), and the local body of `## Security` is longer than the plugin's body of the same heading (verified: CLAUDE.md as injected in this RFC's session — local `## Security` has six bullet points vs template's six but with project-specific wording about `.env` files and external input validation). |
+| `docs/CONTRIBUTING.md` | `whole` (verified: .claude-plugin/bootstrap-manifest.json:L176) | No section/region metadata (whole-file strategy) | Local has plugin-development-specific content the template does not ship: `## Plugin Setup (one-time)` with detailed local-install instructions, `## Agents` with VoltAgent provenance and pull-down procedure, `## Sync` describing `/sync` semantics — none of which appears in `.claude-plugin/scripts/templates/CONTRIBUTING.md.tpl` (verified: docs/CONTRIBUTING.md:L25-L65, .claude-plugin/scripts/templates/CONTRIBUTING.md.tpl). Template body is a generic skeleton with placeholder substitutions `<PREREQUISITES_SECTION>`, `<INSTALL_COMMAND>`, and `<QUALITY_GATE_DESCRIPTION>` (verified: .claude-plugin/scripts/templates/CONTRIBUTING.md.tpl:L16,L23,L54). |
+| `docs/ARCHITECTURE.md` | `whole` (verified: .claude-plugin/bootstrap-manifest.json:L131) | No section/region metadata (whole-file strategy) | Local has real architecture documentation: detailed `## Overview` paragraph, four `## Components` subsections, `## Data Flow`, six `## Design Decisions` entries, extended notes on plugin installation scope, and a Dependencies table (verified: docs/ARCHITECTURE.md:L1-L76 — file is 76 lines of project-specific content). Template is placeholder-only — every body value reads `<...>` (verified: .claude-plugin/scripts/templates/ARCHITECTURE.md.tpl:L17,L23,L25,L27,L37,L41). |
+| `docs/rfc-process.md` | `region` (verified: .claude-plugin/bootstrap-manifest.json:L184) with `region_end_marker: "<!-- END_UPSTREAM_CONTENT -->"` (verified: .claude-plugin/bootstrap-manifest.json:L185) | Local body has the upstream content (lines 1-226) plus a `## Project Extensions` section after the marker (verified: docs/rfc-process.md:L230). The local `## Project Extensions` body is the literal text `*(no project-specific extensions — the global process applies as-is)*` (verified: docs/rfc-process.md:L232) — no project has customized this section. The file also carries `<!-- UPSTREAM: ... -->` and `<!-- LAST_SYNCED: ... -->` leader comments on lines 1-2 (verified: docs/rfc-process.md:L1-L2) but no `<!-- bootstrap-content-version: ... -->` marker. |
 
 **Why each currently classifies as `conflict_legacy`:**
 
-The classification matrix routes any file lacking a `<!-- bootstrap-content-version: ... -->` marker to either `unchanged_legacy` (canonicalized local content matches plugin's canonical content) or `conflict_legacy` (they differ) (verified: skills/sync/SKILL.md:L335-L342). Three of the four files have substantial content the plugin does not ship, so canonicalization-by-strategy returns different bytes on each side and the matrix lands on `conflict_legacy`:
+The classification matrix routes any file lacking a `<!-- bootstrap-content-version: ... -->` marker to either `unchanged_legacy` (canonicalized local content matches plugin's canonical content) or `conflict_legacy` (they differ) (verified: skills/sync/SKILL.md:L323-L332). Each file's failure mode is specific to its current strategy:
 
-- `CLAUDE.md` — `section`-strategy canonicalization concatenates the bodies of every heading in `owned_sections`. Local includes content under `## Security` that the template body does not; the templated render of `## Toolchain` is `No language-specific toolchain detected. Add source code and re-run /sync to pick up language tooling.` (matches local), but the templated render of `## File structure` includes a Bytewyrd-specific tree (matches local). However, sections like `## Tool Usage`, `## RFC Process`, `## Evidence-Based Development`, `## Model Usage Optimization`, `## Claude Code Sandbox — Container Tool Compatibility`, `## Security`, `## Conventions` are also declared plugin-owned and local body diverges enough on each that canonicalization differs. Net: classify as `conflict_legacy`.
-- `docs/CONTRIBUTING.md` — `whole`-strategy canonicalization is the full file content minus the marker line. Local has hundreds of lines of plugin-authoring detail that the template lacks. Always `conflict_legacy`.
-- `docs/ARCHITECTURE.md` — same as above with even greater divergence (template is pure placeholders).
-- `docs/rfc-process.md` — `region`-strategy canonicalization is the upstream region only (everything up to and including `<!-- END_UPSTREAM_CONTENT -->`), with marker line(s) removed. The plugin's `rfc-process.md` upstream and the local upstream region are byte-identical for the actual upstream content, so technically this file would classify as `unchanged_legacy` rather than `conflict_legacy` — but the resolution path still requires writing a `<!-- bootstrap-content-version: ... -->` marker on the next sync, which is fine; the issue is making sure the diff engine writes that marker without overwriting the `<!-- UPSTREAM: ... -->` / `<!-- LAST_SYNCED: ... -->` comments that are part of the project file's leader.
+- `CLAUDE.md` — `section`-strategy canonicalization (verified: skills/sync/SKILL.md:L338) concatenates the bodies of every heading in `owned_sections`. Because the plugin claims ten sections but consumer projects (including the bytewyrd plugin's own checkout) carry locally-customized bodies in at least one of those sections, the plugin's canonical-form SHA and the local canonical-form SHA diverge. Net classification: `conflict_legacy` on every run, with no path to "this divergence is fine, keep both."
+- `docs/CONTRIBUTING.md` — `whole`-strategy canonicalization is the full file body minus marker line(s) (verified: skills/sync/SKILL.md:L336). The template body is a generic skeleton; the local body is project-specific. The two are never byte-equal, so the file is always `conflict_legacy`. The user's choices are "destroy local content" or "be prompted again forever."
+- `docs/ARCHITECTURE.md` — same failure mode as CONTRIBUTING.md, with greater divergence because the template is pure placeholders while the local file contains a fully-composed architecture document.
+- `docs/rfc-process.md` — `region`-strategy canonicalization is content from line 1 to `region_end_marker` with marker lines removed (verified: skills/sync/SKILL.md:L337). The local upstream region matches the plugin's upstream region byte-for-byte today (because `/rfc-update` and earlier `/sync` runs kept it current), so technically this file classifies as `unchanged_legacy` rather than `conflict_legacy` — but the file still flows through the legacy-marker-injection path on every run that lacks the bootstrap marker, and the existing `<!-- UPSTREAM: ... -->`/`<!-- LAST_SYNCED: ... -->` leader-comment convention competes with the new marker-insertion rule at `skills/sync/SKILL.md:L434`. The file is not stable either.
 
-**The loop:** when the user picks "Keep local version" for any of these, no marker is written. The next `/sync` re-classifies the file with no marker → `conflict_legacy` again. The user is told the same thing every time. This is the exact problem this RFC closes.
+**The loop:** when the user picks "Keep local version" for any of these, no marker is written (verified: skills/sync/SKILL.md:L420). The next `/sync` re-classifies the file with no marker → `conflict_legacy` again. The user is told the same thing every run. This is the exact problem this RFC closes.
 
 ## Analysis / Options
 
-Two coupled decisions: (1) the high-level fix shape — change per-file extension strategies vs. add a "keep local and acknowledge" resolution option, and (2) for each affected file, which specific strategy to land on.
+Two coupled decisions: (1) the high-level fix shape — introduce new strategies that describe the relationships precisely, or add an acknowledgment path that lets the user opt out of the existing model; and (2) for each affected file, which strategy is the right match for its actual relationship to the plugin.
 
-### Decision 1 — Strategy refinement vs. acknowledgment path
+### Decision 1 — New strategies vs. acknowledgment path
 
-**Option A — Refine the per-file extension strategy so the plugin's declared ownership matches what it actually contributes (recommended).**
+**Option A — Introduce three new extension strategies (`additive-merge`, `bootstrap`, `authoritative`) and assign each affected file to the strategy that matches its actual relationship to the plugin (recommended).**
 
-For each affected file, change the manifest entry so the strategy and ownership list precisely match what the plugin's template intends to write. After the change, the diff engine's existing canonicalization rule for the new strategy produces a hash that compares correctly against the local file's same-strategy canonicalization. When the plugin's owned bytes match the local file's same-owned bytes, the file classifies as `fast_forward` with a marker-injection-only delta (the body is unchanged), and the next `/sync` writes the marker and the loop terminates. The "true conflicts" that remain (the plugin's actual contribution diverges from local) become real `conflict` cases the user can resolve properly with the existing four-option menu.
+For each file, the manifest declares a strategy whose semantics directly describe the relationship: "the plugin contributes items here and merges them additively," "the plugin writes a starter template once and never touches the file again," or "the plugin is the source of truth and always wins." The diff engine implements the three strategies' classification and apply logic; the user sees no `conflict_legacy` prompt for these files unless a strategy explicitly produces a conflict (which only `additive-merge` can do, and only when local and plugin items semantically contradict). Two of the three strategies — `bootstrap` and `authoritative` — produce no per-run prompts at all once the strategy is in place.
 
-This option requires no changes to the diff engine, no new strategy type, no new resolution option, no new marker format. It is purely a manifest-and-template edit per file. It also pays an architectural dividend: the manifest becomes a precise description of "what the plugin owns in each file" rather than a coarse "plugin owns this whole file" claim that is operationally false for three of the four files.
+This option requires three new strategy values, three new classification-and-apply code paths in the diff engine, and the manifest schema accepting new values for `extension_strategy`. It does not add new resolution options to the existing menu — the new strategies have their own resolution semantics encoded in the strategy itself (no menu for `bootstrap` and `authoritative`; a different one for `additive-merge`'s rare conflict case).
 
-**Option B — Add a fifth resolution option, "Keep local and mark acknowledged," that stamps the marker without changing content.**
+**Option B — Keep the existing four strategies and add a fifth resolution option, "Keep local and mark acknowledged," that stamps the marker without modifying content.**
 
-A new option on the Step 4b menu for `conflict_legacy` files: pick "Keep local and mark acknowledged" and the diff engine writes a `<!-- bootstrap-content-version: <upstream_key>:<local_current_canonical_sha> -->` marker into the local file without modifying any body content. The marker's sha is the hash of the local canonical content, so the next `/sync` reads the marker, hashes the (unchanged) local content, and classifies as `local_only` — no prompt.
+A new option on the Step 4b menu for `conflict_legacy` files: pick "Keep local and mark acknowledged" and the diff engine writes a `<!-- bootstrap-content-version: <upstream_key>:<local_current_canonical_sha> -->` marker into the local file without modifying any body content. The marker's SHA is the hash of the local canonical content, so the next `/sync` reads the marker, hashes the (unchanged) local content, and classifies as `local_only` — no prompt.
 
 This works mechanically but has three structural problems:
 
-1. **It papers over a manifest bug rather than fixing it.** The manifest is supposed to be the source of truth for what the plugin owns in each file. If the manifest declares `whole` for `docs/ARCHITECTURE.md` but the plugin in fact owns nothing beyond a placeholder template, the right fix is to make the manifest say "the plugin owns a thin header region," not to teach the diff engine to ignore the lie via a new resolution option.
-2. **It propagates forward.** Every future plugin update to one of these files will produce another `conflict_legacy` (the plugin shipped new template content, the local file still doesn't have a bootstrap-content-version marker that matches the new plugin sha) and the user will be re-prompted. The acknowledgment option is a one-shot escape hatch; the cycle would simply restart on the next plugin upgrade.
-3. **It makes "marker acknowledged" indistinguishable from "marker stamped after adopting plugin."** Both end up with a `<!-- bootstrap-content-version: ... -->` marker present; the diff engine reads only the marker, not the resolution path that produced it. So an acknowledged file looks identical to an adopted file on the next sync. If the plugin then updates that file, the diff engine has no way to know whether the user "merged the previous plugin version into local content" or "ignored the previous plugin version and just wanted to silence the prompt." That uncertainty bleeds into every subsequent prompt the user sees.
+1. **It papers over a semantic mismatch rather than fixing it.** The manifest is supposed to describe how the plugin relates to a file. If the plugin's relationship to `docs/ARCHITECTURE.md` is "write once and never touch again," the manifest should say so — not declare `whole` ownership and then offer an opt-out that lets the diff engine ignore the lie.
+2. **The acknowledgment is one-shot.** Every future plugin update to the file will land a new template SHA and re-trigger the classification, because the marker recorded the *local* SHA rather than the plugin's SHA. The user will be re-prompted on every plugin update, with the same useless choice each time.
+3. **It conflates relationships.** A file resolved by "Adopt plugin and add marker" and a file resolved by "Keep local and mark acknowledged" both end up with a bootstrap-content-version marker present. The diff engine reads only the marker, not the resolution path that produced it. If the plugin updates the file later, the diff engine has no way to know whether the user merged the previous plugin version into local content or ignored it. That uncertainty bleeds into every subsequent prompt.
 
-**Recommendation: Option A.** Fix the manifest. The mechanism for partitioning ownership inside a file already exists in the diff engine (the `section` and `region` strategies are implemented and tested for the files that use them); the only work to do is to extend that pattern to the three files where the manifest currently mis-declares ownership. Option B's acknowledgment path is genuinely useful in some edge case where the user knows the plugin's intent will never match their file, but that edge case is rare enough that the right time to add it is after we have established what "real" ownership looks like across the codebase — not before.
+**Recommendation: Option A.** The three relationships are real — `additive-merge`, `bootstrap`, and `authoritative` describe what the plugin and the project actually do with each file. Encoding them as named strategies makes the manifest the precise source of truth and removes per-run prompts for two of the three. Option B's acknowledgment path is genuinely useful for files where no strategy fits, but adding it without first naming the strategies leaves the architecture incoherent: the manifest would still misdescribe the file's relationship, and the acknowledgment option would be a workaround for the misdescription rather than a way to handle a genuinely exceptional case.
 
-**Door stays open on Option B.** Nothing in Option A precludes adding the acknowledgment option later for files where Option A still produces unresolvable conflicts. The two options are not mutually exclusive; they operate at different layers (manifest declarations vs. resolution-time interaction).
+**Door stays open on Option B.** Nothing in Option A precludes adding the acknowledgment option later as a fallback. The two options operate at different layers (strategy declaration vs. resolution-time interaction) and a future RFC can add it if a file emerges that needs ownership semantics none of the three strategies covers.
 
-### Decision 2 — Per-file strategy choices
+### Decision 2 — Strategy assignment per file
 
-**`CLAUDE.md`** — currently `section` with too many owned headings. Narrow `owned_sections` to the three headings the plugin actually templates: `## Toolchain` (rendered from language detection), `## File structure` (rendered with `<project_slug>`), and `## Agent delegation` (rendered from `<AGENT_TABLE_ROWS>`). The other seven currently-declared sections — `## Tool Usage`, `## RFC Process`, `## Evidence-Based Development`, `## Model Usage Optimization`, `## Claude Code Sandbox — Container Tool Compatibility`, `## Security`, `## Conventions` — are stable boilerplate that the local file has heavily customized (the bytewyrd plugin's own checkout is the case in point). Move them to local ownership; the template stops shipping rewrites of those sections.
+The three strategies in detail (each defined first, then assigned to files):
 
-**`docs/CONTRIBUTING.md`** — currently `whole`. Move to `section`. The plugin contributes exactly two things to a consumer project's CONTRIBUTING: the install hint block (described at `skills/sync/SKILL.md:L658-L669` — "Bytewyrd plugin install hint (always include)") and a Prerequisites section template (rendered from `<PREREQUISITES_SECTION>` per detected language). Everything else in the local file — Development Setup specifics, Quality Gate descriptions for the consumer project, agent pulldown procedure, custom workflows — is owned by the project. Declare the plugin's two contributions as two narrowly-named sections in `owned_sections`, namely `## Prerequisites` and `## Plugin Setup`, where `## Plugin Setup` is the new heading the install hint will live under.
+#### Strategy 1: `additive-merge` — for `CLAUDE.md`
 
-**`docs/ARCHITECTURE.md`** — currently `whole` with a placeholder-only template. Move to `region`. The plugin's contribution is a single thin header region: the H1 `# Architecture`, the scope-comment HTML block immediately following it (the `<!-- ARCHITECTURE scope: ... -->` documentation comment from the template), and a region-end marker `<!-- END_BYTEWYRD_HEADER -->`. The plugin template is rewritten to consist of exactly these three elements, with no placeholder content below the region marker. Local owns everything from `<!-- END_BYTEWYRD_HEADER -->` onward.
+**Definition.** The plugin is the authoritative source for every concept it expresses, but the file is structurally an open list that the project may extend. The plugin's contribution and the local file's contribution are merged item-by-item rather than canonical-form-vs-canonical-form. Merge semantics:
 
-**`docs/rfc-process.md`** — already `region` with `region_end_marker: "<!-- END_UPSTREAM_CONTENT -->"`. No change required at the manifest level. The work for this file is to inject the `<!-- bootstrap-content-version: ... -->` marker (line 2) on the next `/sync` so future runs classify it correctly. Per the marker-insertion rule at `skills/sync/SKILL.md:L443`, the marker goes on line 2 — which means the existing `<!-- UPSTREAM: ... -->` comment (current line 1) stays where it is, and the new bootstrap marker is inserted at line 2, pushing the existing `<!-- LAST_SYNCED: ... -->` and other leader comments down by one line. The diff-engine canonicalization for region strategy already accounts for "marker line(s) removed" (verified: skills/sync/SKILL.md:L346).
+- **Plugin item not in local file** → add it to local (the plugin is shipping a new concept; the project gets it)
+- **Local item not in plugin manifest** → preserve it (the local file is adding a novel concept the plugin doesn't ship)
+- **Same concept appears in both with different wording** → plugin wording wins (the plugin is authoritative for the concepts it ships; the local wording is replaced)
+- **Local item explicitly contradicts a plugin item** → flag as conflict for human resolution
 
-### Variant considered (and rejected): use `region` for all four files
+"Same concept, different wording" and "explicit contradiction" require semantic comparison, not byte equality. Two strings expressing the same rule (e.g., "Default to `haiku` unless the task clearly requires more" and "Prefer the cheapest model unless complexity demands more") are conceptually identical. Detection is by LLM-assisted matching: during `/sync`'s execution the agent prompts itself, item-by-item, to classify each (plugin-item, local-item) pair as "same concept", "different concepts", or "explicit contradiction." Contradiction = the local item negates, prohibits, or sets an opposing prescription to a plugin item (for example, local says "never do X" when the plugin says "do X"). This is feasible because `/sync` is an agent-driven skill — its body is markdown executed by an agent (verified: skills/sync/SKILL.md:L1-L4 declares the skill name and description; the body that follows is a sequence of natural-language steps including `AskUserQuestion` calls at e.g. skills/sync/SKILL.md:L146, not a script), so LLM-mediated comparison is a natural fit rather than an architectural mismatch.
 
-A consistent shape would be appealing — every file gets the same `region` treatment with a thin plugin header at the top. Rejected because `CLAUDE.md` has three sections the plugin auto-renders from project inputs (`## Toolchain`, `## File structure`, `## Agent delegation`), and those sections are anchored by their H2 headings — they should be updated in place when language detection changes, not relegated to a top-of-file region. `section` strategy correctly handles "this specific heading body is plugin-owned and gets rerendered." Similarly, `CONTRIBUTING.md` has two distinct contributions (Prerequisites, install hint) that the plugin wants to keep current as project languages and plugin install procedures change; `section` strategy is the right semantics. `ARCHITECTURE.md` and `rfc-process.md` are the two files where the plugin's contribution is genuinely a "header preamble" or "upstream body" with everything else being project content, so `region` fits there.
+**`owned_sections` stays at the full list of sections the plugin ships.** The plugin does not narrow what it claims to own — that's what `bootstrap` is for. `additive-merge` says "I own every concept I express, but I express them as additive items, not as a full-section overwrite." The owned-sections list for `CLAUDE.md` is therefore the same ten headings the manifest declares today (verified: .claude-plugin/bootstrap-manifest.json:L85-L96), and the merge operates within each section's body items.
+
+**Why `CLAUDE.md` fits.** The plugin contributes a stable, growing corpus of conventions — Tool Usage rules, Evidence-Based Development principles, Model Usage Optimization rules, Sandbox compatibility guidance, Security rules, RFC Process pointers, etc. Projects extend these (the bytewyrd plugin's own checkout has a full `## Workflow` section with project-specific session-start, requirement-check, refactor, and docs-review subsections that the template does not ship — verified: CLAUDE.md as injected in this RFC's session, lines for `## Workflow` and its subsections). Replacing the whole file would destroy that work; replacing the section bodies would destroy partial customizations within a plugin-owned section. Additive item-by-item merging is the only model that does the right thing for both directions.
+
+#### Strategy 2: `bootstrap` — for `docs/CONTRIBUTING.md` and `docs/ARCHITECTURE.md`
+
+**Definition.** The plugin's role is to provide a starter template on the first `/sync` in a project that does not yet have the file. Once the file exists locally (whether the plugin wrote it or not), the plugin gives up authority over the file forever. Classification semantics:
+
+- **File absent in local repo** → write from the plugin's template; stamp the bootstrap marker on completion
+- **File present in local repo (regardless of marker state)** → classify as `local_only`; no diff, no prompt, no update, ever
+
+There is no "fast-forward" path for `bootstrap` files. The plugin's template can change in future plugin versions, and that change will *not* propagate to existing files — by design. The plugin's job ends after the first write.
+
+**Why `docs/CONTRIBUTING.md` and `docs/ARCHITECTURE.md` fit.** Both files document project-specific reality: how to set up *this* project's development environment, what *this* project's architecture is. A generic template is useful exactly once — on day one of a fresh repo. After that, every meaningful change is project-specific and any attempt by the plugin to keep them in sync amounts to overwriting the project's own documentation. `bootstrap` describes the only sane plugin role for these files: hand the project a starting point, then step out of the way.
+
+#### Strategy 3: `authoritative` — for `docs/rfc-process.md`
+
+**Definition.** The plugin's content is always the file's content. Every `/sync` run applies the plugin version silently, with no per-file user prompt. There is no local extensions section. Classification and apply semantics:
+
+- **Plugin content equals local content** → classify as `unchanged`; no write
+- **Plugin content differs from local content (fast-forward direction)** → silently overwrite with plugin content; stamp marker; no prompt
+- **Plugin content differs from local content (any other direction, including local edits)** → silently overwrite with plugin content; stamp marker; no prompt. Local edits are not preserved.
+
+The plugin's `rfc-process.md` upstream content is the entire file content. There is no `region_end_marker` because there is no project-extension region; what used to live under `## Project Extensions` in the local file is dropped under this strategy.
+
+**Why `docs/rfc-process.md` fits.** The RFC process is a workflow the plugin enforces across every consumer project. Divergent local versions are an anti-feature — they break the shared vocabulary that makes the RFC skills (`/rfc-new`, `/rfc-implement`, etc.) interoperable. The existing `## Project Extensions` section was a hedge against the case where a project genuinely needed to extend the process locally; in practice, no consumer project has used it (verified: docs/rfc-process.md:L232 — the only existing instance has the body `*(no project-specific extensions — the global process applies as-is)*`, and the plugin ships in the only repo that carries the file). Dropping the extension region simplifies the model: the plugin owns the file outright, the diff engine never prompts on it, and every consumer is always on the current process.
+
+#### Variant considered (and rejected): use `additive-merge` for all four files
+
+A consistent shape would be appealing — every file gets the same additive treatment. Rejected for two reasons. First, it would force semantic merging on `docs/ARCHITECTURE.md`, where the plugin's contribution is a placeholder template and the local file is a fully-composed document; there are no overlapping "concepts" to merge, just a template that has served its purpose. Second, it would force semantic merging on `docs/rfc-process.md`, where the plugin's intent is to be authoritative (the workflow must be shared exactly); allowing additive local extensions would re-introduce the divergence problem `authoritative` exists to solve. The three strategies exist because the three relationships are genuinely different.
 
 ## Drawbacks
 
-1. **Manifest complexity grows.** Three files move from one strategy to a more refined one. The manifest gains two new `section` declarations and one new `region` declaration, and the existing `CLAUDE.md` `section` declaration is rewritten with a narrower `owned_sections` list. Maintainers must keep `owned_sections` and `owned_paths` synchronized with template content as the plugin evolves; if the plugin starts writing a new section that is not declared, that section will not flow to consumer projects on `/sync`.
-2. **Section and region boundaries must be maintained going forward.** When a maintainer edits a template under `.claude-plugin/scripts/templates/`, they must respect the ownership boundary declared in the manifest. Adding content outside the owned sections in `CLAUDE.md.tpl` will not propagate to consumers because the diff engine writes only the owned sections. Adding content after `<!-- END_BYTEWYRD_HEADER -->` in `ARCHITECTURE.md.tpl` will be ignored by the diff engine because the region strategy stops at the marker. This requires discipline; `docs/CONTRIBUTING.md` (the plugin's own contributing guide) should document the rule.
-3. **One-time migration friction.** The next `/sync` run on any project that has these four files will show them in the legacy-marker-injection category (no prompt — `unchanged_legacy` files are silently re-written with the marker inserted, per `skills/sync/SKILL.md:L463`). For `docs/ARCHITECTURE.md` specifically, the first-run marker-injection branch inserts `<!-- END_BYTEWYRD_HEADER -->` between the header and the body; if the local file's header does not match the plugin's header, the file falls through to `conflict_legacy` and the user resolves it via the standard menu (Adopt / Keep / Merge / Skip / Adopt-and-mark). Either path terminates the loop.
-4. **`docs/ARCHITECTURE.md` template loses its placeholder content.** Today the template (`.claude-plugin/scripts/templates/ARCHITECTURE.md.tpl`) ships placeholder values like `<One paragraph describing what the system does...>` and `<Component Name>` that guide the user through filling in a fresh architecture document. After this RFC, the template is reduced to header-only — new projects start with an empty body after the header region and must compose architecture content from scratch. Mitigated by leaving the in-band scope-comment HTML block in the region (`<!-- ARCHITECTURE scope: ... -->`), which already explains what belongs in the document.
-5. **Owned-section list ordering matters.** The diff engine's `section`-strategy apply step inserts plugin-owned sections "after the last preceding owned section in manifest order" when a section is absent from the local file (verified: skills/sync/SKILL.md:L456). So manifest `owned_sections` ordering effectively chooses where new plugin-owned sections land in consumer projects. The ordering chosen for `CLAUDE.md` (Toolchain → File structure → Agent delegation) and `CONTRIBUTING.md` (Prerequisites → Plugin Setup) follows the order those sections appear in the plugin's own checkout, which is the order they appear in the templates.
+1. **`additive-merge` requires LLM-assisted semantic comparison and accepts its failure modes.** The diff engine cannot do byte-equality for "same concept, different wording" — it has to ask an LLM. This carries two costs: (a) a per-`/sync` token spend proportional to the size of `additive-merge` files (small in practice — `CLAUDE.md` is ~180 lines, comparisons are bounded by the number of plugin-owned items, not file length); and (b) the LLM can produce false positives ("two items mean the same thing" when they don't — leading to silent overwrites of local wording) and false negatives ("two items are different" when they're conceptually identical — leading to spurious additions or false-flagged conflicts). The error rate is low for well-defined rules with clear semantic boundaries, higher for vague boilerplate. The cost is real but bounded: false positives produce a wording change the user can revert via git; false negatives produce a duplicate item the user can clean up manually. Both modes are recoverable, unlike the current loop, which is not.
 
-6. **One new code path in the diff engine.** The first-run marker-injection branch for `region`-strategy files lacking `region_end_marker` (the migration for `docs/ARCHITECTURE.md`) is a small addition to the diff-engine pseudocode in `skills/sync/SKILL.md`. The branch is invoked at most once per file per project (after the first `/sync` succeeds, the file has the marker and the standard region path takes over). The branch's heuristic — split at the first H2 heading — is project-agnostic and has no language- or framework-specific assumptions, but adds a small amount of new logic the maintainer must keep in mind when changing canonicalization rules in the future.
+2. **`bootstrap` gives up all future plugin authority over the file.** Once a project has `docs/CONTRIBUTING.md` or `docs/ARCHITECTURE.md`, the plugin cannot update it via `/sync` — even if the template improves substantially, even if the project genuinely wants to pick up the new template content. The only recovery path is "delete the local file, then re-run `/sync`," which is destructive and not discoverable from the `/sync` output. A maintainer who improves the template body has no automated way to flow the improvement to existing projects.
+
+3. **`authoritative` silently overwrites any local edits to `docs/rfc-process.md`.** A project that edits the file directly (perhaps to add a project-specific reviewer table or rename a status label) will see those edits disappear silently on the next `/sync`. Today the diff engine prompts on conflicts; under `authoritative` it does not. Mitigation: document the strategy's silent-overwrite semantics prominently in `docs/CONTRIBUTING.md` for the plugin (so plugin maintainers don't forget), and document them in consumer-facing release notes for the plugin version that introduces this RFC's changes (so projects that customized `rfc-process.md` know to migrate their customizations elsewhere before upgrading).
+
+4. **Manifest schema gains three new strategy values, each with its own apply logic.** The diff engine's strategy switch becomes wider: today four cases (`whole`, `section`, `region`, `structured`); after this RFC, seven cases. Maintenance of the strategy switch grows correspondingly; the test surface for the apply step grows; the documentation in `skills/sync/SKILL.md` grows. Each new strategy is independent (their apply logic does not depend on the others), so the additional surface is additive complexity rather than entangled complexity, but it is still more code paths to keep correct.
+
+5. **The `## Project Extensions` section in existing `docs/rfc-process.md` files is dropped without warning.** Under `authoritative`, the next `/sync` run silently replaces the local file with the plugin's version. Any project that customized `## Project Extensions` (today none, per the verification above, but future projects might) would lose that section. Mitigation: this RFC's first-run migration explicitly checks for non-empty `## Project Extensions` content and surfaces a one-time warning before overwriting (described in the implementation spec).
 
 ## Implementation spec
 
@@ -95,282 +129,360 @@ A consistent shape would be appealing — every file gets the same `region` trea
 
 | Action | Path | Responsibility |
 |--------|------|----------------|
-| Modify | `.claude-plugin/bootstrap-manifest.json` | Change four artifact declarations: narrow `CLAUDE.md` `owned_sections` to three entries; change `docs/CONTRIBUTING.md` from `whole` to `section` with two owned entries; change `docs/ARCHITECTURE.md` from `whole` to `region` with a new `region_end_marker`; leave `docs/rfc-process.md` unchanged. |
-| Modify | `.claude-plugin/scripts/templates/CLAUDE.md.tpl` | Remove the body of the seven sections that are no longer plugin-owned (`## Tool Usage`, `## RFC Process`, `## Evidence-Based Development`, `## Model Usage Optimization`, `## Claude Code Sandbox — Container Tool Compatibility`, `## Security`, `## Conventions`). The headings remain in the template only as in-line documentation — they are not part of the plugin's contribution. |
-| Modify | `.claude-plugin/scripts/templates/CONTRIBUTING.md.tpl` | Restructure to two plugin-owned sections (`## Prerequisites` and `## Plugin Setup`) with body content; move the install hint into `## Plugin Setup`. Remove everything that is not part of those two sections (Development Setup, Development Workflow, Commit Conventions, Quality Gate, Pull Request Process, RFC Process) — these are now project-owned. |
-| Modify | `.claude-plugin/scripts/templates/ARCHITECTURE.md.tpl` | Rewrite as a thin header: the H1 `# Architecture`, the existing scope-comment HTML block, then a new `<!-- END_BYTEWYRD_HEADER -->` marker line. Remove all placeholder sections (`## Overview`, `## Components`, etc.). |
-| Modify | `skills/sync/SKILL.md` | (a) Confirm the diff-engine canonicalization rules for `section` and `region` already match what this RFC needs (they do — verified at L344-L348). (b) Add a short note in the "Apply actions" section explaining that the bootstrap marker for `region`-strategy markdown files is inserted as line 2, ahead of any existing leader comments that the file may carry (e.g., the `<!-- UPSTREAM: ... -->` comment on `docs/rfc-process.md`). The note clarifies what was already implicit in the rule at L443 ("insert ... as line 2"). (c) Add a "First-run marker injection for region strategy" sub-section under the canonicalization rules block that documents the heuristic described in "First-run migration: injecting the `<!-- END_BYTEWYRD_HEADER -->` marker" below — this is the one new code path the RFC introduces. |
-| Add | (none) | No new files. No new strategy types. One new code path (the first-run marker-injection branch for `region`-strategy files lacking `region_end_marker`) lives inside `skills/sync/SKILL.md`'s existing diff-engine pseudocode. |
+| Modify | `.claude-plugin/bootstrap-manifest.json` | Replace four artifact declarations: `CLAUDE.md` gets `extension_strategy: "additive-merge"` with the unchanged ten-section `owned_sections`; `docs/CONTRIBUTING.md` and `docs/ARCHITECTURE.md` get `extension_strategy: "bootstrap"` (no other strategy fields needed); `docs/rfc-process.md` gets `extension_strategy: "authoritative"` with `region_end_marker` removed. |
+| Modify | `skills/sync/SKILL.md` | Extend the canonicalization-rules block (at lines 334-340) and apply-actions block (at lines 440-456) with three new branches: `additive-merge` (item-level matching against the manifest's `owned_sections`; LLM-assisted comparison helper); `bootstrap` (presence-check short-circuit; no canonicalization, no diff); `authoritative` (silent overwrite, no prompt). Extend the classification matrix at lines 323-332 with three new outcome branches that route `additive-merge`, `bootstrap`, and `authoritative` files to their strategy-specific paths before the existing matrix runs. Extend Step 4b's resolution menu to handle the one prompt `additive-merge` can produce (item-level contradiction). |
+| Modify | `.claude-plugin/scripts/templates/CONTRIBUTING.md.tpl` | No structural change — the template body stays as-is (the existing generic skeleton with `<PREREQUISITES_SECTION>`, `<INSTALL_COMMAND>`, `<QUALITY_GATE_DESCRIPTION>` placeholders is still the right thing for a new project to start with). Verified: the current template at lines 1-67 is a reasonable starting point for any project. |
+| Modify | `.claude-plugin/scripts/templates/ARCHITECTURE.md.tpl` | No structural change — the placeholder-heavy template is the right thing for a new project to start with (the placeholders guide the user through composing each section). |
+| Modify | `docs/rfc-process.md` (in the bytewyrd plugin's own checkout; this is the file consumer projects sync from) | Remove the `## Project Extensions` section entirely (lines 230-232 inclusive: heading, blank, placeholder body), the separator line before it (line 228: `---`), and the `<!-- END_UPSTREAM_CONTENT -->` marker on line 226. Under `authoritative` the entire file is plugin-owned; the separator and the project-extensions section no longer have meaning. The three leader comments on lines 1-3 (`<!-- UPSTREAM: ... -->`, `<!-- LAST_SYNCED: ... -->`, and the explanatory comment about `END_UPSTREAM_CONTENT`) plus the blank line 4 are also removed — they were part of the older marker convention and are not needed under `authoritative`, which has no leader-comment requirement. After the edits, the file's line 1 is the H1 `# RFC Process` (currently line 5). |
+| Add | (none) | No new files. Three new strategies live as additional branches inside the existing `skills/sync/SKILL.md` body; no new template files; no new manifest fields beyond the three strategy values. |
 
 ### Exact manifest changes
 
 The full diff against the current `.claude-plugin/bootstrap-manifest.json`:
 
-**1. `CLAUDE.md` — narrow `owned_sections`.**
+**1. `CLAUDE.md` — change `extension_strategy` to `additive-merge`.**
 
-Replace the existing entry's `owned_sections` array (currently 10 entries, lines 85-96 in the manifest) with three entries:
+Replace the existing `extension_strategy: "section"` value (currently at line 84) with `extension_strategy: "additive-merge"`. The `owned_sections` array (lines 85-96, ten entries) is unchanged. The `templated`, `template_inputs`, `target`, `source`, and `upstream_key` fields are unchanged. The `template_sha` field is recomputed by `build-manifest.sh` only if the template body changes; it does not depend on the strategy field. The final entry shape:
 
 ```json
-"owned_sections": [
-  "## Toolchain",
-  "## File structure",
-  "## Agent delegation"
-]
+{
+  "upstream_key": "bytewyrd/CLAUDE.md@v1",
+  "source": ".claude-plugin/scripts/templates/CLAUDE.md.tpl",
+  "target": "CLAUDE.md",
+  "template_sha": "<existing hash>",
+  "extension_strategy": "additive-merge",
+  "owned_sections": [
+    "## Toolchain",
+    "## File structure",
+    "## Agent delegation",
+    "## Tool Usage",
+    "## RFC Process",
+    "## Evidence-Based Development",
+    "## Model Usage Optimization",
+    "## Claude Code Sandbox — Container Tool Compatibility",
+    "## Security",
+    "## Conventions"
+  ],
+  "templated": true,
+  "template_inputs": [
+    "project_name",
+    "description",
+    "project_slug",
+    "languages",
+    "installed_plugins",
+    "component_roots"
+  ]
+}
 ```
 
-The `extension_strategy: "section"`, `templated: true`, `template_inputs`, `target`, `source`, and `upstream_key` fields are unchanged. The `template_sha` field is recomputed by `build-manifest.sh` after the template body change.
+**2. `docs/CONTRIBUTING.md` — change `extension_strategy` to `bootstrap`.**
 
-**2. `docs/CONTRIBUTING.md` — move from `whole` to `section`.**
-
-Replace the existing entry (currently lines 172-178 in the manifest) with:
+Replace the existing entry (currently lines 171-178 in the manifest) with:
 
 ```json
 {
   "upstream_key": "bytewyrd/docs/CONTRIBUTING.md@v1",
   "source": ".claude-plugin/scripts/templates/CONTRIBUTING.md.tpl",
   "target": "docs/CONTRIBUTING.md",
-  "template_sha": "",
-  "extension_strategy": "section",
-  "owned_sections": [
-    "## Prerequisites",
-    "## Plugin Setup"
-  ],
-  "templated": true,
-  "template_inputs": [
-    "languages",
-    "component_roots"
-  ]
+  "sha256": "<existing hash, recomputed by build-manifest.sh>",
+  "extension_strategy": "bootstrap",
+  "templated": false
 }
 ```
 
-Two behavioral changes: (a) `templated` flips from `false` to `true` because Prerequisites content depends on detected languages (the existing template already uses `<PREREQUISITES_SECTION>` and `<INSTALL_COMMAND>` placeholders, verified: `.claude-plugin/scripts/templates/CONTRIBUTING.md.tpl:L16,L23`). The previous `sha256` field is replaced with a `template_sha` placeholder that `build-manifest.sh` populates from the rewritten template. (b) `template_inputs` is added per the manifest schema convention used by other templated entries.
+The `sha256` field stays — `build-manifest.sh` writes it from the template source (verified: .claude-plugin/scripts/build-manifest.sh:L36-L42), and the diff engine uses it only on the very first `/sync` in a project that lacks the file (where the SHA records the plugin version that produced the local file's contents). No `owned_sections`, `owned_paths`, or `region_end_marker` fields — `bootstrap` has no concept of partial ownership.
 
-**3. `docs/ARCHITECTURE.md` — move from `whole` to `region`.**
+**3. `docs/ARCHITECTURE.md` — change `extension_strategy` to `bootstrap`.**
 
-Replace the existing entry (currently lines 127-133 in the manifest) with:
+Replace the existing entry (currently lines 126-133 in the manifest) with:
 
 ```json
 {
   "upstream_key": "bytewyrd/docs/ARCHITECTURE.md@v1",
   "source": ".claude-plugin/scripts/templates/ARCHITECTURE.md.tpl",
   "target": "docs/ARCHITECTURE.md",
-  "sha256": "",
-  "extension_strategy": "region",
-  "region_end_marker": "<!-- END_BYTEWYRD_HEADER -->",
+  "sha256": "<existing hash, recomputed by build-manifest.sh>",
+  "extension_strategy": "bootstrap",
   "templated": false
 }
 ```
 
-`templated` stays `false` (the template is plain text — no placeholder substitution needed for the header). The `sha256` placeholder is filled by `build-manifest.sh`.
+Same shape as `docs/CONTRIBUTING.md`. `templated` stays `false` because the existing template body is plain text (verified: .claude-plugin/scripts/templates/ARCHITECTURE.md.tpl has no `<...>` placeholders that the renderer would substitute — the angle-bracket strings inside the body are documentation guidance, not renderer tokens; the renderer's "Unrecognized placeholders are replaced with empty string" rule at `skills/sync/SKILL.md:L431` would silently delete them if `templated` were `true`).
 
-**4. `docs/rfc-process.md` — no manifest change.**
+**4. `docs/rfc-process.md` — change `extension_strategy` to `authoritative`; remove `region_end_marker`.**
 
-The existing entry already declares `extension_strategy: "region"` and `region_end_marker: "<!-- END_UPSTREAM_CONTENT -->"`. The fix for this file is purely a marker-injection on the next `/sync` run (the diff engine's existing region-strategy apply step writes the `<!-- bootstrap-content-version: ... -->` marker as line 2 per the marker-insertion rule at `skills/sync/SKILL.md:L443`). No manifest edit required.
+Replace the existing entry (currently lines 179-186 in the manifest) with:
 
-### Exact template changes
-
-**`.claude-plugin/scripts/templates/CLAUDE.md.tpl` — narrow to three owned sections.**
-
-The new template file content, in full:
-
-````markdown
-# <project_name>
-
-<description>
-
-## Toolchain
-
-<LANGUAGE_TOOLCHAIN_SECTION>
-
-## File structure
-
-```
-<project_slug>/
-├── CLAUDE.md          — this file
-├── docs/
-│   ├── ARCHITECTURE.md        — system design (devs/agents)
-│   ├── BEST_PRACTICES.md      — session learnings (devs/agents)
-│   ├── CONTRIBUTING.md        — dev workflow (devs/agents)
-│   ├── project-brief.md       — what/why/who (optional)
-│   ├── guide/                 — expanded user documentation
-│   └── rfcs/                  — RFC proposals
-└── src/               — source code
+```json
+{
+  "upstream_key": "bytewyrd/docs/rfc-process.md@v1",
+  "source": "rfc-process.md",
+  "target": "docs/rfc-process.md",
+  "sha256": "<existing hash, recomputed by build-manifest.sh>",
+  "extension_strategy": "authoritative",
+  "templated": false
+}
 ```
 
-## Agent delegation
+The `region_end_marker: "<!-- END_UPSTREAM_CONTENT -->"` field is removed. `authoritative` does not partition the file; the entire file is plugin-owned.
 
-| Task | Agent |
-|------|-------|
-<AGENT_TABLE_ROWS>
-````
+### Algorithm for each strategy
 
-All seven previously-shipped sections (`## Tool Usage`, `## RFC Process`, `## Evidence-Based Development`, `## Model Usage Optimization`, `## Claude Code Sandbox — Container Tool Compatibility`, `## Security`, `## Conventions`) are removed from the template. The plugin no longer contributes any body content for those headings; consumer projects compose them locally.
+#### `additive-merge` — `CLAUDE.md`
 
-The `<TOOL_USAGE_SECTION>` rendering branch in `skills/sync/SKILL.md` (the section that conditionally builds the tool-usage table based on installed companion plugins, verified at `skills/sync/SKILL.md:L590`) becomes dead code with respect to `CLAUDE.md`. Two ways to handle the dead code: (a) leave it in place and unreferenced — the placeholder substitution is a no-op when the placeholder is absent from the template (per the template rendering rule at `skills/sync/SKILL.md:L440`: "Unrecognized placeholders are replaced with empty string"); (b) delete the rendering branch entirely in a follow-up cleanup PR. Choose (a) — the rendering rule's "unrecognized → empty string" semantics make this safe and the cleanup can land separately without coupling to this RFC.
+**Canonicalization for classification.** Same as today's `section` strategy: extract each heading in `owned_sections` (manifest order); for each, concatenate the heading line + `\n` + body (trimmed of leading/trailing blank lines) + `\n`. Hash the concatenation. This canonical form is used only for the cheap pre-check: "is the local file already identical to the plugin's canonical content?" If yes, classify as `unchanged` and skip the rest. The cheap pre-check matches today's `unchanged_legacy` path semantics and short-circuits the LLM-assisted comparison for files that need no merging.
 
-**`.claude-plugin/scripts/templates/CONTRIBUTING.md.tpl` — restructure to two owned sections.**
+**Apply step (when classification is not `unchanged`).** For each plugin-owned section listed in `owned_sections`:
 
-The new template file content, in full:
+1. **Locate the section in the plugin's rendered template** (call this `plugin_section_body`). Parse it into a list of items. An item is a discrete unit of meaning — typically a list item (`- `, `* `, `1. `), a code block, a paragraph, or a labeled block (e.g., `**Bold label** description`). The parser splits at line-boundary item starts and preserves nested content (e.g., a list item that contains a nested code block is one item).
 
-````markdown
-<!--
-CONTRIBUTING scope: everything a developer needs to work on this project.
-  - Prerequisites or tool versions change
-  - Setup steps change
-  - Dev workflow or branching conventions change
-  - Quality gate commands change
-  - PR or RFC process changes
+2. **Locate the section in the local file** (call this `local_section_body`). If the section is absent from local, insert the plugin's full rendered body at the section's manifest-order position (after the last preceding owned section that is present in local). Skip to the next section. If the section is present, parse it into items using the same parser.
 
-Not here: what the project does or its architecture → README.md / docs/ARCHITECTURE.md
--->
+3. **For each item in `plugin_items`:**
+   a. Run the LLM-comparison helper against each item in `local_items` to find the best match. The helper returns one of: `same_concept`, `different_concept`, or `contradiction`. The helper's prompt is fixed and short — included in full below. Apply a confidence threshold (the helper returns a confidence in [0.0, 1.0]); below 0.5, treat the result as `different_concept` to err on the side of preserving local content.
+   b. If a `same_concept` match exists: replace the local item's text with the plugin item's text (plugin wins on wording).
+   c. If no match exists: append the plugin item to the section, after the last item that came from the plugin (manifest-order: plugin items are kept contiguous within the section, in the order they appear in the template).
+   d. If a `contradiction` match exists: record the (plugin_item, local_item, section) tuple in a `pending_contradictions` list. Do not modify either item yet.
 
-# Contributing
+4. **For each item in `local_items` that was not matched as `same_concept` to any plugin item:** preserve it byte-for-byte in the local section.
 
-## Prerequisites
+5. **After all sections are processed**, if `pending_contradictions` is non-empty, present them to the user. For each contradiction, ask one AskUserQuestion: "In `CLAUDE.md` section `<heading>`, the plugin and local file have contradicting items. Plugin says: `<plugin_item_text>`. Local says: `<local_item_text>`. Resolve?" with options:
 
-<PREREQUISITES_SECTION>
+   - `Adopt plugin item (replace local with plugin)`
+   - `Keep local item (skip plugin update for this item)`
+   - `Keep both (rare — append plugin without removing local)`
+   - `Skip for now (re-surface next run)`
 
-## Plugin Setup
+   The contradiction prompt is the only per-run user interaction `additive-merge` produces. It only fires when the helper returns `contradiction` with confidence ≥ 0.5, which is by construction rare (genuine semantic opposition between project and plugin rules is rare).
 
-This project uses the [Bytewyrd Claude Code plugin](https://github.com/bytewyrd/claude-bytewyrd) for its dev workflow. Install once per machine (user scope; no per-project install needed):
+6. **Reserialize the file.** Marker on line 2 (per `skills/sync/SKILL.md:L434`, verified). Sections in their preserved relative order. Update the marker SHA to the new canonical-form hash.
 
-```bash
-claude plugin marketplace add bytewyrd/claude-bytewyrd
-claude plugin install bytewyrd@bytewyrd
+**LLM-comparison helper prompt** (used in step 3a above; this is the fixed prompt the agent submits to itself):
+
+```
+You are comparing two text items from a developer documentation file.
+
+Plugin item: <plugin_item_text>
+Local item:  <local_item_text>
+
+Classify the relationship as one of:
+- same_concept: the items express the same rule, guidance, or fact, possibly in different wording
+- different_concept: the items express different concepts; neither is a restatement of the other
+- contradiction: the items express opposing rules — one prohibits or negates what the other prescribes
+
+Return JSON: {"relationship": "<one of the three>", "confidence": <float in [0.0, 1.0]>}
 ```
 
-The plugin's `SessionStart` hook will warn you if any required companion plugins or MCP servers are missing in this project — follow the printed fix command for each.
-````
+The helper is invoked once per (plugin_item, local_item) pair. For a typical `CLAUDE.md` section with 5-10 items on each side, this is 25-100 invocations per section, executed during `/sync`. The cost is bounded because the prompt is small and the response is a single JSON line; the agent batches them where possible.
 
-The body of `## Prerequisites` is the `<PREREQUISITES_SECTION>` placeholder rendered per the existing language-detection rule in `skills/sync/SKILL.md` (the rule for `<PREREQUISITES_SECTION>` lives at `skills/sync/SKILL.md:L656`). `## Plugin Setup` is the install-hint block previously inserted by the rendering step at `skills/sync/SKILL.md:L658-L669` — that step is now redundant because the install hint lives in the template under its own owned section. The CONTRIBUTING.md rendering step in the sync skill (the body that previously inserted the install hint into the rendered file) can be simplified in a follow-up to remove the manual insertion logic; for this RFC, the template-side ownership is sufficient because `section`-strategy canonicalization extracts only the named sections and the install hint is now stably positioned inside `## Plugin Setup`. The legacy `## Development Setup`, `## Development Workflow`, `## Commit Conventions`, `## Quality Gate`, `## Pull Request Process`, `## RFC Process` sections — and their `<INSTALL_COMMAND>` and `<QUALITY_GATE_DESCRIPTION>` placeholders — are removed from the template body. Consumer projects compose those sections locally (the bytewyrd plugin's own `docs/CONTRIBUTING.md` is the canonical example; it has all of those plus several plugin-specific subsections, verified: docs/CONTRIBUTING.md).
+#### `bootstrap` — `docs/CONTRIBUTING.md` and `docs/ARCHITECTURE.md`
 
-**`.claude-plugin/scripts/templates/ARCHITECTURE.md.tpl` — reduce to header region.**
+**Classification.** The classification matrix gets a new branch that runs *before* the existing matrix:
 
-The new template file content, in full:
-
-```markdown
-# Architecture
-
-<!--
-ARCHITECTURE scope: system design reference — the "how and why it's built this way."
-  - A component is added, renamed, or removed
-  - A significant design decision is made or reversed (update the Decisions table)
-  - Data flow between components changes
-  - A new external dependency or service is introduced
-
-Not here: setup/quickstart                   → README.md
-          dev workflow, commit conventions   → docs/CONTRIBUTING.md
-          non-obvious session learnings      → docs/BEST_PRACTICES.md
--->
-
-<!-- END_BYTEWYRD_HEADER -->
+```
+If extension_strategy == "bootstrap":
+    if target_file is absent:
+        classify as "add"
+    else:
+        classify as "local_only"  (regardless of marker state)
+    return
 ```
 
-All placeholder sections (`## Overview`, `## Components`, `## Data Flow`, `## Design Decisions`, `## Dependencies`) are removed. Consumer projects start with an empty body below the marker and compose architecture content from scratch — the bytewyrd plugin's own `docs/ARCHITECTURE.md` is the canonical example of what a filled-in body looks like.
+The `local_only` classification means: no diff is computed, no prompt is presented, the file is preserved exactly as it is. The Step 8 report lists the file under "Local-only edits (N files, plugin unchanged)" (verified: skills/sync/SKILL.md:L362).
 
-### Diff-engine and apply-step behavior (mostly verification; one new code path)
+**Apply step.**
 
-The diff engine and apply step already handle the new strategy values correctly for the steady state — the one exception (a first-run migration for `docs/ARCHITECTURE.md`) is described in its own sub-section below. The existing canonicalization and apply rules:
+- `add` outcome: render the template with `project_inputs` (for `bootstrap` files with `templated: true` — none in this RFC's scope, but the strategy supports it). For `templated: false`, read the template source as-is. Insert the `<!-- bootstrap-content-version: ... -->` marker as line 2 per `skills/sync/SKILL.md:L434`. Write the file. Track as `added`.
+- `local_only` outcome: no write. Track as `local-only edit preserved`.
 
-**Canonicalization rules** (verified: skills/sync/SKILL.md:L344-L348):
+There is no `fast_forward`, `conflict`, `conflict_legacy`, `unchanged_legacy`, or `unchanged` outcome for `bootstrap` files. The strategy's classification is bimodal: either the file does not exist (and the plugin writes it once) or it exists (and the plugin leaves it alone forever).
 
-- `section`: extracts each heading in `owned_sections` (manifest order), concatenates `heading\n + body + \n` for each. After the change, `CLAUDE.md`'s canonical form is the concatenation of three sections; `docs/CONTRIBUTING.md`'s is the concatenation of two sections. The plugin's canonical-form hash and the local file's canonical-form hash are byte-equal when those specific sections agree, which is the case in the bytewyrd plugin's own checkout for the narrowed list.
-- `region`: file content from line 1 up to and including `region_end_marker`, with the marker line(s) removed. After the change, `docs/ARCHITECTURE.md`'s canonical form is the H1 + scope comment + region-end marker (with the bootstrap-content-version marker removed during canonicalization). `docs/rfc-process.md`'s canonical form is unchanged — the upstream region from line 1 to `<!-- END_UPSTREAM_CONTENT -->`, with marker line(s) removed.
+#### `authoritative` — `docs/rfc-process.md`
 
-**Apply actions** (verified: skills/sync/SKILL.md:L450-L466):
+**Classification.** Like `bootstrap`, the classification matrix gets a new branch that runs before the existing matrix:
 
-- `section` (fast-forward case): for each heading in `owned_sections`, replace the section body in the local file with the plugin's rendered body for that section. Preserve all other sections. If a plugin-owned section is absent from the local file, insert it after the last preceding owned section in manifest order. Reserialize: marker on line 2, then sections in their preserved relative order. After the RFC: `CLAUDE.md`'s `## Toolchain`, `## File structure`, and `## Agent delegation` bodies are written; all other headings (including `## Workflow` and its subsections, `## Tool Usage`, `## Security`, etc.) are preserved byte-for-byte from the local file. `docs/CONTRIBUTING.md`'s `## Prerequisites` and `## Plugin Setup` bodies are written; all other content (Development Setup, Workflow, Quality Gate, agent pulldown procedure) is preserved.
-- `region` (fast-forward case): replace the upstream region (everything up to and including `region_end_marker`) with the plugin's rendered upstream region; preserve the project-extension region (everything after `region_end_marker`) byte-for-byte. After the RFC: `docs/ARCHITECTURE.md`'s region (H1 + scope comment + `<!-- END_BYTEWYRD_HEADER -->`) is written; everything from `<!-- END_BYTEWYRD_HEADER -->` onward in the local file is preserved. `docs/rfc-process.md`'s region (up to and including `<!-- END_UPSTREAM_CONTENT -->`) is written; the `## Project Extensions` section after the marker is preserved.
+```
+If extension_strategy == "authoritative":
+    plugin_content = read plugin source, strip any existing marker line(s)
+    if target_file is absent:
+        classify as "add"
+    elif local_content (stripped of marker) == plugin_content:
+        classify as "unchanged"
+    else:
+        classify as "fast_forward"   # but with no user prompt
+    return
+```
 
-**Marker insertion rule** (verified: skills/sync/SKILL.md:L443):
+The `fast_forward` here is a strategy-specific variant — it is auto-applied without entering Step 4a's "fast-forward updates" confirmation list. Step 4a is the right place for that confirmation in the `whole`/`section`/`region`/`structured` strategies because the user might want to review changes; for `authoritative` the plugin is the source of truth by design, and confirming each run defeats the strategy's purpose.
 
-"Markdown (`.md`): insert `<!-- bootstrap-content-version: <upstream_key>:<sha12> -->` as line 2 (after the first line of the file)."
+**Apply step.**
 
-For region-strategy files, this means the marker is inserted as line 2 of the final written file — between the H1 (`# Architecture`) and the scope-comment HTML block. For `docs/rfc-process.md`, the marker is inserted as line 2 — between the existing line-1 `<!-- UPSTREAM: ... -->` comment and the line-2 `<!-- LAST_SYNCED: ... -->` comment. The canonicalization rule's "with marker line(s) removed" clause means the marker is not part of the hash input, so subsequent /sync runs read past it cleanly.
+- `add`: read the plugin source, insert the marker as line 2 per `skills/sync/SKILL.md:L434`, write the file. Track as `added`.
+- `unchanged`: no write. Track as `unchanged`.
+- `fast_forward`: read the plugin source, insert the marker, write the file (silently overwriting any local content). Track as `authoritative update applied`.
 
-**The marker format is unchanged.** The same `<!-- bootstrap-content-version: <upstream_key>:<sha12> -->` form is used for `whole`, `section`, and `region` strategies on markdown files. Section and region delimiters (`<!-- END_BYTEWYRD_HEADER -->`, `<!-- END_UPSTREAM_CONTENT -->`, and the `##` headings themselves) are separate inline boundary markers, not file-level marker lines. The structured (JSON) strategy keeps its sidecar marker; nothing in the JSON path changes.
+**Migration-time check (one-time, on the first `/sync` after this RFC ships):** if the local file contains a `## Project Extensions` section whose body (after trimming) is anything other than the placeholder `*(no project-specific extensions — the global process applies as-is)*` or an empty body, print a one-time warning:
 
-### First-run migration: injecting the `<!-- END_BYTEWYRD_HEADER -->` marker into `docs/ARCHITECTURE.md`
+```
+docs/rfc-process.md — your '## Project Extensions' section will be removed
+on this /sync because the file is now plugin-authoritative. The content was:
 
-This RFC introduces a new region delimiter (`<!-- END_BYTEWYRD_HEADER -->`) to `docs/ARCHITECTURE.md`. The diff engine's `region`-strategy canonicalization rule reads "file content from line 1 up to and including `region_end_marker`" (verified: skills/sync/SKILL.md:L346) — which requires the marker to exist in the local file to produce a canonical form. Projects that ran `/sync` before this RFC have local `docs/ARCHITECTURE.md` files that do *not* contain `<!-- END_BYTEWYRD_HEADER -->`; the diff engine cannot canonicalize them under the new strategy without first injecting the marker. (For `docs/rfc-process.md`, the marker `<!-- END_UPSTREAM_CONTENT -->` is already present in local files because `/rfc-update` or earlier `/sync` runs put it there, so this migration is not needed for that file.)
+  <quoted section body, indented 2 spaces, truncated to 200 chars>
 
-The migration is handled by extending the diff engine with a one-time "marker injection" path that triggers when:
+If you need to keep these customizations, copy them now to another file
+(e.g., docs/CONTRIBUTING.md or a new docs/rfc-process-extensions.md)
+before continuing. Press Ctrl-C to abort, or proceed to overwrite.
+```
 
-1. The artifact's `extension_strategy` is `region`
-2. The local file does not contain `region_end_marker`
-3. The local file's content up to a heuristic split point (described below) matches the plugin's pre-marker header bytes-for-bytes after trimming
+The warning is presented as a synchronous read-line prompt (the existing `/sync` agent loop already uses synchronous prompts via AskUserQuestion — verified: skills/sync/SKILL.md:L14-L17). If the user proceeds, the file is overwritten. If the user aborts, `/sync` exits cleanly with no writes. This is the only per-file user interaction `authoritative` produces, and it fires exactly once per project (after the first apply, the local content matches the plugin and the strategy classifies as `unchanged` on subsequent runs).
 
-The heuristic split point: scan the local file for the first H2 heading (`^## ` at the start of a line). The bytes before that heading are the file's "header region"; the bytes from that heading onward are the "body region". For a `docs/ARCHITECTURE.md` that contains `# Architecture` + scope-comment HTML + `## Overview ...`, the split point is the line index of `## Overview`. The migration:
+### Diff-engine integration
 
-1. Read the local file.
-2. Compute `local_header_bytes` = file content up to (but not including) the first H2 heading line.
-3. Compute `plugin_header_bytes` = the plugin's canonical region content with the bootstrap marker removed and the `<!-- END_BYTEWYRD_HEADER -->` marker removed.
-4. If `local_header_bytes` (after stripping trailing blank lines) equals `plugin_header_bytes` (after stripping trailing blank lines), the local file's header matches the plugin's header. Write the migrated file: plugin header + `\n<!-- bootstrap-content-version: ... -->\n` + `\n<!-- END_BYTEWYRD_HEADER -->\n` + `local_body_bytes` (the bytes from the first H2 heading onward). Classify as `unchanged_legacy` and silently complete.
-5. If the local header does *not* match the plugin's header, classify as `conflict_legacy` and present the standard resolution menu (Adopt / Keep / Merge / Skip / Adopt-and-mark).
+The three new branches plug into the existing diff engine before the current classification matrix. Pseudocode for the integrated classification function:
 
-This migration is encoded in the diff engine as an additional canonicalization-and-classification branch that runs *before* the standard region-strategy classification when the local file lacks `region_end_marker`. The migration runs exactly once per file per project (after the first `/sync`, the local file has the marker and the standard region-strategy path applies on every subsequent run).
+```
+def classify(artifact, target_path, plugin_root, project_inputs):
+    strategy = artifact.extension_strategy
 
-This adds one branch to the diff engine's region-strategy handling — a small but non-zero code change. It is the minimum work required to migrate existing projects without forcing users to manually edit `docs/ARCHITECTURE.md` themselves. The branch's heuristic ("first H2 heading is the body start") is sufficient for the current local files of every consumer project that has run `/sync` before this RFC (each such project's `docs/ARCHITECTURE.md` is either the placeholder template, which has `## Overview` as the first H2, or a customized version that has at least one H2 below the scope-comment HTML block).
+    if strategy == "bootstrap":
+        if not target_path.exists():
+            return "add"
+        return "local_only"
+
+    if strategy == "authoritative":
+        plugin_content = strip_markers(read_plugin_source(artifact, plugin_root))
+        if not target_path.exists():
+            return "add"
+        local_content = strip_markers(target_path.read_text())
+        if local_content == plugin_content:
+            return "unchanged"
+        return "authoritative_fast_forward"
+
+    if strategy == "additive-merge":
+        # Cheap pre-check via canonical-form hashing (same as section strategy)
+        plugin_canonical = canonicalize_sections(render_template(artifact, project_inputs), artifact.owned_sections)
+        local_canonical = canonicalize_sections(target_path.read_text(), artifact.owned_sections) if target_path.exists() else None
+        if not target_path.exists():
+            return "add"
+        if sha256_12(plugin_canonical) == sha256_12(local_canonical):
+            return "unchanged"
+        return "additive_merge_apply"
+
+    # Existing matrix for whole, section, region, structured
+    return classify_existing(artifact, target_path, plugin_root, project_inputs)
+```
+
+The apply function gets matching dispatch:
+
+```
+def apply(artifact, classification, target_path, plugin_root, project_inputs):
+    if classification == "add":
+        # All three new strategies share the "add" path: render, insert marker, write
+        rendered = render_or_read(artifact, plugin_root, project_inputs)
+        write_with_marker(target_path, rendered, artifact)
+        return "added"
+
+    if artifact.extension_strategy == "bootstrap":
+        return "local-only edit preserved"  # classification == "local_only"
+
+    if artifact.extension_strategy == "authoritative":
+        if classification == "unchanged":
+            return "unchanged"
+        # classification == "authoritative_fast_forward"
+        if first_run_with_authoritative(artifact, target_path):
+            warn_project_extensions_if_present(target_path)
+        rendered = render_or_read(artifact, plugin_root, project_inputs)
+        write_with_marker(target_path, rendered, artifact)
+        return "authoritative update applied"
+
+    if artifact.extension_strategy == "additive-merge":
+        if classification == "unchanged":
+            return "unchanged"
+        # classification == "additive_merge_apply"
+        return apply_additive_merge(artifact, target_path, plugin_root, project_inputs)
+
+    # Existing dispatch for whole, section, region, structured
+    return apply_existing(artifact, classification, target_path, plugin_root, project_inputs)
+```
+
+`apply_additive_merge` implements the section-by-section, item-by-item algorithm described above. `apply_existing` is the current Step 5 apply logic at `skills/sync/SKILL.md:L440-L456` (verified) unchanged.
 
 ### Exact steps
 
-1. **Edit the manifest.** Open `.claude-plugin/bootstrap-manifest.json`. Apply the four manifest changes listed under "Exact manifest changes" above. After editing, the `template_sha` (for `CLAUDE.md` and `docs/CONTRIBUTING.md`) and `sha256` (for `docs/ARCHITECTURE.md`) fields will be placeholder values; they are recomputed by step 5.
+1. **Edit the manifest.** Open `.claude-plugin/bootstrap-manifest.json`. Apply the four entry replacements documented under "Exact manifest changes" above. After editing, the `template_sha` for `CLAUDE.md` is unchanged (the template body is not changing in this RFC); the `sha256` values for `docs/CONTRIBUTING.md`, `docs/ARCHITECTURE.md`, and `docs/rfc-process.md` are recomputed by step 4 below.
 
-2. **Rewrite the three templates.** Replace the body of `.claude-plugin/scripts/templates/CLAUDE.md.tpl` with the new content under "Exact template changes — CLAUDE.md.tpl" above. Replace `.claude-plugin/scripts/templates/CONTRIBUTING.md.tpl` similarly. Replace `.claude-plugin/scripts/templates/ARCHITECTURE.md.tpl` similarly.
+2. **Remove the `## Project Extensions` section from `docs/rfc-process.md` in the bytewyrd plugin's own checkout.** Delete lines 226-232 inclusive (the `<!-- END_UPSTREAM_CONTENT -->` marker on line 226, the blank line 227, the `---` separator on line 228, the blank line 229, the `## Project Extensions` heading on line 230, the blank line 231, and the placeholder body on line 232). Also delete lines 1-4 inclusive (the `<!-- UPSTREAM: ... -->` comment on line 1, the `<!-- LAST_SYNCED: ... -->` comment on line 2, the explanatory comment about `END_UPSTREAM_CONTENT` on line 3, and the blank line 4). After the edits, line 1 of the file is the H1 `# RFC Process` (currently at line 5). After the edit, the file is the canonical plugin RFC process content with no leader comments and no extension region.
 
-3. **Add the documentation note to skills/sync/SKILL.md.** Append the following sentence to the existing "Marker insertion rule" block (just after the bullet for `JSON files: do **not** embed a marker in the file.` at L447):
+3. **Update `skills/sync/SKILL.md`** with three new strategy branches. The changes are localized to:
 
-   > For region-strategy markdown files that carry pre-existing leader comments (e.g., `docs/rfc-process.md`'s `<!-- UPSTREAM: ... -->` comment), the bootstrap marker is inserted as line 2 ahead of those comments — line 1 stays as the file's H1 or first leader comment, the new bootstrap marker becomes line 2, and any previous line-2-or-later comments shift down by one line.
+   - The Canonicalization rules block (currently lines 334-340): add three new bullet points for `additive-merge`, `bootstrap`, and `authoritative`, each documenting the strategy's classification short-circuit. The `bootstrap` and `authoritative` entries explicitly note "no canonicalization — strategy bypasses the canonicalization-and-hash classification matrix."
+   - The Classification matrix block (currently lines 323-332): add a preamble paragraph that documents the strategy-first dispatch: "Before applying the matrix below, dispatch to the strategy-specific classifier when `extension_strategy` is `additive-merge`, `bootstrap`, or `authoritative`. The matrix below applies only to the four canonicalization-based strategies (`whole`, `section`, `region`, `structured`)."
+   - The Step 4b resolution menu (currently lines 396-423): add a new variant for `additive-merge`'s contradiction case (the four-option menu described in the `additive-merge` algorithm above).
+   - The Apply actions block (currently lines 440-456): add three new top-level cases for `additive-merge`, `bootstrap`, and `authoritative`, each documenting their apply step. The `additive-merge` case references the item-by-item algorithm; the `bootstrap` and `authoritative` cases are short (no diff, deterministic write or no-op).
 
-4. **Regenerate the manifest.** Run `.claude-plugin/scripts/build-manifest.sh` from the repo root. The script walks the manifest, recomputes the `sha256` or `template_sha` for each artifact's source file, and writes back a sorted, pretty-printed manifest (verified: `.claude-plugin/scripts/build-manifest.sh:L28-L43`). Expected stdout: `Regenerated /home/divoxx/code/bytewyrd/claude-bytewyrd/.worktrees/rfc-sync-section-ownership/.claude-plugin/bootstrap-manifest.json`. Expected exit code: `0`.
+4. **Regenerate the manifest.** Run `.claude-plugin/scripts/build-manifest.sh` from the repo root (verified: build-manifest.sh:L1-L55 walks the manifest and recomputes `sha256`/`template_sha` for each artifact's source file). Expected stdout: `Regenerated /home/divoxx/code/bytewyrd/claude-bytewyrd/.worktrees/rfc-sync-section-ownership/.claude-plugin/bootstrap-manifest.json`. Expected exit code: `0`.
 
-5. **Verify the manifest passes the pre-commit check.** Run `.claude-plugin/scripts/build-manifest.sh --check`. Expected exit code: `0` (no diff). If the check fails, return to step 4 and re-run regeneration.
+5. **Verify the manifest passes the pre-commit check.** Run `.claude-plugin/scripts/build-manifest.sh --check` (verified: build-manifest.sh:L45-L51 exits non-zero if regenerated output differs from the committed manifest). Expected exit code: `0`. If non-zero, re-run step 4.
 
-6. **Run `/sync` in a consumer project (smoke test).** From a consumer project that already has the four affected files (the bytewyrd plugin's own checkout is the canonical case; the worktree at `/home/divoxx/code/bytewyrd/claude-bytewyrd/.worktrees/rfc-sync-section-ownership/` is itself a valid consumer project for the plugin), invoke `/sync`. Expected classification per file on the **first** run after this RFC ships (per the matrix at `skills/sync/SKILL.md:L335-L342`):
+6. **Run `/sync` in a consumer project (smoke test).** From a consumer project (the bytewyrd plugin's own worktree at `/home/divoxx/code/bytewyrd/claude-bytewyrd/.worktrees/rfc-sync-section-ownership/` is a valid consumer for testing), invoke `/sync`. Expected classification per file on the first run after this RFC ships:
 
-   - `CLAUDE.md` → **unchanged_legacy** — the marker is absent, and `section`-strategy canonicalization on the narrowed three-section list (`## Toolchain`, `## File structure`, `## Agent delegation`) matches the plugin's canonical form. Per `skills/sync/SKILL.md:L463`, `unchanged_legacy` files are silently re-written with the marker inserted (no content change).
-   - `docs/CONTRIBUTING.md` → **unchanged_legacy** when the local `## Prerequisites` and `## Plugin Setup` bodies match the plugin's canonical content; falls back to **conflict_legacy** only if those two sections diverge from plugin canonical content (e.g., a project that customized the install hint wording).
-   - `docs/ARCHITECTURE.md` → **unchanged_legacy** via the first-run marker-injection branch (the local file lacks `<!-- END_BYTEWYRD_HEADER -->`; the migration branch finds the local header bytes match the plugin's pre-marker header bytes and writes the migrated file with the marker injected between the header and the body). Falls back to **conflict_legacy** only if the H1 or scope-comment was edited locally. (Editing the scope-comment is unusual — projects typically don't touch it.)
-   - `docs/rfc-process.md` → **unchanged_legacy** — the upstream region matches between plugin and local (because `/sync` and `/rfc-update` already kept it in sync today).
+   - `CLAUDE.md` → **additive_merge_apply** (or **unchanged** if every plugin-owned item already has a `same_concept` match in local). On the bytewyrd plugin's own checkout, the file has all ten plugin-owned sections present with bodies that match the template's items conceptually — verified by inspection of CLAUDE.md vs CLAUDE.md.tpl in this RFC's session. Outcome: `additive_merge_apply` with all items resolved as `same_concept` (no contradictions), local wording potentially replaced where plugin and local differ. Marker stamped on completion.
+   - `docs/CONTRIBUTING.md` → **local_only** — the file exists; `bootstrap` short-circuits to `local_only`. No prompt, no diff, no write.
+   - `docs/ARCHITECTURE.md` → **local_only** — same.
+   - `docs/rfc-process.md` → **authoritative_fast_forward** on first run (local content has leader comments and `## Project Extensions` section, plugin content does not, so they differ after stripping markers). The migration-time check fires: the warning is printed; the user proceeds; the file is overwritten with the plugin's canonical content; marker stamped. On the very next run, classification is **unchanged** and no further interaction.
 
-   Expected stdout summary section: a `Legacy marker injection (4 files, content matches — adding version marker only)` block listing the four files, per the format at `skills/sync/SKILL.md:L365-L366`. The terminology `fast_forward` from this RFC's Summary applies to **subsequent** plugin upgrades after the markers are stamped — at that point, an updated plugin canonical form vs an unchanged local file classifies as `fast_forward` rather than `unchanged_legacy`.
+   The Step 4a batch-confirmation prompt is skipped for all four files (none of them produces an `add` or `fast_forward` in the existing strategies' sense). The Step 4b conflict prompt fires only for `additive-merge` items in `contradiction` state, of which there are zero in the bytewyrd plugin's own checkout (verified by item-by-item inspection of CLAUDE.md vs CLAUDE.md.tpl during this RFC's session — every plugin item has a same-concept match in local).
 
-7. **Verify the markers were written.** After the `/sync` run, check each file:
+7. **Verify the markers were written.** After `/sync`:
 
    ```bash
    sed -n '2p' CLAUDE.md docs/CONTRIBUTING.md docs/ARCHITECTURE.md docs/rfc-process.md
    ```
 
-   Expected: each file's line 2 is a `<!-- bootstrap-content-version: <upstream_key>:<sha12> -->` comment matching the plugin's canonical-form SHA.
+   Expected: `CLAUDE.md` and `docs/rfc-process.md` line 2 are `<!-- bootstrap-content-version: ... -->` markers matching the plugin's canonical-form SHA. `docs/CONTRIBUTING.md` and `docs/ARCHITECTURE.md` line 2 is whatever was already there (these are `local_only` — no marker is injected because the strategy does not require it; the file is project-owned).
 
-8. **Run `/sync` again (idempotence check).** Invoke `/sync` a second time. Expected stdout: `Everything is up to date.` per `skills/sync/SKILL.md:L376`. No prompts, no resolutions, no per-file output.
+8. **Run `/sync` again (idempotence check).** Invoke `/sync` a second time. Expected stdout: `Everything is up to date.` (per `skills/sync/SKILL.md:L367`, verified) — every file classifies as `unchanged` or `local_only`. No prompts, no resolutions, no per-file output.
 
 ### Verification commands
 
-After step 8 succeeds, the four files are no longer in the `conflict_legacy` cycle. The diff engine sees each carrying a bootstrap-content-version marker on line 2, hashes the local canonical content against the marker's recorded `local_ancestor_sha`, finds them equal, and classifies as `unchanged` (verified: skills/sync/SKILL.md:L337). The cycle terminates permanently — until the plugin ships a future update to one of the four files, in which case the diff engine classifies as `fast_forward` and the user gets the standard four-option resolution flow on real divergence.
+After step 8 succeeds, the four files are out of the `conflict_legacy` loop permanently:
+
+- `CLAUDE.md` carries a bootstrap-content-version marker. Subsequent plugin updates re-run the `additive-merge` algorithm: same-concept matches silently update local wording, new plugin items are appended, local-only items are preserved, contradictions prompt explicitly.
+- `docs/CONTRIBUTING.md` and `docs/ARCHITECTURE.md` are never re-checked. The plugin can update the template body in future versions and the change does not flow to existing projects — by design.
+- `docs/rfc-process.md` carries a bootstrap-content-version marker. Subsequent plugin updates apply silently with no prompt; any future local edits are silently overwritten on the next `/sync`.
+
+The `conflict_legacy` cycle for these files is terminated. The only per-run interactions that can still arise are: (a) an `additive-merge` contradiction on `CLAUDE.md`, which is bounded by genuine semantic opposition between project and plugin rules; and (b) the one-time migration warning on `docs/rfc-process.md` for projects with non-empty `## Project Extensions` content.
 
 ## Risks and open questions
 
-1. **Local section name collides with a plugin section name added in a future plugin version.** A consumer project has authored a local `## Tool Usage` section in `CLAUDE.md` (which is currently project-owned per this RFC). A future plugin version adds `## Tool Usage` back to `owned_sections` to start managing tool docs centrally. On the next `/sync`, the diff engine's `section`-strategy apply step replaces the local body with the plugin's body — overwriting the user's local content silently.
+1. **`additive-merge`'s LLM helper produces false-positive `same_concept` matches and silently overwrites local wording.** The helper is asked, item by item, to classify the relationship between a plugin item and a local item. A confidently-wrong "same_concept" classification leads to the local item's wording being replaced by the plugin's. The user has no visibility into individual replacements unless they read the resulting git diff.
 
-   **Mitigation (convention):** Sections appearing in the manifest's `owned_sections` list are plugin-owned. Any section name *not* listed is local-owned. The convention is one-directional: a maintainer adding a new plugin-owned section must (a) add it to `owned_sections` in the manifest, and (b) treat the addition as a breaking change to the file's contract — bump the `upstream_key` (e.g., from `bytewyrd/CLAUDE.md@v1` to `bytewyrd/CLAUDE.md@v2`) so the diff engine treats the file as a fresh artifact. The `@v2` reset means the `local_ancestor_sha` lookup misses (the local marker says `@v1:...`, the plugin says `@v2:...`); the file classifies as `unchanged_legacy` or `conflict_legacy` and the user is prompted explicitly. This is the same mechanism the existing manifest schema uses to handle versioning (every `upstream_key` ends with `@v1` today; bumping to `@v2` is the documented escape hatch).
+   **Mitigation:** the Step 8 report lists each section where any item was modified, along with a count of `same_concept` replacements applied. The user can run `git diff CLAUDE.md` after `/sync` to inspect every replacement and revert any they disagree with via `git checkout -- CLAUDE.md` or selective edits. The confidence threshold (≥ 0.5) and the helper's prompt design (returning a discrete relationship label rather than a free-form judgment) reduce the false-positive rate but do not eliminate it. The recoverability via git history is the safety net: every replacement is in a single commit that can be selectively reverted.
 
-   This mitigation is not foolproof — a maintainer who forgets the `upstream_key` bump will still cause silent overwrites — so the manifest pre-commit hook (`build-manifest.sh --check`, verified: `.claude-plugin/hooks/pre-commit/manifest-check.sh`) should be extended to fail when an existing `upstream_key`'s `owned_sections` list adds a new entry without an `upstream_key` bump. Implementation of that pre-commit check is a small follow-up; not part of this RFC's scope.
+2. **`additive-merge`'s LLM helper produces false-negative `different_concept` matches and creates duplicate items.** The helper fails to recognize that two items express the same concept, so the plugin item is appended even though local already has a (different-wording) version of it. The result is two items in the section that say nearly the same thing — clutter, not a wrong rule.
 
-2. **The narrow ownership list for `CLAUDE.md` produces an unhelpful template for new projects.** A user runs `/sync` in a brand-new project that has no `CLAUDE.md`. The plugin writes a file containing only `## Toolchain`, `## File structure`, and `## Agent delegation` — none of the boilerplate sections (`## Tool Usage`, `## RFC Process`, `## Security`, etc.) that were previously shipped. The new project starts with a minimal CLAUDE.md and the user must compose all the other sections by hand.
+   **Mitigation:** the duplication is cosmetic, not destructive. The user can deduplicate in their next edit pass. The Step 8 report's per-section change summary makes the appended items visible. Over time, the user's deduplication edits should converge the local file toward wording that matches the plugin's exactly (which the helper then classifies confidently as `same_concept`), reducing the false-negative rate organically.
 
-   **Mitigation:** the boilerplate sections that have been removed from the template *are* in the bytewyrd plugin's own `CLAUDE.md` checkout, which is structurally identical to what a new consumer project would want. A follow-up RFC may introduce a separate "seed pack" of project-owned sections that `/sync` offers to install on first run (with a single `Yes / Skip` prompt), but that is a separate concern. For now, the trade-off is that the plugin stops re-rendering sections it doesn't auto-template, at the cost of new projects starting with less prefilled boilerplate. This is consistent with the RFC's stated principle: the plugin owns what it generates, not what it merely templated once.
+3. **`bootstrap` files diverge from the plugin's template over time with no automated recovery.** A project that adopted `docs/ARCHITECTURE.md` early gets a v1 template body. The plugin maintainer improves the template (better scope comment, additional guidance) for v2. Existing projects do not pick up the improvement — `bootstrap` short-circuits to `local_only` regardless of plugin version. The maintainer has no `/sync`-driven path to push improvements.
 
-3. **`docs/rfc-process.md`'s existing `<!-- UPSTREAM: ... -->` and `<!-- LAST_SYNCED: ... -->` leader comments interact with the bootstrap marker injection.** The marker-insertion rule says "insert as line 2" (verified: skills/sync/SKILL.md:L443). On the next `/sync`, the diff engine inserts `<!-- bootstrap-content-version: ... -->` as line 2 between `<!-- UPSTREAM: ... -->` (line 1) and `<!-- LAST_SYNCED: ... -->` (current line 2, will become line 3). The result is structurally fine — three leader comments instead of two, all valid HTML — but worth confirming.
+   **Mitigation (out of scope of this RFC, documented as an open question):** a future RFC may introduce a "re-bootstrap" command (e.g., `/sync --rebootstrap docs/ARCHITECTURE.md`) that explicitly opts the user into overwriting a `bootstrap` file with the plugin's current template, with a backup of the existing content (written to `docs/ARCHITECTURE.md.local-backup`) before the overwrite. This is a deliberate manual escape hatch, not an automated update — it inverts the strategy temporarily for one file, prompting the user explicitly. Out of scope here because no consumer project currently needs it.
 
-   **Resolution:** the canonicalization rule for `region` strategy says "with the marker line(s) removed" (verified: skills/sync/SKILL.md:L346). The plural "line(s)" reads as covering both the bootstrap-content-version marker and any other comment lines that are part of the file's marker-leader. Step 3 of "Exact steps" above adds documentation to `skills/sync/SKILL.md` confirming this interpretation. If a future refactor of the canonicalization rule wants to be strict and remove only the `bootstrap-content-version` line, a separate one-time migration step would be needed to either remove the legacy `<!-- UPSTREAM: ... -->` and `<!-- LAST_SYNCED: ... -->` comments or fold them into a non-canonicalized region of the file. That migration is not part of this RFC.
+4. **`authoritative` silently dropping local customizations is a new failure mode for projects that previously used `## Project Extensions`.** Today, the local copy of `docs/rfc-process.md` has a `## Project Extensions` section that the diff engine preserves (because `region` strategy stops at `<!-- END_UPSTREAM_CONTENT -->`). After this RFC, that section is removed on the first `/sync` and any future local edits to the file are silently overwritten on subsequent runs.
 
-4. **The `## Plugin Setup` section name in `CONTRIBUTING.md` differs from the wording in the existing local file (which has `## Plugin Setup (one-time)`).** The plugin's new ownership claim is `## Plugin Setup` (without the parenthetical). On the first `/sync` after this RFC, the diff engine's `section`-strategy apply step will look for `## Plugin Setup` in the local file. If the local file uses a slightly different heading (`## Plugin Setup (one-time)`), the engine treats the plugin's section as absent and inserts it as a new section.
+   **Mitigation:** the migration-time check described in the implementation spec fires exactly once on the first `/sync` after this RFC ships. If the local `## Project Extensions` section has non-placeholder content, the user is prompted with the section's content quoted, given a clear "press Ctrl-C to abort" path, and instructed to copy the content elsewhere before continuing. After the migration, future local edits to `docs/rfc-process.md` are silently overwritten — this is the strategy's defining property and is documented in `docs/CONTRIBUTING.md` and release notes (per the drawback above).
 
-   **Resolution (in scope of this RFC):** the bytewyrd plugin's own checkout has `## Plugin Setup (one-time)` (verified: docs/CONTRIBUTING.md:L25). The next `/sync` on the plugin's own checkout will insert a new `## Plugin Setup` section ahead of the existing `## Plugin Setup (one-time)` section. The duplication is a one-time cleanup the maintainer resolves by renaming the local heading from `## Plugin Setup (one-time)` to `## Plugin Setup` and merging the two bodies. Consumer projects that already have the install hint under a heading other than `## Plugin Setup` will see similar duplication and resolve it manually. The choice of heading name in the manifest (`## Plugin Setup`, without the parenthetical) is deliberate: it is the cleanest exact-string match for both the heading name in `skills/sync/SKILL.md`'s install-hint description and a reasonable section heading for a consumer project.
+5. **Per-`/sync` token cost for `additive-merge`'s LLM helper.** The helper invokes the agent's underlying model once per (plugin_item, local_item) pair, per section. For `CLAUDE.md` with ten sections averaging seven items per side, that's up to 490 invocations per `/sync` run. With short prompts and short responses, each invocation is a few hundred tokens; the total token spend is bounded but non-zero on every run that classifies `CLAUDE.md` as `additive_merge_apply`.
 
-5. **Manifest pre-commit hook may need updating.** The current `build-manifest.sh --check` (verified: `.claude-plugin/hooks/pre-commit/manifest-check.sh`) verifies that the manifest's recorded `sha256`/`template_sha` values match the actual source file content. It does not validate `owned_sections` against the template body, so a maintainer who forgets to update `owned_sections` when adding a new section to a template will see no error from the hook. The mitigation in risk 1 above proposes a follow-up extension of this check; outside this RFC's scope.
+   **Mitigation:** the cheap pre-check (canonical-form hash equality between plugin and local) short-circuits to `unchanged` whenever the file has not drifted, eliminating all helper invocations for the common case. The cost is paid only when the plugin's template has changed *or* the local file has been edited since the last `/sync`. The agent batches helper invocations across pairs in a single section to amortize prompt overhead.
+
+6. **The diff engine's Step 4b resolution menu gains a new variant for `additive-merge` contradictions.** The existing four-option menu (Adopt / Keep / Merge / Skip) plus the fifth `Adopt plugin and add marker` option (verified: skills/sync/SKILL.md:L408-L415) is now joined by an item-level menu for `additive-merge` contradictions. The two menus have different option sets and different scopes (file-level vs item-level), so they are presented separately. Maintaining two menus in the same step is a documentation burden — the `skills/sync/SKILL.md` body must clearly disambiguate which menu applies when.
+
+   **Mitigation:** the integrated skill body in step 3 of "Exact steps" above explicitly differentiates the two menus in the Step 4b documentation. The implementation can also factor the option-rendering into two named helpers (`render_file_conflict_menu` and `render_item_contradiction_menu`) so the call sites are unambiguous in code. This is a small refactor, not a structural change.
+
+7. **The manifest pre-commit hook does not validate strategy-specific fields.** `build-manifest.sh --check` (verified: .claude-plugin/scripts/build-manifest.sh:L45-L51) verifies that recorded SHAs match source files. It does not check that `additive-merge` entries have `owned_sections`, that `bootstrap` entries omit `owned_sections`/`owned_paths`/`region_end_marker`, or that `authoritative` entries omit `region_end_marker`. A maintainer who edits the manifest by hand and forgets to remove an obsolete field will see no error.
+
+   **Mitigation:** extending the pre-commit check to validate per-strategy field requirements is a small follow-up (out of scope here). The first symptom of a malformed manifest is a runtime error during `/sync` classification dispatch, which is loud and immediate; the manifest is a small file and the strategy fields are easy to inspect manually.
 
 ## Relationship to other RFCs
 
-None currently. This RFC builds on the per-file marker infrastructure introduced by `2026-05-10-sync-interactive-diff` (Done) but does not depend on or block any other RFC.
+This RFC builds on the per-file marker infrastructure introduced by `2026-05-10-sync-interactive-diff` (Done) and does not depend on or block any other RFC. It supersedes any prior assumption (including in this RFC's earlier draft) that the fix for the `conflict_legacy` loop would be a narrowing of `CLAUDE.md`'s `owned_sections` and a migration to `section`/`region` strategies for `docs/CONTRIBUTING.md` and `docs/ARCHITECTURE.md`. That approach is dropped entirely in favor of the three-strategy model described here.
