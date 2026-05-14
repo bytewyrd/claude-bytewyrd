@@ -23,8 +23,24 @@ In both cases the error message includes the exact command to fix the condition.
 
 ## Team-wide enforcement
 
-`/sync` automatically adds `bytewyrd@bytewyrd` to `enabledPlugins` in the project's `.claude/settings.json`. This entry should be committed to source control.
+`/sync` automatically writes two entries to the project's `.claude/settings.json` and commits them to source control:
 
-The rationale: the plugin writes RFC docs, BEST_PRACTICES.md, and other project-level artifacts that every team member needs to interact with. Project-scope enablement ensures any collaborator who hasn't installed the plugin is prompted by Claude Code on first open. If a collaborator already has the plugin installed at user scope, the entry is a no-op.
+```json
+{
+  "enabledPlugins": {
+    "bytewyrd@bytewyrd": true
+  },
+  "extraKnownMarketplaces": {
+    "bytewyrd": {
+      "source": {
+        "source": "github",
+        "repo": "bytewyrd/claude-bytewyrd"
+      }
+    }
+  }
+}
+```
 
-Per Claude Code's settings precedence, project settings layer on top of user settings — the project entry does not override or conflict with a user-scope install.
+Both entries are required. `enabledPlugins` alone is insufficient — without `extraKnownMarketplaces`, Claude Code doesn't know where to find the `bytewyrd` marketplace and cannot prompt the collaborator to install it. When both are present, a collaborator who opens the repo for the first time is prompted to add the marketplace and then install the plugin.
+
+The rationale: the plugin writes RFC docs, BEST_PRACTICES.md, and other project-level artifacts that every team member needs to interact with. For collaborators who already have the plugin installed at user scope, both entries are no-ops — the install prompts are skipped.
