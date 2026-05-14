@@ -1,4 +1,8 @@
-# Project Brief
+# Bytewyrd Claude Plugin
+
+## Description
+
+Opinionated Claude Code plugin for Bytewyrd projects — skills, agents, hooks, and RFC-driven workflow
 
 ## Problem
 
@@ -13,6 +17,10 @@ This should be communicated clearly and directly in all user-facing surfaces: th
 ## Goals
 
 Every project that installs the plugin gets a consistent, fully-configured Claude Code environment with proven skills, agent delegation patterns, quality gates, and RFC process out of the box — in a single `/sync` command.
+
+## Non-Goals
+
+Not a general-purpose Claude Code configurator; opinionated toward Bytewyrd's RFC-driven, quality-gated workflow — other teams may use it but should expect the conventions.
 
 ## Constraints
 

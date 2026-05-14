@@ -1,5 +1,6 @@
+# bootstrap-content-version: bytewyrd/.gitignore@v1:63144237f45f
+
+# bytewyrd:base
 .worktrees/
 .claude/settings.local.json
-
-# bytewyrd plugin local state (PreCompact sentinel, etc.)
 .bytewyrd/

@@ -1,4 +1,5 @@
 <div align="center">
+<!-- bootstrap-content-version: bytewyrd/README.md@v1:7cc82158eace -->
   <h1>
     <img src="docs/icon.svg" alt="" width="56" height="56" align="absmiddle"/>
     &nbsp;claude-bytewyrd

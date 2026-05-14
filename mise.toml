@@ -1,0 +1,7 @@
+# bootstrap-content-version: bytewyrd/mise.toml@v1:2a5c8e1f0b3d
+
+# mise.toml — tool version pins (managed by /sync)
+# Add language-specific tools as needed; non-Rust languages use mise.
+# Rust is managed via rust-toolchain.toml + rustup (not mise).
+
+[tools]
