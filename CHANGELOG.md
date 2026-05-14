@@ -59,18 +59,28 @@ Two new specialist agents ship with this release: `claude-agent-author` (authors
 
 ### Upgrading from 0.1.0
 
-**Plugin name changed.** The plugin was renamed from `bytewyrd-workflow` to `bytewyrd`. You must uninstall the old entry and install the new one:
+The plugin was renamed from `bytewyrd-workflow` to `bytewyrd`, and the recommended install scope changed from project to user. The steps depend on how you installed 0.1.0.
+
+**If you followed the 0.1.0 recommendation (project scope):**
+
+The old plugin is registered separately in each project's `.claude/settings.json`. Uninstall it once per project, then install the new name once globally.
 
 ```bash
-claude plugin uninstall bytewyrd-workflow
+# Run inside each project where you installed 0.1.0
+cd /path/to/your/project
+claude plugin uninstall bytewyrd-workflow --scope project
+
+# Run once from anywhere — installs at user scope (the new default)
 claude plugin install bytewyrd/claude-bytewyrd
 ```
 
-**Recommended scope is now user, not project.** 0.1.0 guidance recommended `--scope project` so teammates were prompted to install automatically. 0.2.0 introduces a SessionStart hook that runs requirement checks every session, making user-scope the better default: install once per machine and have the plugin available everywhere. If you previously installed at project scope, re-install at user scope:
+**If you installed at user scope (`--scope user`):**
+
+The old plugin is registered once in `~/.claude/settings.json`. One uninstall, one install — both from anywhere.
 
 ```bash
-claude plugin uninstall bytewyrd
-claude plugin install bytewyrd/claude-bytewyrd   # defaults to user scope
+claude plugin uninstall bytewyrd-workflow --scope user
+claude plugin install bytewyrd/claude-bytewyrd
 ```
 
 If your team wants to *require* the plugin in a specific repo (so collaborators are prompted on first open), see [docs/guide/installation.md](docs/guide/installation.md#team-wide-enforcement-optional).
