@@ -21,9 +21,13 @@ Every time you start a session in any project, the plugin runs a one-shot requir
 
 In both cases the error message includes the exact command to fix the condition.
 
-## Team-wide enforcement
+## Team-wide enforcement (optional)
 
-`/sync` automatically writes two entries to the project's `.claude/settings.json` and commits them to source control:
+The default posture is user-scope-first: install once per machine, available in every project. `/sync` does not write plugin enablement entries to the project's `.claude/settings.json` — adding per-project entries would recreate the maintenance burden (name, marketplace URL, version) that user-scope was designed to eliminate.
+
+New collaborators who don't have the plugin are covered by the install hint `/sync` adds to every project's `CONTRIBUTING.md`.
+
+If your team wants Claude Code to auto-install the plugin for any collaborator who opens the repo (bypassing the CONTRIBUTING.md manual step), you can add both entries manually and commit them to source control. Both are required — `enabledPlugins` alone is insufficient because Claude Code needs `extraKnownMarketplaces` to resolve the marketplace source:
 
 ```json
 {
@@ -41,6 +45,4 @@ In both cases the error message includes the exact command to fix the condition.
 }
 ```
 
-Both entries are required. `enabledPlugins` alone is insufficient — without `extraKnownMarketplaces`, Claude Code doesn't know where to find the `bytewyrd` marketplace and cannot prompt the collaborator to install it. When both are present, a collaborator who opens the repo for the first time is prompted to add the marketplace and then install the plugin.
-
-The rationale: the plugin writes RFC docs, BEST_PRACTICES.md, and other project-level artifacts that every team member needs to interact with. For collaborators who already have the plugin installed at user scope, both entries are no-ops — the install prompts are skipped.
+This is not the default — and if you choose it, these entries become project-owned and must be kept current if the plugin's marketplace or name ever changes.
