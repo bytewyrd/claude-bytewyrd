@@ -57,6 +57,30 @@ Two new specialist agents ship with this release: `claude-agent-author` (authors
 - README redesigned with icon, cleaner install instructions, and generic-audience messaging
 - Model selection guidance, evidence-based development principles, and sandbox container compatibility notes baked into the plugin `CLAUDE.md`
 
+### Upgrading from 0.1.0
+
+**Plugin name changed.** The plugin was renamed from `bytewyrd-workflow` to `bytewyrd`. You must uninstall the old entry and install the new one:
+
+```bash
+claude plugin uninstall bytewyrd-workflow
+claude plugin install bytewyrd/claude-bytewyrd
+```
+
+**Recommended scope is now user, not project.** 0.1.0 guidance recommended `--scope project` so teammates were prompted to install automatically. 0.2.0 introduces a SessionStart hook that runs requirement checks every session, making user-scope the better default: install once per machine and have the plugin available everywhere. If you previously installed at project scope, re-install at user scope:
+
+```bash
+claude plugin uninstall bytewyrd
+claude plugin install bytewyrd/claude-bytewyrd   # defaults to user scope
+```
+
+If your team wants to *require* the plugin in a specific repo (so collaborators are prompted on first open), see [docs/guide/installation.md](docs/guide/installation.md#team-wide-enforcement-optional).
+
+**`/bootstrap` → `/sync`.** The bootstrap skill was renamed to `/sync`. Update any notes or scripts that reference `/bootstrap` (or `/bytewyrd:bootstrap`).
+
+**Re-run `/sync` in each project.** The installed CLAUDE.md template, RFC process file, and BEST_PRACTICES.md all gained new sections in 0.2.0. Run `/sync` in each project to pick up the updated content.
+
+**SessionStart warnings are expected on first run.** After installing, the new requirement-check hook will warn about any missing companion plugins or MCP servers. Follow the fix commands shown — or suppress individual warnings with `export BYTEWYRD_SKIP_WARN=<id>` if a dependency doesn't apply to your setup.
+
 ---
 
 ## [0.1.0] — 2026-05-09
