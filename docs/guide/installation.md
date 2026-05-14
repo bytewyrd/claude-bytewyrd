@@ -21,16 +21,10 @@ Every time you start a session in any project, the plugin runs a one-shot requir
 
 In both cases the error message includes the exact command to fix the condition.
 
-## Team-wide enforcement (optional)
+## Team-wide enforcement
 
-The default posture is user-scope-first: the plugin is installed once per developer, and projects do not assert plugin enablement in their `.claude/settings.json`. If your team wants to *require* every collaborator to have the plugin installed (e.g., for a strict code-review or RFC-discipline policy), add the following to your project's `.claude/settings.json` under `enabledPlugins`:
+`/sync` automatically adds `bytewyrd@bytewyrd` to `enabledPlugins` in the project's `.claude/settings.json`. This entry should be committed to source control.
 
-```json
-{
-  "enabledPlugins": {
-    "bytewyrd@bytewyrd": true
-  }
-}
-```
+The rationale: the plugin writes RFC docs, BEST_PRACTICES.md, and other project-level artifacts that every team member needs to interact with. Project-scope enablement ensures any collaborator who hasn't installed the plugin is prompted by Claude Code on first open. If a collaborator already has the plugin installed at user scope, the entry is a no-op.
 
-Per Claude Code's settings precedence rules, project settings override user settings — so a collaborator who hasn't installed the plugin yet will get an install prompt when they open the project. `/sync` does not write this entry by default; teams that want it must add it manually and check it into source control.
+Per Claude Code's settings precedence, project settings layer on top of user settings — the project entry does not override or conflict with a user-scope install.
