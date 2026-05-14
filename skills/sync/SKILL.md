@@ -74,7 +74,7 @@ Then read `~/.claude/plugins/installed_plugins.json`. Extract the `plugins` obje
 | Context7 | `context7@claude-plugins-official` | Recommended |
 | Code Review | `code-review@claude-plugins-official` | Recommended |
 
-The `bytewyrd@bytewyrd` plugin is NOT in this criticality table — it is unconditionally added to `enabledPlugins` in the `settings.json.tpl` rendering step (Step 5), not conditioned on whether it is currently installed. Any collaborator who opens the repo without the plugin installed will be prompted by Claude Code to install it. The plugin's own `SessionStart` hook then validates companion plugins and MCP servers at session start.
+The `bytewyrd@bytewyrd` plugin is NOT in this criticality table — both `enabledPlugins` and `extraKnownMarketplaces` entries for it are unconditionally written in the `settings.json.tpl` rendering step (Step 5), regardless of whether the plugin is currently installed. Any collaborator who opens the repo without the plugin installed is prompted first to add the marketplace, then to install the plugin. The plugin's own `SessionStart` hook then validates companion plugins and MCP servers at session start.
 
 Note: Exa is a separate MCP server (not a plugin) — its permissions go unconditionally in `settings.local.json`.
 
@@ -582,7 +582,40 @@ The `rfc-process.md` source (`bytewyrd/docs/rfc-process.md@v1`) is read directly
 
 **`settings.json.tpl` rendering:**
 
-**Always include `bytewyrd@bytewyrd` in `enabledPlugins`.** The plugin writes RFC docs, BEST_PRACTICES.md, and other project-level artifacts that every team member needs to interact with — slash commands for the RFC workflow, agent delegation, and best-practices capture must be available to every collaborator who opens the repo. Project-scope enablement ensures any collaborator who hasn't installed the plugin is prompted on first open. If the user already has it installed at user scope, the project-scope entry is a no-op. Use `jq` to set the entry: `jq '.enabledPlugins["bytewyrd@bytewyrd"] = true'` (bracket notation required — dot notation with `@` is non-portable across jq versions).
+**Always include both `enabledPlugins` and `extraKnownMarketplaces` for the bytewyrd plugin.** `enabledPlugins` alone is not enough — without `extraKnownMarketplaces`, Claude Code does not know where to resolve the `bytewyrd` marketplace source and cannot prompt the collaborator to install it.
+
+When both are present, Claude Code's flow for a new collaborator is:
+1. Detects `extraKnownMarketplaces` → prompts the user to install/trust the `bytewyrd` marketplace (sourced from `bytewyrd/claude-bytewyrd` on GitHub)
+2. Detects `enabledPlugins` → prompts the user to install the `bytewyrd` plugin
+
+Use `jq` to write both entries (bracket notation required — dot notation with `@` is non-portable across jq versions):
+
+```bash
+jq '.enabledPlugins["bytewyrd@bytewyrd"] = true
+  | .extraKnownMarketplaces["bytewyrd"] = {
+      "source": { "source": "github", "repo": "bytewyrd/claude-bytewyrd" }
+    }' .claude/settings.json
+```
+
+The resulting `.claude/settings.json` block:
+
+```json
+{
+  "enabledPlugins": {
+    "bytewyrd@bytewyrd": true
+  },
+  "extraKnownMarketplaces": {
+    "bytewyrd": {
+      "source": {
+        "source": "github",
+        "repo": "bytewyrd/claude-bytewyrd"
+      }
+    }
+  }
+}
+```
+
+If the user already has the plugin installed at user scope, both entries are no-ops for them — the install prompts are skipped when Claude Code detects it is already enabled.
 
 **Include only if installed** — an uninstalled `claude-plugins-official` plugin causes Claude Code to error on startup. Read `~/.claude/plugins/installed_plugins.json` and include each entry only if its identifier is present in the registry. Add `"github@claude-plugins-official": true`, `"context7@claude-plugins-official": true`, `"code-review@claude-plugins-official": true` only for plugins in `installed`.
 
