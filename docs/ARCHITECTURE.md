@@ -79,6 +79,27 @@ Agents → spawned as subtask processes. Receive a goal and a tool allow-list fr
 | Plugin-local vs exported skills | Plugin-local in `.claude/skills/`, exported in `skills/` | Keeps maintenance tools out of consumer installs; plugin.json is the explicit export declaration |
 | Best-practices flow | Record → global file → manual sync to `/sync` content | Puts human review between personal capture and distribution; prevents one user's project-specific notes from polluting the sync content of every future project |
 | RFC process distribution | Canonical template at plugin root; `/sync` creates/updates `docs/rfc-process.md` with upstream sync markers | Eliminates separate `/rfc-install` step; RFC setup is idempotent and automatic on every `/sync` run |
+| Plugin installation scope | User scope only (`~/.claude/settings.json`); `/sync` does not write `enabledPlugins` or `extraKnownMarketplaces` to project settings | See note below |
+
+### Plugin installation scope — extended note
+
+The plugin is installed once per developer at user scope. `/sync` explicitly does not write `bytewyrd@bytewyrd` to `enabledPlugins` or `bytewyrd` to `extraKnownMarketplaces` in the project's `.claude/settings.json`.
+
+**Why not project scope?**
+
+The motivation for user-scope-first is maintenance. If every `/sync`-bootstrapped project carries `enabledPlugins` + `extraKnownMarketplaces` entries, those entries become per-project artifacts that must be updated whenever the plugin's name, marketplace identifier, or GitHub path changes. The entries are also redundant for developers who already have the plugin installed: they get the plugin twice (user + project scope) with no benefit.
+
+**Why not use the `SessionStart` hook to warn collaborators?**
+
+The `check-requirements.sh` hook is a natural place to surface a "plugin not installed" warning for new collaborators who open a project that has been bootstrapped with `/sync`. The problem is circular: the hook is shipped by the plugin and is registered in `hooks/hooks.json`, so it only runs in sessions where the plugin is already loaded. A developer who does not have the plugin installed will see none of the hook's output — the hook simply does not execute for them.
+
+**What covers new collaborators instead?**
+
+`/sync` adds an explicit install hint to the consumer project's `CONTRIBUTING.md` (see the CONTRIBUTING.md rendering section in `skills/sync/SKILL.md`). A developer who clones the repo, reads the contributing guide, and follows the one-line install command gets the plugin and all its session-start validation from that point on.
+
+**Optional project-scope enforcement**
+
+Teams that want Claude Code to auto-install the plugin for any collaborator who opens the repo — bypassing the CONTRIBUTING.md manual step — can add both `enabledPlugins` and `extraKnownMarketplaces` entries to `.claude/settings.json` and commit them. Both entries are required: `enabledPlugins` alone is not enough because Claude Code needs `extraKnownMarketplaces` to resolve the marketplace source before it can prompt the install. Teams that choose this path own the maintenance of those entries. See `docs/guide/installation.md` for the exact JSON.
 
 ## Dependencies
 
