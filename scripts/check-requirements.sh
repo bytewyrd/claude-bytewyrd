@@ -74,6 +74,21 @@ plugin_installed() {
   [ -f "$registry" ] && grep -q "\"$id\"" "$registry"
 }
 
+# version_lt <v1> <v2>: returns 0 if v1 is strictly less than v2.
+# Compares dot-separated integer segments (MAJOR.MINOR.PATCH); no dependencies.
+version_lt() {
+  local IFS=.
+  read -r -a _v1 <<< "$1"
+  read -r -a _v2 <<< "$2"
+  local i
+  for i in 0 1 2; do
+    local a="${_v1[$i]:-0}" b="${_v2[$i]:-0}"
+    [ "$a" -lt "$b" ] && return 0
+    [ "$a" -gt "$b" ] && return 1
+  done
+  return 1  # equal — not less-than
+}
+
 # mcp_configured <prefix>: returns 0 if any of the settings files contains
 # an "allow" permission with the given tool prefix, 1 otherwise. Strict
 # proxy for "this MCP server is reachable in this session."
@@ -162,6 +177,19 @@ if ! is_skipped "gh-cli" && ! command -v gh >/dev/null 2>&1; then
   warnings+=("[warn] gh CLI not on PATH. Fix: install gh (https://cli.github.com). Used by /sync to read GitHub repo metadata; non-critical.")
 fi
 
+# Soft requirement: installed plugin version is not older than the version
+# that last ran /sync on this project. Catches collaborators on stale installs
+# whose /sync-written artifacts may not match their local skill/agent set.
+if ! is_skipped "plugin-version"; then
+  _expected_ver="$(cat "$CLAUDE_PROJECT_DIR/.bytewyrd/plugin-version" 2>/dev/null || echo "")"
+  if [ -n "$_expected_ver" ]; then
+    _current_ver="$(jq -r '.version // empty' "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/.claude-plugin/plugin.json" 2>/dev/null || echo "")"
+    if [ -n "$_current_ver" ] && version_lt "$_current_ver" "$_expected_ver"; then
+      warnings+=("[warn] Plugin out of date: installed $_current_ver, project last synced with $_expected_ver. Fix: claude plugin install bytewyrd@bytewyrd")
+    fi
+  fi
+fi
+
 # --- Output -----------------------------------------------------------------
 
 # Silent path: no warnings, no failures.
@@ -197,7 +225,7 @@ ctx="Bytewyrd plugin warnings active: $(printf '%s; ' "${warnings[@]}" | sed 's/
   echo "Bytewyrd plugin: requirement check warnings."
   printf '%s\n' "${warnings[@]}"
   echo "Suppress individual warnings with: BYTEWYRD_SKIP_WARN=<id1>,<id2>  (comma-separated)"
-  echo "Suppressible IDs: github, context7, code-review, exa, firefox-devtools, gh-cli"
+  echo "Suppressible IDs: github, context7, code-review, exa, firefox-devtools, gh-cli, plugin-version"
 } >&2
 
 emit_json true false "$sys_msg" "$ctx"

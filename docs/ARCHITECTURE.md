@@ -48,6 +48,13 @@ Current plugin-local skills:
 **Purpose:** Defines the plugin's identity. This is the entrypoint the Claude Code plugin system reads; skills and agents are auto-discovered from their respective root directories.
 **Location:** `.claude-plugin/plugin.json`
 
+### Hooks (`hooks/`, `scripts/`)
+
+**Purpose:** Shell-level automation that Claude Code executes in response to session lifecycle events. The plugin currently ships one hook: a `SessionStart` probe that runs once per session in every project where the plugin is enabled.
+**Location:** `hooks/hooks.json` (hook declarations) + `scripts/check-requirements.sh` (probe logic)
+**Key behavior:** The hook is silent when all requirements are met. It emits a warning bundle for soft-dependency gaps (companion plugins not enabled, MCP servers not configured, optional CLI tools absent, installed plugin older than the version that last ran `/sync` on the project) and exits with status 2 only for hard failures (`git` missing, or a stale `claude-plugins-official` reference that Claude Code would error on later). Individual warnings can be suppressed via `BYTEWYRD_SKIP_WARN=<id>` in the user's shell environment.
+
+
 ## Data Flow
 
 Skills → executed by Claude Code in-session. No persistent side effects unless the skill writes files.

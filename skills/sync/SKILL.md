@@ -97,6 +97,15 @@ Note: Exa is a separate MCP server (not a plugin) — its permissions go uncondi
 
 **Write target:** all files created or modified by sync go to the directory returned in `REPO_ROOT`. This is always the correct target — whether you're in a standard checkout or a worktree. **Never** run `git rev-parse --git-common-dir` or otherwise detect the "main" repo root and redirect writes there. If sync is invoked from a worktree, the worktree is the intended working context; changes land on a branch and flow through a PR — that is the desired workflow.
 
+**Also record the plugin version** so the `SessionStart` hook can warn collaborators who are on an older version than the one that last ran `/sync` on this project:
+
+```bash
+PLUGIN_VER=$(jq -r '.version // empty' "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/.claude-plugin/plugin.json" 2>/dev/null || echo "")
+[ -n "$PLUGIN_VER" ] && echo "$PLUGIN_VER" > .bytewyrd/plugin-version
+```
+
+Only write if `PLUGIN_VER` is non-empty. If the file is unreadable (e.g. development checkout with a non-standard layout), skip silently.
+
 ---
 
 ## Step 2 — Gather project identity from the brief
