@@ -105,10 +105,12 @@ if [ -z "${CLAUDE_PROJECT_DIR:-}" ]; then
   CLAUDE_PROJECT_DIR="${PWD}"
 fi
 
-# Hard failure: project's .claude/settings.json references a plugin that
-# isn't installed in installed_plugins.json. Claude Code itself errors at
-# startup when this happens (per the existing /sync skill comment around
-# line 968 of skills/sync/SKILL.md).
+# Hard failure: project's .claude/settings.json references a
+# claude-plugins-official plugin that isn't installed. Claude Code itself
+# errors at startup in this case (the plugin runtime has no marketplace URL
+# to fall back to). Third-party entries (e.g. bytewyrd@bytewyrd) are
+# intentionally excluded — they declare their source in extraKnownMarketplaces
+# so Claude Code can resolve and install them automatically.
 proj_settings="$CLAUDE_PROJECT_DIR/.claude/settings.json"
 if [ -f "$proj_settings" ]; then
   while IFS= read -r enabled_id; do
