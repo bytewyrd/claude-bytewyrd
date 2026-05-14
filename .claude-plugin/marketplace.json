@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Opinionated Claude Code workflow: skills, agents, hooks, and operating principles for evidence-based development with RFC-driven design.",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "plugins": [
     {
