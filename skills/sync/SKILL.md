@@ -117,6 +117,15 @@ Do **not** auto-invoke `/docs-review` — `/sync` only prints the suggestion. Th
 
 If `PLUGIN_DOCS_VER` is empty (the plugin's `agents/docs-agent.md` does not yet exist or does not carry the marker), skip this step silently — the plugin may be on a version that predates this feature.
 
+**Also record the plugin version** so the `SessionStart` hook can warn collaborators who are on an older version than the one that last ran `/sync` on this project:
+
+```bash
+PLUGIN_VER=$(jq -r '.version // empty' "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/.claude-plugin/plugin.json" 2>/dev/null || echo "")
+[ -n "$PLUGIN_VER" ] && echo "$PLUGIN_VER" > .bytewyrd/plugin-version
+```
+
+Only write if `PLUGIN_VER` is non-empty. If the file is unreadable (e.g. development checkout with a non-standard layout), skip silently.
+
 ---
 
 ## Step 2 — Gather project identity from the brief
