@@ -74,7 +74,7 @@ Then read `~/.claude/plugins/installed_plugins.json`. Extract the `plugins` obje
 | Context7 | `context7@claude-plugins-official` | Recommended |
 | Code Review | `code-review@claude-plugins-official` | Recommended |
 
-The `bytewyrd@bytewyrd` plugin is NOT in this criticality table — both `enabledPlugins` and `extraKnownMarketplaces` entries for it are unconditionally written in the `settings.json.tpl` rendering step (Step 5), regardless of whether the plugin is currently installed. Any collaborator who opens the repo without the plugin installed is prompted first to add the marketplace, then to install the plugin. The plugin's own `SessionStart` hook then validates companion plugins and MCP servers at session start.
+The `bytewyrd@bytewyrd` plugin is NOT in this table and NOT written to project settings — it is installed once per machine at user scope. The plugin's `SessionStart` hook validates companion plugins and MCP servers for users who have it installed; new collaborators who don't have it are directed to install via the CONTRIBUTING.md hint `/sync` adds to every consumer project.
 
 Note: Exa is a separate MCP server (not a plugin) — its permissions go unconditionally in `settings.local.json`.
 
@@ -582,40 +582,19 @@ The `rfc-process.md` source (`bytewyrd/docs/rfc-process.md@v1`) is read directly
 
 **`settings.json.tpl` rendering:**
 
-**Always include both `enabledPlugins` and `extraKnownMarketplaces` for the bytewyrd plugin.** `enabledPlugins` alone is not enough — without `extraKnownMarketplaces`, Claude Code does not know where to resolve the `bytewyrd` marketplace source and cannot prompt the collaborator to install it.
+**Do NOT include `bytewyrd@bytewyrd` in `enabledPlugins` or `extraKnownMarketplaces`.** The plugin is installed once per machine at user scope (`~/.claude/settings.json`), not per-project. Adding it to project settings would recreate the per-project maintenance burden that the user-scope recommendation was specifically designed to avoid: every project would carry entries that need to be updated if the plugin name, marketplace, or source URL ever changes.
 
-When both are present, Claude Code's flow for a new collaborator is:
-1. Detects `extraKnownMarketplaces` → prompts the user to install/trust the `bytewyrd` marketplace (sourced from `bytewyrd/claude-bytewyrd` on GitHub)
-2. Detects `enabledPlugins` → prompts the user to install the `bytewyrd` plugin
+New collaborators who don't have the plugin are covered by the CONTRIBUTING.md install hint that `/sync` adds to every consumer project. The plugin's own `SessionStart` hook (`check-requirements.sh`) handles per-session validation of companion plugins and MCP servers for users who already have it installed — it cannot warn users who don't have it, because the hook only runs when the plugin is loaded.
 
-Use `jq` to write both entries (bracket notation required — dot notation with `@` is non-portable across jq versions):
+**Cleanup of legacy entries (always run before writing):** If the existing `.claude/settings.json` contains a `bytewyrd@bytewyrd` entry under `enabledPlugins`, or a `bytewyrd` entry under `extraKnownMarketplaces`, remove them. This is a forward-only migration — 0.1.x projects had the `enabledPlugins` entry; current projects must not. Use `jq` with bracket notation (dot notation with `@` is non-portable across jq versions):
 
 ```bash
-jq '.enabledPlugins["bytewyrd@bytewyrd"] = true
-  | .extraKnownMarketplaces["bytewyrd"] = {
-      "source": { "source": "github", "repo": "bytewyrd/claude-bytewyrd" }
-    }' .claude/settings.json
+jq 'del(.enabledPlugins["bytewyrd@bytewyrd"]) | del(.extraKnownMarketplaces["bytewyrd"])' .claude/settings.json
 ```
 
-The resulting `.claude/settings.json` block:
+The cleanup is idempotent — re-running on a clean project is a no-op.
 
-```json
-{
-  "enabledPlugins": {
-    "bytewyrd@bytewyrd": true
-  },
-  "extraKnownMarketplaces": {
-    "bytewyrd": {
-      "source": {
-        "source": "github",
-        "repo": "bytewyrd/claude-bytewyrd"
-      }
-    }
-  }
-}
-```
-
-If the user already has the plugin installed at user scope, both entries are no-ops for them — the install prompts are skipped when Claude Code detects it is already enabled.
+Teams that want to mandate project-scope enablement (so Claude Code auto-installs the plugin for collaborators) can do so manually by adding both `enabledPlugins` and `extraKnownMarketplaces` entries themselves and committing them — but this is not the default, and both entries are required (see `docs/guide/installation.md`).
 
 **Include only if installed** — an uninstalled `claude-plugins-official` plugin causes Claude Code to error on startup. Read `~/.claude/plugins/installed_plugins.json` and include each entry only if its identifier is present in the registry. Add `"github@claude-plugins-official": true`, `"context7@claude-plugins-official": true`, `"code-review@claude-plugins-official": true` only for plugins in `installed`.
 
