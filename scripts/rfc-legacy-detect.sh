@@ -18,8 +18,9 @@
 #   2  docs/rfcs/ does not exist.
 
 set -uo pipefail
-
-command -v jq >/dev/null 2>&1 || { printf '{"error":"jq not found on PATH"}\n'; exit 2; }
+# shellcheck source=_lib/common.bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib/common.bash"
+require_jq
 
 if [ ! -d docs/rfcs ]; then
   jq -n --arg msg "rfc-legacy-detect: no docs/rfcs/ directory in $(pwd)" '{error: $msg}'

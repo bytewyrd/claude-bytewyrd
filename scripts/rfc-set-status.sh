@@ -21,12 +21,9 @@
 #      drop_reason provided when status != Dropped, file missing, or no status line found.
 
 set -uo pipefail
-
-command -v jq >/dev/null 2>&1 || { printf '{"error":"jq not found on PATH"}\n'; exit 2; }
-
-emit_error() {
-  jq -n --arg msg "$1" '{error: $msg}'
-}
+# shellcheck source=_lib/common.bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib/common.bash"
+require_jq
 
 if [ "${1:-}" = "" ] || [ "${2:-}" = "" ]; then
   emit_error "usage: rfc-set-status.sh <path-to-rfc.md> <Draft|Approved|Done|Dropped> [<drop-reason>]"

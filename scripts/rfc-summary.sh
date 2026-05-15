@@ -20,11 +20,12 @@
 #   2  docs/rfcs/ does not exist.
 
 set -uo pipefail
+# shellcheck source=_lib/common.bash
+_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$_LIB_DIR/_lib/common.bash"
+require_jq
 
-command -v jq >/dev/null 2>&1 || { printf '{"error":"jq not found on PATH"}\n'; exit 2; }
-
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-FRONTMATTER_SH="$SCRIPT_DIR/rfc-frontmatter.sh"
+FRONTMATTER_SH="$_LIB_DIR/rfc-frontmatter.sh"
 
 if [ ! -d docs/rfcs ]; then
   jq -n --arg msg "no docs/rfcs/ directory in $(pwd)" '{error: $msg}'

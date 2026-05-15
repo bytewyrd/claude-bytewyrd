@@ -16,8 +16,9 @@
 #   (never exits non-zero — absence of entries is not an error)
 
 set -uo pipefail
-
-command -v jq >/dev/null 2>&1 || { printf '{"error":"jq not found on PATH"}\n'; exit 2; }
+# shellcheck source=_lib/common.bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib/common.bash"
+require_jq
 
 file="docs/rfc-braindump.md"
 

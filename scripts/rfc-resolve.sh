@@ -23,8 +23,9 @@
 #   2  Usage error (e.g. argument given but contains a path separator that is not a docs/rfcs/ path).
 
 set -uo pipefail
-
-command -v jq >/dev/null 2>&1 || { printf '{"error":"jq not found on PATH"}\n'; exit 2; }
+# shellcheck source=_lib/common.bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib/common.bash"
+require_jq
 
 # Validate cwd contains docs/rfcs.
 if [ ! -d docs/rfcs ]; then
@@ -43,11 +44,6 @@ find_by_stem() {
 emit_result() {
   local path="$1" label="$2"
   jq -n --arg path "$path" --arg label "$label" '{path: $path, label: $label}'
-}
-
-emit_error() {
-  local msg="$1"
-  jq -n --arg msg "$msg" '{error: $msg}'
 }
 
 # Case 1: explicit argument.

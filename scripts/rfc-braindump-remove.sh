@@ -22,12 +22,9 @@
 #   2  Usage error or docs/rfc-braindump.md missing.
 
 set -uo pipefail
-
-command -v jq >/dev/null 2>&1 || { printf '{"error":"jq not found on PATH"}\n'; exit 2; }
-
-emit_error() {
-  jq -n --arg msg "$1" '{error: $msg}'
-}
+# shellcheck source=_lib/common.bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib/common.bash"
+require_jq
 
 if [ "${1:-}" = "" ]; then
   emit_error "usage: rfc-braindump-remove.sh <full-bullet-body-without-leading-star-space>"

@@ -31,46 +31,15 @@
 #   2  Usage error (unrecognized probe name).
 
 set -uo pipefail
-
-command -v jq >/dev/null 2>&1 || { printf '{"error":"jq not found on PATH"}\n'; exit 2; }
-
-emit_available() {
-  jq -n --arg name "$1" '{result: "available", name: $name}'
-}
-
-emit_missing() {
-  jq -n --arg name "$1" --arg hint "$2" '{result: "missing", name: $name, hint: $hint}'
-}
-
-emit_unauth() {
-  jq -n --arg name "$1" --arg hint "$2" '{result: "unauthenticated", name: $name, hint: $hint}'
-}
-
-emit_error() {
-  jq -n --arg msg "$1" '{error: $msg}'
-}
+# shellcheck source=_lib/common.bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib/common.bash"
+require_jq
 
 if [ "${1:-}" = "" ]; then
   emit_error "usage: tool-probe.sh <gh|git|jq|github-mcp|context7-mcp|code-review-mcp>"
   exit 2
 fi
 name="$1"
-
-# Helper: search project then user settings for an enabledPlugins entry.
-# Precedence matches check-requirements.sh: project-false beats user-true (a project
-# can explicitly disable a plugin even if the user has it enabled globally).
-plugin_enabled() {
-  local id="$1"
-  local user_settings="$HOME/.claude/settings.json"
-  local proj_settings=".claude/settings.json"
-  # Project-level explicit false takes priority.
-  if [ -f "$proj_settings" ] && grep -q "\"$id\"[[:space:]]*:[[:space:]]*false" "$proj_settings"; then return 1; fi
-  # Project-level true.
-  if [ -f "$proj_settings" ] && grep -q "\"$id\"[[:space:]]*:[[:space:]]*true" "$proj_settings"; then return 0; fi
-  # User-level true (no project override).
-  if [ -f "$user_settings" ] && grep -q "\"$id\"[[:space:]]*:[[:space:]]*true" "$user_settings"; then return 0; fi
-  return 1
-}
 
 case "$name" in
   gh)
