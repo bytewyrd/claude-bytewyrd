@@ -23,45 +23,28 @@ If the directory does not exist, tell the user:
 
 Stop.
 
-### 2. Enumerate and parse RFC files
-
-The enumeration and sort are performed as a single pipeline in Step 3. This step describes the field format:
-
-Each file yields one tab-separated line: `status<TAB>created<TAB>rfc<TAB>title<TAB>author`.
-
-The `awk` script is bounded by the two `---` lines that delimit the frontmatter block; the `BEGIN { fm = 0 }` counter tracks which `---` we've crossed, and `exit` after the second one ensures we never read past the frontmatter. Field extraction strips the `key: ` prefix and removes surrounding quotes so values are clean strings.
-
-### 3. Filter, sort, and group
-
-Pipe the loop output from Step 2 through `sort`, sorted by `created` ascending then by `rfc` identifier ascending as a stable tiebreaker for same-day RFCs. The full combined command is:
+### 2. Enumerate, parse, and sort
 
 ```bash
-(for f in docs/rfcs/*.md; do
-  [ -f "$f" ] || continue
-  awk '
-    BEGIN { fm = 0 }
-    /^---$/ { fm++; if (fm == 2) exit; next }
-    fm == 1 {
-      if ($1 == "rfc:")     { sub(/^rfc: */, ""); gsub(/"/, ""); rfc = $0 }
-      if ($1 == "title:")   { sub(/^title: */, ""); gsub(/"/, ""); title = $0 }
-      if ($1 == "author:")  { sub(/^author: */, ""); gsub(/"/, ""); author = $0 }
-      if ($1 == "status:")  { sub(/^status: */, ""); gsub(/"/, ""); status = $0 }
-      if ($1 == "created:") { sub(/^created: */, ""); gsub(/"/, ""); created = $0 }
-    }
-    END { printf "%s\t%s\t%s\t%s\t%s\n", status, created, rfc, title, author }
-  ' "$f"
-done) | sort -t$'\t' -k2,2 -k3,3
+result="$(bash scripts/rfc-summary.sh)"
 ```
 
-This emits one tab-separated line per RFC file in ascending date order, with same-date files ordered by RFC identifier.
+`$result` is a JSON object `{"rfcs": [...], "warnings": [...]}`. Extract:
 
-Group the sorted output by status. Build three lists:
+```bash
+rfcs="$(printf '%s' "$result" | jq -c '.rfcs')"
+warnings="$(printf '%s' "$result" | jq -r '.warnings[]?')"
+```
+
+`$rfcs` is a JSON array sorted ascending by `created` then by `rfc` identifier. Iterate it with `printf '%s' "$rfcs" | jq -c '.[]'` to grab each row as an object for step 3's grouping. Print any per-file `$warnings` (incomplete frontmatter, unrecognized status) so the user sees them before the rendered summary. Exit code 2 only if `docs/rfcs/` does not exist — in that case `$result` contains `{"error":"..."}` (extract via `jq -r .error`) and step 1's "no RFC directory" message is shown.
+
+### 3. Filter and group
+
+Group the sorted rows by status. Build three lists:
 
 - **Approved** — rows whose `status` is `Approved`
 - **Draft** — rows whose `status` is `Draft`
 - **Other** — rows whose `status` is `Done` or `Dropped`; not displayed by row, only counted
-
-Any row with an unrecognized `status` value (i.e., not one of the four canonical lifecycle states) is treated as a parse warning: print `Warning: <filename> has unrecognized status "<value>" — skipping.` to the output and exclude from all counts.
 
 ### 4. Render the output
 

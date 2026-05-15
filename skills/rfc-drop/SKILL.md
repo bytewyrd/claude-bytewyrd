@@ -11,27 +11,33 @@ Marks an RFC as Dropped with a recorded reason. Dropped RFCs are permanent histo
 
 ### 1. Identify the RFC and reason
 
-If an RFC number or filename is provided as argument, use it. Otherwise:
+Resolve the target RFC. `$ARG` is the user-supplied identifier from the skill's argument, if any; omit it to let the script use the heuristic fallbacks.
 
-1. Run `git diff --name-only HEAD -- docs/rfcs/ && git status --short docs/rfcs/`. If exactly one RFC file appears as modified or staged, treat it as the candidate.
-2. If none or multiple are modified, list files in `docs/rfcs/` sorted by name and take the last (most recently dated) as the candidate.
-3. Ask: "Which RFC? [default: RFC-NNN — `docs/rfcs/NNN-title.md`]" — accept a blank response as confirmation of the default.
+```bash
+result="$(bash scripts/rfc-resolve.sh "${ARG:-}")"
+RFC_PATH="$(printf '%s' "$result" | jq -r .path)"
+label="$(printf '%s' "$result" | jq -r .label)"
+```
+
+(Same confirmation flow as rfc-approve: show `$label`, ask the user to confirm. On non-zero exit, parse `.error` from `$result` and show it. `$RFC_PATH` carries the resolved absolute path into the steps below.)
 
 If the drop reason is not provided, ask: "Why is this RFC being dropped? (one sentence)"
 
 ### 2. Read and verify status
 
-Read the RFC file. Check `status`:
-- `Done` → "This RFC is already done — it cannot be dropped."
-- `Dropped` → "Already dropped: <drop_reason>."
+```bash
+fm="$(bash scripts/rfc-frontmatter.sh "$RFC_PATH")"
+status="$(printf '%s' "$fm" | jq -r .status)"
+drop_reason="$(printf '%s' "$fm" | jq -r .drop_reason)"
+```
 
-Stop in either case. Only `Draft` and `Approved` RFCs can be dropped.
+If `$status` is `Done` → "This RFC is already done — it cannot be dropped." If `Dropped` → "Already dropped: $drop_reason." Stop in either case. Only `Draft` and `Approved` RFCs can be dropped.
 
 ### 3. Confirm
 
 Show:
 ```
-RFC NNN — <title>
+RFC <identifier> — <title>
 Status: <current status> → Dropped
 Reason: <drop reason>
 
@@ -42,17 +48,17 @@ Wait for confirmation.
 
 ### 4. Update frontmatter
 
-Set:
-```yaml
-status: "Dropped"
-drop_reason: "<reason>"
+```bash
+result="$(bash scripts/rfc-set-status.sh "$RFC_PATH" Dropped "$REASON")"
 ```
+
+The script writes `status: "Dropped"` and `drop_reason: "<REASON>"` atomically. If `$REASON` is empty the script exits 2 with `{"error":"..."}` on stdout — extract via `jq -r .error` and re-prompt for a reason.
 
 ### 5. Commit
 
 ```bash
-git add docs/rfcs/<filename>
-git commit -m "rfc: drop RFC-NNN — <reason>"
+git add "$RFC_PATH"
+git commit -m "rfc: drop RFC <identifier> — <reason>"
 ```
 
-Report: "RFC-NNN dropped and committed. The file is preserved as historical record."
+Report: "RFC <identifier> dropped and committed. The file is preserved as historical record."

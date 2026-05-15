@@ -58,13 +58,12 @@ Write to `docs/rfc-process.md`.
 
 ### 3. Migrate legacy NNN-named RFCs (if present)
 
-Check for files still using the legacy three-digit sequence number format:
-
 ```bash
-ls docs/rfcs/*.md 2>/dev/null | grep -E '/[0-9]{3}-'
+result="$(bash scripts/rfc-legacy-detect.sh)"
+legacy_count="$(printf '%s' "$result" | jq '.legacy_files | length')"
 ```
 
-If any are found, offer to migrate them:
+If `$legacy_count` is greater than 0, iterate the paths with `printf '%s' "$result" | jq -r '.legacy_files[]'` and offer to migrate them:
 
 > Found N RFC(s) with legacy NNN naming:
 > - docs/rfcs/001-gateway-namespace.md
