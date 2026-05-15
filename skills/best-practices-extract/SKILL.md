@@ -9,9 +9,14 @@ description: Use at the end of a meaningful session to extract non-obvious learn
 
 This skill optionally enriches its output with PR context from the GitHub CLI. The CLI is a soft dependency:
 
-1. Before invoking `gh`, run `command -v gh >/dev/null 2>&1` to verify it is on `PATH`.
-2. If `gh` is missing, print exactly: `gh CLI not on PATH — extracting without PR context.` and continue with the rest of the extraction.
-3. If `gh` is present but unauthenticated (`gh auth status` exits non-zero), print exactly: `gh CLI not logged in — extracting without PR context.` and continue.
+```bash
+result="$(bash scripts/tool-probe.sh gh)"; gh_status=$?
+gh_result="$(printf '%s' "$result" | jq -r .result)"
+```
+
+- `gh_status=0` (and `$gh_result` = `available`) → use `gh` for PR context as designed.
+- `gh_status=1` and `$gh_result` = `missing` → print exactly: `gh CLI not on PATH — extracting without PR context.` and continue. (Use `printf '%s' "$result" | jq -r .hint` if a longer remediation hint is needed.)
+- `gh_status=1` and `$gh_result` = `unauthenticated` → print exactly: `gh CLI not logged in — extracting without PR context.` and continue.
 
 The skill must not fail or block on this missing dependency; it must produce its primary output regardless.
 

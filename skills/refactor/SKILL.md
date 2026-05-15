@@ -8,11 +8,15 @@ argument-hint: "[scope-hint]"
 
 ## Requirement check
 
-This skill optionally invokes the `/review` slash command (from the `code-review@claude-plugins-official` plugin) for a pre-pass before refactoring. This pre-pass is added by this RFC; the companion plugin is a soft dependency:
+This skill optionally invokes the `/review` slash command (from the `code-review@claude-plugins-official` plugin) for a pre-pass before refactoring:
 
-1. Before invoking `/review`, the orchestrating agent should check whether the `code-review` plugin is enabled by inspecting the user's `~/.claude/settings.json` `enabledPlugins` block or the project's `.claude/settings.json` block. The simplest probe is: `grep -q '"code-review@claude-plugins-official"[[:space:]]*:[[:space:]]*true' ~/.claude/settings.json .claude/settings.json 2>/dev/null`.
-2. If the plugin is not enabled, print exactly: `code-review@claude-plugins-official not enabled — running /refactor without pre-pass review.` and proceed directly to the analysis phase.
-3. If it is enabled, run the pre-pass as designed.
+```bash
+result="$(bash scripts/tool-probe.sh code-review-mcp)"; status=$?
+cr_result="$(printf '%s' "$result" | jq -r .result)"
+```
+
+- `status=0` (and `$cr_result` = `available`) → run the pre-pass as designed.
+- `status=1` (and `$cr_result` = `missing`) → print exactly: `code-review@claude-plugins-official not enabled — running /refactor without pre-pass review.` and proceed directly to the analysis phase. (`printf '%s' "$result" | jq -r .hint` returns the install hint if the agent wants a longer message.)
 
 The refactor must produce its primary output (the analysis + plan + approval gate + apply phases) regardless of whether the pre-pass ran.
 

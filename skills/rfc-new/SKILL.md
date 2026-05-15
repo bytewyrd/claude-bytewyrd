@@ -13,20 +13,16 @@ Creates a new RFC, runs agent review, runs consensus review, fixes any critical 
 
 If an argument is provided, use it as the description and proceed to Step 2.
 
-If no argument is provided, check whether `docs/rfc-braindump.md` exists and contains bullet entries (`* `). If it does, list the entries numbered:
+If no argument is provided:
 
-```
-Braindump entries available to promote:
-
-1. Merge `Unit` into `Task` to eliminate two-step trait implementation.
-2. Autonomous multi-agent software development system (replace reeve-review).
-
-Pick a number to promote, or describe a new RFC:
+```bash
+result="$(bash scripts/rfc-braindump-list.sh)"
+entries_count="$(printf '%s' "$result" | jq '.entries | length')"
 ```
 
-Wait for the user's response. If they pick a number, use that entry's full text as the description. If they type something else, use that as the description.
+If `$entries_count` is greater than 0, iterate with `printf '%s' "$result" | jq -r '.entries[] | "\(.n)\t\(.body)"'` to present them as a numbered list and ask "Pick a number to promote, or describe a new RFC." If the user picks a number `N`, use `printf '%s' "$result" | jq -r --argjson n "$N" '.entries[] | select(.n == $n) | .body'` as the description. If they type something else, use that as the description.
 
-If no braindump file exists or it has no entries, ask: "What is this RFC about?"
+If `$entries_count` is 0 (no braindump file or no entries), ask: "What is this RFC about?"
 
 ### 2. Scope check
 
@@ -106,9 +102,14 @@ git config user.name
 
 ### 6. Remove promoted braindump entry
 
-If the description came from a `docs/rfc-braindump.md` entry (user selected a number in Step 1), remove that bullet line from `docs/rfc-braindump.md` now. Find the line starting with `* ` whose text matches the selected entry and delete it entirely (including its newline). Leave all other entries and the file header intact.
+If the description came from a `docs/rfc-braindump.md` entry (the user selected a number in Step 1), remove that bullet:
 
-If the description was typed directly by the user (not selected from the braindump list), skip this step.
+```bash
+result="$(bash scripts/rfc-braindump-remove.sh "$SELECTED_ENTRY_BODY")"
+removed="$(printf '%s' "$result" | jq -r .removed)"
+```
+
+Where `$SELECTED_ENTRY_BODY` is the full bullet text *excluding* the leading `* ` marker (e.g., `**Foo.** First entry.`). If `$removed` is `false` (script exited 1), treat as a warning, not an error — the entry may have been removed already. If the description was typed directly by the user (not selected from the braindump list), skip this step.
 
 ### 7. Spawn bytewyrd:rfc-architect to fill in the RFC
 
