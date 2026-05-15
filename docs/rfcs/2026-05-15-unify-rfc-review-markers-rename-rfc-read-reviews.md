@@ -2,7 +2,7 @@
 rfc: "2026-05-15-unify-rfc-review-markers-rename-rfc-read-reviews"
 title: "Unify RFC review markers under REVIEW: and rename rfc-read-feedback to rfc-read-reviews"
 author: "Rodrigo Kochenburger"
-status: "Draft"
+status: "Approved"
 created: "2026-05-15"
 drop_reason: ~
 ---
