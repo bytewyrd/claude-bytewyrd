@@ -7,6 +7,8 @@ setup() {
   SCRIPT="$SCRIPT_ROOT/scripts/rfc-resolve.sh"
   # Initialize a minimal git repo so git status works.
   git init -q
+  git config commit.gpgsign false
+  git config tag.gpgsign false
   git config user.email "test@test.com"
   git config user.name "Test"
   create_rfc_fixture 2026-01-01-alpha

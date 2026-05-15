@@ -26,6 +26,7 @@ setup_common() {
 
 teardown_common() {
   cd "${BATS_TEST_TMPDIR:-${TMPDIR:-/tmp}}" || cd / || true
+  chmod -R u+w "$TEST_TMPDIR" 2>/dev/null || true
   temp_del "$TEST_TMPDIR"
 }
 
