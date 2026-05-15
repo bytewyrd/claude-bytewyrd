@@ -89,17 +89,19 @@ version_lt() {
   return 1  # equal — not less-than
 }
 
-# mcp_configured <prefix>: returns 0 if any of the settings files contains
-# an "allow" permission with the given tool prefix, 1 otherwise. Strict
-# proxy for "this MCP server is reachable in this session."
+# mcp_configured <prefix>: returns 0 if a mcpServers entry matching the
+# server name derived from the prefix exists in ~/.claude.json or .mcp.json.
 mcp_configured() {
   local prefix="$1"
+  # Derive the server name: mcp__<name>__ → <name>
+  local server_name
+  server_name="$(printf '%s' "$prefix" | sed -E 's/^mcp__//; s/__$//')"
+
   for f in \
-    "$HOME/.claude/settings.json" \
-    "$CLAUDE_PROJECT_DIR/.claude/settings.json" \
-    "$CLAUDE_PROJECT_DIR/.claude/settings.local.json"; do
+    "$HOME/.claude.json" \
+    "$CLAUDE_PROJECT_DIR/.mcp.json"; do
     [ -f "$f" ] || continue
-    if grep -q "\"${prefix}" "$f"; then return 0; fi
+    if grep -q "\"${server_name}\"[[:space:]]*:" "$f"; then return 0; fi
   done
   return 1
 }
@@ -192,41 +194,69 @@ fi
 
 # --- Output -----------------------------------------------------------------
 
+# ANSI color helpers — only when stderr is a real TTY; hooks pipe stderr so
+# codes would appear as raw escapes in non-interactive contexts.
+if [ -t 2 ]; then
+  _RED=$'\033[1;31m'
+  _YLW=$'\033[1;33m'
+  _RST=$'\033[0m'
+else
+  _RED='' _YLW='' _RST=''
+fi
+
 # Silent path: no warnings, no failures.
 if [ "${#warnings[@]}" -eq 0 ] && [ "${#failures[@]}" -eq 0 ]; then
   emit_json true true "" ""
   exit 0
 fi
 
-# Failure path: print failure bundle to stderr and exit 2 (blocking).
+# Failure path: surface details in Claude Code's UI (via systemMessage) AND
+# stderr (for non-TUI contexts), then exit 2 to block the session.
 if [ "${#failures[@]}" -gt 0 ]; then
+  # Build multiline systemMessage so Claude Code's notification shows the details.
+  failure_lines="$(printf '%s\n' "${failures[@]}")"
+  failure_msg="Bytewyrd plugin: FAILED — session blocked.
+
+${failure_lines}"
+  if [ "${#warnings[@]}" -gt 0 ]; then
+    warn_lines="$(printf '%s\n' "${warnings[@]}")"
+    failure_msg="${failure_msg}
+
+Also warnings (review after fixing failures):
+${warn_lines}"
+  fi
+
+  # Colorized stderr for non-TUI contexts.
   {
-    echo "Bytewyrd plugin: requirement check FAILED."
-    printf '%s\n' "${failures[@]}"
+    printf '%s\n' "${_RED}Bytewyrd plugin: requirement check FAILED.${_RST}"
+    printf "${_RED}%s${_RST}\n" "${failures[@]}"
     if [ "${#warnings[@]}" -gt 0 ]; then
-      echo "Also warnings (review after fixing failures):"
-      printf '%s\n' "${warnings[@]}"
+      printf '%s\n' "${_YLW}Also warnings:${_RST}"
+      printf "${_YLW}%s${_RST}\n" "${warnings[@]}"
     fi
   } >&2
+
+  emit_json false false "$failure_msg" ""
   exit 2
 fi
 
-# Warning path: print warning bundle, inject one-line summary into context,
-# exit 0.
+# Warning path: put full warning content in systemMessage so it appears
+# front-and-center in Claude Code's header notification (not just a count
+# pointing at invisible stderr). Stderr gets a minimal one-liner for non-TUI
+# contexts only.
 warning_count="${#warnings[@]}"
-sys_msg="Bytewyrd plugin: $warning_count requirement(s) missing. See terminal for details. Suppress individual warnings with BYTEWYRD_SKIP_WARN=<id1>,<id2>."
-warning_bundle="$(printf '%s\n' "${warnings[@]}")"
+warn_lines="$(printf '%s\n' "${warnings[@]}")"
+sys_msg="Bytewyrd plugin: ${warning_count} requirement(s) missing.
+
+${warn_lines}
+
+Suppress: BYTEWYRD_SKIP_WARN=<id1>,<id2>  (comma-separated)
+IDs: github, context7, code-review, exa, firefox-devtools, gh-cli, plugin-version"
+
 ctx="Bytewyrd plugin warnings active: $(printf '%s; ' "${warnings[@]}" | sed 's/; $//')"
 
-# The systemMessage is shown to the user. The additionalContext goes to
-# Claude. We also print the full bundle to stderr so a user reviewing
-# transcripts can see it.
-{
-  echo "Bytewyrd plugin: requirement check warnings."
-  printf '%s\n' "${warnings[@]}"
-  echo "Suppress individual warnings with: BYTEWYRD_SKIP_WARN=<id1>,<id2>  (comma-separated)"
-  echo "Suppressible IDs: github, context7, code-review, exa, firefox-devtools, gh-cli, plugin-version"
-} >&2
+# Minimal stderr — full details are in the Claude Code header notification.
+printf "${_YLW}[bytewyrd] %d warning(s) — details in Claude Code header.${_RST}\n" "$warning_count" >&2
 
 emit_json true false "$sys_msg" "$ctx"
 exit 0
