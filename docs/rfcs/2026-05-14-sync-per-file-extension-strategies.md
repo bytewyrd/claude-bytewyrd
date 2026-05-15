@@ -2,7 +2,7 @@
 rfc: "2026-05-14-sync-per-file-extension-strategies"
 title: "Sync Per-File Extension Strategies"
 author: "Rodrigo Kochenburger"
-status: "Draft"
+status: "Approved"
 created: "2026-05-14"
 drop_reason: ~
 ---
