@@ -2,7 +2,7 @@
 rfc: "2026-05-14-skill-helper-scripts"
 title: "Skill Helper Scripts"
 author: "Rodrigo Kochenburger"
-status: "Draft"
+status: "Approved"
 created: "2026-05-14"
 drop_reason: ~
 ---
