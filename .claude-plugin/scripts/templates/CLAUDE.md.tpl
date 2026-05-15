@@ -27,6 +27,12 @@
 |------|-------|
 <AGENT_TABLE_ROWS>
 
+## Auto Mode
+
+When Claude Code is running in Auto mode, do not make independent decisions — Auto mode grants execution speed, not decision authority. Every action must be grounded in a decision already made by the user (in the conversation, an RFC, a plan, or an explicit instruction). When a choice has not been resolved, stop and surface it rather than deciding unilaterally.
+
+Always prefer the `AskUserQuestion` tool when you need input from the user — it presents a structured, interactive prompt rather than a plain text question and is harder to overlook. Use it even for simple yes/no or option choices.
+
 ## Tool Usage
 
 <TOOL_USAGE_SECTION>
@@ -86,6 +92,12 @@ Use `"./run *"` (with wildcard), not `"./run"`. Keep in `settings.local.json` (g
 - If asked to read a file that may contain secrets (`.env`, `credentials.json`, `*.pem`, `~/.aws/credentials`, etc.) — refuse and ask for a sanitized version or structural description instead.
 - Validate and sanitize all external input at system boundaries before it enters domain logic.
 - Use a secret manager or environment variables at runtime; never hardcode secret values in source files, config templates, or test fixtures.
+
+## Git
+
+- **Never squash commits** or use squash-merge when merging branches. Preserve the full commit history.
+- **Use merge, not rebase, to integrate branches.** The only acceptable use of rebase is reorganizing or cleaning up commits within a branch (interactive rebase for tidying before a PR). Never rebase to integrate upstream changes.
+- **Confirm before rebasing a shared branch.** If a branch has been pushed to the remote or is not purely local, always ask the user before running any rebase. History rewrites on shared branches affect collaborators.
 
 ## Conventions
 

@@ -80,7 +80,7 @@
       "upstream_key": "bytewyrd/CLAUDE.md@v1",
       "source": ".claude-plugin/scripts/templates/CLAUDE.md.tpl",
       "target": "CLAUDE.md",
-      "template_sha": "0993a89ec9e87cfa7d01eafd93b2e307eaf16d30ab8cb085e2351e1fe0614f67",
+      "template_sha": "5d8026aea7afb156097ce5b7909572e8c1c1917626a38cf99e9ea88d2367ea66",
       "extension_strategy": "section",
       "owned_sections": [
         "## Toolchain",
@@ -180,7 +180,7 @@
       "upstream_key": "bytewyrd/docs/rfc-process.md@v1",
       "source": "rfc-process.md",
       "target": "docs/rfc-process.md",
-      "sha256": "8dd941ccacb352502295b58c8de67682b4e90d612d62107e128f738dec61e8e3",
+      "sha256": "cbcb23b697d1f6326294e1bcf223ef2b89012712563f7ff426c27c4927ab2986",
       "extension_strategy": "region",
       "region_end_marker": "<!-- END_UPSTREAM_CONTENT -->",
       "templated": false

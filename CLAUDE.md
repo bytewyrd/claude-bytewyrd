@@ -41,6 +41,12 @@ claude-bytewyrd/
 
 New agents added to `agents/` must meet the criteria in [`docs/agent-audit-criteria.md`](docs/agent-audit-criteria.md). Existing agents may be re-audited when the criteria file is updated; the tracking table in that file shows each agent's last-audited criteria version.
 
+## Auto Mode
+
+When Claude Code is running in Auto mode, do not make independent decisions — Auto mode grants execution speed, not decision authority. Every action must be grounded in a decision already made by the user (in the conversation, an RFC, a plan, or an explicit instruction). When a choice has not been resolved, stop and surface it rather than deciding unilaterally.
+
+Always prefer the `AskUserQuestion` tool when you need input from the user — it presents a structured, interactive prompt rather than a plain text question and is harder to overlook. Use it even for simple yes/no or option choices.
+
 ## Tool Usage
 
 ### Exa — web search
@@ -171,6 +177,12 @@ The skill enforces a seven-phase protocol: resolve scope → coverage audit → 
 - Update `docs/ARCHITECTURE.md` if components changed.
 - Update `docs/CONTRIBUTING.md` if dev workflow or quality gates changed.
 - Commit with Conventional Commits: `type(scope): message`.
+
+## Git
+
+- **Never squash commits** or use squash-merge when merging branches. Preserve the full commit history.
+- **Use merge, not rebase, to integrate branches.** The only acceptable use of rebase is reorganizing or cleaning up commits within a branch (interactive rebase for tidying before a PR). Never rebase to integrate upstream changes.
+- **Confirm before rebasing a shared branch.** If a branch has been pushed to the remote or is not purely local, always ask the user before running any rebase. History rewrites on shared branches affect collaborators.
 
 ## Conventions
 
