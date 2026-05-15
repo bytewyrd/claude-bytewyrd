@@ -9,11 +9,11 @@ drop_reason: ~
 
 ## Summary
 
-Introduce three named extension strategies — `additive-merge`, `bootstrap`, and `authoritative` — and assign each of the four currently-stuck plugin-managed files to the strategy that matches how the plugin actually relates to that file's content. `CLAUDE.md` becomes `additive-merge`: the plugin is the authoritative source for every concept it ships, but it adds new items rather than replacing the file. `docs/CONTRIBUTING.md` and `docs/ARCHITECTURE.md` become `bootstrap`: the plugin writes a starter template once, and from that point forward the file is local-owned and the plugin never touches it again. `docs/rfc-process.md` becomes `authoritative`: the plugin's content is always the file's content, applied silently with no per-run prompts and no local extensions section. After the change, the `conflict_legacy` loop (the "Keep local version" action explicitly does not stamp the marker — verified: skills/sync/SKILL.md:L420) terminates for all four files: the next `/sync` either classifies each file as `unchanged` (it already matches plugin canonical content) or applies the strategy's deterministic decision with no per-run prompting. The three strategies replace the file-level conflation that today routes substantively different ownership models through the same `whole`/`section`/`region`/`structured` matrix.
+Introduce three named extension strategies — `additive-merge`, `bootstrap`, and `authoritative` — and assign each of the four currently-stuck plugin-managed files to the strategy that matches how the plugin actually relates to that file's content. `CLAUDE.md` becomes `additive-merge`: the plugin is the authoritative source for every concept it ships, but it adds new items rather than replacing the file. `docs/CONTRIBUTING.md` and `docs/ARCHITECTURE.md` become `bootstrap`: the plugin writes a starter template once, and from that point forward the file is local-owned and the plugin never touches it again. `docs/rfc-process.md` becomes `authoritative`: the plugin's content is always the file's content, presented in the same Step 4a batch confirmation as additions and fast-forwards, and there is no local extensions section. The three new strategies are **additions** to the existing four (`whole`, `section`, `region`, `structured`) — the existing strategies continue to govern every other file in the manifest. After the change, the `conflict_legacy` loop (the "Keep local version" action explicitly does not stamp the marker — verified: skills/sync/SKILL.md:L420) terminates for all four files: the next `/sync` either classifies each file as `unchanged` (it already matches plugin canonical content) or applies the strategy's deterministic decision after one batched confirmation. The three strategies replace the file-level conflation that today routes substantively different ownership models through the same `whole`/`section`/`region`/`structured` matrix for these four files only.
 
 ## Should we do this?
 
-**Yes.** The current behavior is a hard regression for every consumer project that has run `/sync` after the per-file marker system shipped. Each of the four files re-surfaces as `conflict_legacy` on every subsequent `/sync` run regardless of whether the user has touched the file since (verified: skills/sync/SKILL.md:L323-L332 — the classification matrix routes any file lacking a `<!-- bootstrap-content-version: ... -->` marker to either `unchanged_legacy` or `conflict_legacy` depending on whether canonical content matches). The only escape paths today are "Adopt plugin version" (which overwrites real local content with the plugin's stub) or "Keep local version" (which does not stamp the marker, so the same prompt re-surfaces on the next run — the action description at `skills/sync/SKILL.md:L420` says this explicitly: "no write; marker not updated; conflict re-surfaces on next run"). The loop is structural: the manifest declares ownership semantics that do not match how the plugin actually relates to the file's content, so the diff engine's classification matrix produces a wrong answer every time. The fix is to make the manifest describe the actual relationships — three different relationships, three named strategies, one per file (or pair of files). Two of the three strategies introduce no per-file user prompts at all, eliminating an entire class of routine interruption.
+**Yes.** The current behavior is a hard regression for every consumer project that has run `/sync` after the per-file marker system shipped. Each of the four files re-surfaces as `conflict_legacy` on every subsequent `/sync` run regardless of whether the user has touched the file since (verified: skills/sync/SKILL.md:L323-L332 — the classification matrix routes any file lacking a `<!-- bootstrap-content-version: ... -->` marker to either `unchanged_legacy` or `conflict_legacy` depending on whether canonical content matches). The only escape paths today are "Adopt plugin version" (which overwrites real local content with the plugin's stub) or "Keep local version" (which does not stamp the marker, so the same prompt re-surfaces on the next run — the action description at `skills/sync/SKILL.md:L420` says this explicitly: "no write; marker not updated; conflict re-surfaces on next run"). The loop is structural: the manifest declares ownership semantics that do not match how the plugin actually relates to the file's content, so the diff engine's classification matrix produces a wrong answer every time. The fix is to make the manifest describe the actual relationships — three different relationships, three named strategies, one per file (or pair of files). All three strategies fold their decisions into the existing Step 4a batch confirmation rather than firing a separate per-file conflict prompt every run — `bootstrap` shows a one-time "create this file?" checkbox, `authoritative` shows an "update this file?" checkbox per plugin-version update, and `additive-merge` only fires the legacy-style conflict menu in Step 4b when an item-level semantic contradiction is detected. This collapses an unbounded series of per-run conflict prompts into a single batched approval per `/sync`.
 
 ## Current state
 
@@ -43,13 +43,27 @@ The classification matrix routes any file lacking a `<!-- bootstrap-content-vers
 
 Two coupled decisions: (1) the high-level fix shape — introduce new strategies that describe the relationships precisely, or add an acknowledgment path that lets the user opt out of the existing model; and (2) for each affected file, which strategy is the right match for its actual relationship to the plugin.
 
+### Strategy coexistence — new strategies are additive
+
+The three new strategies (`additive-merge`, `bootstrap`, `authoritative`) are **additions** to the existing four (`whole`, `section`, `region`, `structured`), not replacements. Only the four files this RFC reclassifies move off their existing strategy values; every other file in `.claude-plugin/bootstrap-manifest.json` continues to use its current strategy. After this RFC ships, the diff engine supports seven strategies total, distributed across the manifest as follows (each row verified against `.claude-plugin/bootstrap-manifest.json`):
+
+- **`whole`** — `.claude/.bootstrap-versions.json` (verified: .claude-plugin/bootstrap-manifest.json:L8), `.github/PULL_REQUEST_TEMPLATE.md` (verified: .claude-plugin/bootstrap-manifest.json:L53), `.github/workflows/ci.yml` (verified: .claude-plugin/bootstrap-manifest.json:L61). (`docs/CONTRIBUTING.md` and `docs/ARCHITECTURE.md` move off `whole` to `bootstrap` per this RFC.)
+- **`section`** — `README.md` (verified: .claude-plugin/bootstrap-manifest.json:L112) and `docs/BEST_PRACTICES.md` (verified: .claude-plugin/bootstrap-manifest.json:L139). (`CLAUDE.md` moves off `section` to `additive-merge` per this RFC.)
+- **`region`** — no files after this RFC ships. `docs/rfc-process.md` is the only current user (verified: .claude-plugin/bootstrap-manifest.json:L184) and it moves to `authoritative`. The `region` strategy stays in the schema and the diff engine: removing it would be a breaking change for consumer projects that have manifest entries referencing it, and a future plugin file or a consumer-defined artifact may legitimately want regional ownership. Keeping it costs nothing — its code path is independent of the new strategies.
+- **`structured`** — `.claude/settings.json` (verified: .claude-plugin/bootstrap-manifest.json:L16), `.claude/settings.local.json` (verified: .claude-plugin/bootstrap-manifest.json:L39), `.gitignore` (verified: .claude-plugin/bootstrap-manifest.json:L73), `mise.toml` (verified: .claude-plugin/bootstrap-manifest.json:L193).
+- **`additive-merge`** (new) — `CLAUDE.md` only (per this RFC).
+- **`bootstrap`** (new) — `docs/CONTRIBUTING.md`, `docs/ARCHITECTURE.md` (per this RFC).
+- **`authoritative`** (new) — `docs/rfc-process.md` (per this RFC).
+
+The strategy-first dispatch in the integrated classifier (described in "Diff-engine integration" below) routes each artifact to its strategy's code path. The four canonicalization-based strategies share the existing classification matrix at `skills/sync/SKILL.md:L323-L332` (verified); the three new strategies short-circuit it. No artifact uses more than one strategy, and no strategy depends on another.
+
 ### Decision 1 — New strategies vs. acknowledgment path
 
 **Option A — Introduce three new extension strategies (`additive-merge`, `bootstrap`, `authoritative`) and assign each affected file to the strategy that matches its actual relationship to the plugin (recommended).**
 
-For each file, the manifest declares a strategy whose semantics directly describe the relationship: "the plugin contributes items here and merges them additively," "the plugin writes a starter template once and never touches the file again," or "the plugin is the source of truth and always wins." The diff engine implements the three strategies' classification and apply logic; the user sees no `conflict_legacy` prompt for these files unless a strategy explicitly produces a conflict (which only `additive-merge` can do, and only when local and plugin items semantically contradict). Two of the three strategies — `bootstrap` and `authoritative` — produce no per-run prompts at all once the strategy is in place.
+For each file, the manifest declares a strategy whose semantics directly describe the relationship: "the plugin contributes items here and merges them additively," "the plugin writes a starter template once and never touches the file again," or "the plugin is the source of truth and always wins." The diff engine implements the three strategies' classification and apply logic; the user sees no `conflict_legacy` prompt for these files unless a strategy explicitly produces a conflict (which only `additive-merge` can do, and only when local and plugin items semantically contradict). All three strategies route their decisions into the existing Step 4a batch confirmation — `bootstrap` shows a one-time "create this file?" checkbox, `authoritative` shows an "update this file?" checkbox per plugin-version update that changes the file, and `additive-merge` enters Step 4a only when there are plugin items to append. None of the three strategies produces a separate per-file conflict prompt outside that batch.
 
-This option requires three new strategy values, three new classification-and-apply code paths in the diff engine, and the manifest schema accepting new values for `extension_strategy`. It does not add new resolution options to the existing menu — the new strategies have their own resolution semantics encoded in the strategy itself (no menu for `bootstrap` and `authoritative`; a different one for `additive-merge`'s rare conflict case).
+This option requires three new strategy values, three new classification-and-apply code paths in the diff engine, and the manifest schema accepting new values for `extension_strategy`. It does not add new resolution options to the existing Step 4b conflict menu — `bootstrap` and `authoritative` never enter Step 4b, and `additive-merge` only enters Step 4b when an item-level contradiction is detected (using a new four-option menu described in the algorithm section). The Step 4a batch confirmation gains additional per-file checkbox categories (one for `bootstrap` creations, one for `authoritative` adds, one for `authoritative` updates) alongside the existing additions and fast-forwards.
 
 **Option B — Keep the existing four strategies and add a fifth resolution option, "Keep local and mark acknowledged," that stamps the marker without modifying content.**
 
@@ -86,26 +100,47 @@ The three strategies in detail (each defined first, then assigned to files):
 
 #### Strategy 2: `bootstrap` — for `docs/CONTRIBUTING.md` and `docs/ARCHITECTURE.md`
 
-**Definition.** The plugin's role is to provide a starter template on the first `/sync` in a project that does not yet have the file. Once the file exists locally (whether the plugin wrote it or not), the plugin gives up authority over the file forever. Classification semantics:
+**Definition.** The plugin's role is to provide a starter template on the first `/sync` in a project that does not yet have the file. The creation is surfaced in the **Step 4a batch confirmation** so the user explicitly opts in to the new file. Once the file exists locally (whether the plugin wrote it or not), the plugin gives up authority over the file forever. Classification semantics:
 
-- **File absent in local repo** → write from the plugin's template; stamp the bootstrap marker on completion
+- **File absent in local repo** → classify as `bootstrap_create`; surface as a batch checkbox in Step 4a:
+  - If the user confirms the item → render the template, write the file with the two-line bootstrap header (see below), track as `bootstrapped`. The file is reclassified as `local_only` on every subsequent `/sync` run — no future prompts, no updates.
+  - If the user deselects the item → no write; record as `deferred (bootstrap)`; re-presented on the next `/sync` run.
 - **File present in local repo (regardless of marker state)** → classify as `local_only`; no diff, no prompt, no update, ever
 
 There is no "fast-forward" path for `bootstrap` files. The plugin's template can change in future plugin versions, and that change will *not* propagate to existing files — by design. The plugin's job ends after the first write.
+
+**Two-line file header.** After the initial write, the sync skill writes a two-line block at the top of the file in place of the single-line `<!-- bootstrap-content-version: ... -->` marker used by the existing strategies:
+
+```
+<!-- bootstrap-content-version: <upstream_key>:<sha12> -->
+<!-- Bootstrapped by the Bytewyrd plugin. This file is now owned by this project — /sync will not update it. Maintain it as part of your codebase. -->
+```
+
+Both lines are stripped during canonicalization for any future classification compare (same rule as the existing single-marker strip — `bootstrap` does not run that compare because the file classifies as `local_only` on subsequent runs, but the stripping rule is consistent with the rest of the diff engine so a future strategy change for the file would behave correctly). The second line is a fixed string; it does not vary by file and is not part of the manifest. It exists for human readers who open the file and need to know the plugin will not touch it again.
 
 **Why `docs/CONTRIBUTING.md` and `docs/ARCHITECTURE.md` fit.** Both files document project-specific reality: how to set up *this* project's development environment, what *this* project's architecture is. A generic template is useful exactly once — on day one of a fresh repo. After that, every meaningful change is project-specific and any attempt by the plugin to keep them in sync amounts to overwriting the project's own documentation. `bootstrap` describes the only sane plugin role for these files: hand the project a starting point, then step out of the way.
 
 #### Strategy 3: `authoritative` — for `docs/rfc-process.md`
 
-**Definition.** The plugin's content is always the file's content. Every `/sync` run applies the plugin version silently, with no per-file user prompt. There is no local extensions section. Classification and apply semantics:
+**Definition.** The plugin's content is always the file's content. Every `/sync` run that would change the file presents it in the **Step 4a batch confirmation** alongside additions and fast-forwards, so the user always sees and approves the update — but the user has no per-line conflict resolution, and they cannot keep local edits selectively. The choices for an `authoritative` item in the batch are "approve the overwrite" or "defer this file to the next run." There is no local extensions section. Classification and apply semantics:
 
-- **Plugin content equals local content** → classify as `unchanged`; no write
-- **Plugin content differs from local content (fast-forward direction)** → silently overwrite with plugin content; stamp marker; no prompt
-- **Plugin content differs from local content (any other direction, including local edits)** → silently overwrite with plugin content; stamp marker; no prompt. Local edits are not preserved.
+- **Plugin content equals local content** → classify as `unchanged`; no write, no batch entry
+- **Plugin content differs from local content (regardless of whether local edits exist)** → classify as `authoritative_update`; surface as a batch checkbox in Step 4a:
+  - If the user confirms the item → overwrite local with plugin content; stamp the two-line header (see below); track as `authoritative update applied`
+  - If the user deselects the item → no write; record as `deferred (authoritative)`; re-presented on the next `/sync` run
 
 The plugin's `rfc-process.md` upstream content is the entire file content. There is no `region_end_marker` because there is no project-extension region; what used to live under `## Project Extensions` in the local file is dropped under this strategy.
 
-**Why `docs/rfc-process.md` fits.** The RFC process is a workflow the plugin enforces across every consumer project. Divergent local versions are an anti-feature — they break the shared vocabulary that makes the RFC skills (`/rfc-new`, `/rfc-implement`, etc.) interoperable. The existing `## Project Extensions` section was a hedge against the case where a project genuinely needed to extend the process locally; in practice, no consumer project has used it (verified: docs/rfc-process.md:L232 — the only existing instance has the body `*(no project-specific extensions — the global process applies as-is)*`, and the plugin ships in the only repo that carries the file). Dropping the extension region simplifies the model: the plugin owns the file outright, the diff engine never prompts on it, and every consumer is always on the current process.
+**Two-line file header.** After every write (both `add` and `authoritative_update`), the sync skill writes a two-line block at the top of the file in place of the single-line `<!-- bootstrap-content-version: ... -->` marker used by the existing strategies:
+
+```
+<!-- bootstrap-content-version: <upstream_key>:<sha12> -->
+<!-- Managed by the Bytewyrd plugin — do not customize. This file is overwritten on every /sync. -->
+```
+
+Both lines are stripped during canonicalization for the classification compare (same rule as the existing single-marker strip — see canonicalization rules in "Algorithm for each strategy" below). The second line is a fixed string; it does not vary by file and is not part of the manifest. It exists for human readers who open the file and need to know not to edit it.
+
+**Why `docs/rfc-process.md` fits.** The RFC process is a workflow the plugin enforces across every consumer project. Divergent local versions are an anti-feature — they break the shared vocabulary that makes the RFC skills (`/rfc-new`, `/rfc-implement`, etc.) interoperable. The existing `## Project Extensions` section was a hedge against the case where a project genuinely needed to extend the process locally; in practice, no consumer project has used it (verified: docs/rfc-process.md:L232 — the only existing instance has the body `*(no project-specific extensions — the global process applies as-is)*`, and the plugin ships in the only repo that carries the file). Dropping the extension region simplifies the model: the plugin owns the file outright, every update is a one-checkbox approval in the same batch as everything else, and every consumer is always on the current process after one confirmation.
 
 #### Variant considered (and rejected): use `additive-merge` for all four files
 
@@ -117,11 +152,11 @@ A consistent shape would be appealing — every file gets the same additive trea
 
 2. **`bootstrap` gives up all future plugin authority over the file.** Once a project has `docs/CONTRIBUTING.md` or `docs/ARCHITECTURE.md`, the plugin cannot update it via `/sync` — even if the template improves substantially, even if the project genuinely wants to pick up the new template content. The only recovery path is "delete the local file, then re-run `/sync`," which is destructive and not discoverable from the `/sync` output. A maintainer who improves the template body has no automated way to flow the improvement to existing projects.
 
-3. **`authoritative` silently overwrites any local edits to `docs/rfc-process.md`.** A project that edits the file directly (perhaps to add a project-specific reviewer table or rename a status label) will see those edits disappear silently on the next `/sync`. Today the diff engine prompts on conflicts; under `authoritative` it does not. Mitigation: document the strategy's silent-overwrite semantics prominently in `docs/CONTRIBUTING.md` for the plugin (so plugin maintainers don't forget), and document them in consumer-facing release notes for the plugin version that introduces this RFC's changes (so projects that customized `rfc-process.md` know to migrate their customizations elsewhere before upgrading).
+3. **`authoritative` overwrites any local edits to `docs/rfc-process.md` after a single batch confirmation.** A project that edits the file directly (perhaps to add a project-specific reviewer table or rename a status label) will see those edits replaced on the next `/sync`. The user does see the update as a checkbox in the Step 4a batch confirmation and can defer it (deselect the checkbox) to keep the local edits for now, but `authoritative` provides no per-line conflict resolution path — the choice is "approve the overwrite" or "keep the file as-is and be re-prompted next run." Today the diff engine offers a richer conflict menu (Adopt / Keep / Merge / Skip) on the same file. Mitigation: document the strategy's overwrite semantics prominently in the second line of the file's two-line header ("Managed by the Bytewyrd plugin — do not customize. This file is overwritten on every /sync."), in `docs/CONTRIBUTING.md` for the plugin (so plugin maintainers don't forget), and in consumer-facing release notes for the plugin version that introduces this RFC's changes (so projects that customized `rfc-process.md` know to migrate their customizations elsewhere before upgrading).
 
 4. **Manifest schema gains three new strategy values, each with its own apply logic.** The diff engine's strategy switch becomes wider: today four cases (`whole`, `section`, `region`, `structured`); after this RFC, seven cases. Maintenance of the strategy switch grows correspondingly; the test surface for the apply step grows; the documentation in `skills/sync/SKILL.md` grows. Each new strategy is independent (their apply logic does not depend on the others), so the additional surface is additive complexity rather than entangled complexity, but it is still more code paths to keep correct.
 
-5. **The `## Project Extensions` section in existing `docs/rfc-process.md` files is dropped without warning.** Under `authoritative`, the next `/sync` run silently replaces the local file with the plugin's version. Any project that customized `## Project Extensions` (today none, per the verification above, but future projects might) would lose that section. Mitigation: this RFC's first-run migration explicitly checks for non-empty `## Project Extensions` content and surfaces a one-time warning before overwriting (described in the implementation spec).
+5. **The `## Project Extensions` section in existing `docs/rfc-process.md` files is dropped on the first `authoritative` apply.** Under `authoritative`, the next `/sync` run after this RFC ships presents the file as an item in the Step 4a batch confirmation; approving the item replaces the local file with the plugin's version, including the loss of any `## Project Extensions` content. Any project that customized `## Project Extensions` (today none, per the verification above, but future projects might) would lose that section if they approve the batch item. Mitigation: the user sees the rfc-process.md item in the batch checklist with a clear label that names the strategy, and the implementation spec's first-run migration check additionally surfaces a one-time warning quoting any non-placeholder `## Project Extensions` body *before* the batch confirmation is rendered, giving the user a chance to copy the content elsewhere before deciding how to vote on the checkbox.
 
 ## Implementation spec
 
@@ -130,10 +165,10 @@ A consistent shape would be appealing — every file gets the same additive trea
 | Action | Path | Responsibility |
 |--------|------|----------------|
 | Modify | `.claude-plugin/bootstrap-manifest.json` | Replace four artifact declarations: `CLAUDE.md` gets `extension_strategy: "additive-merge"` with the unchanged ten-section `owned_sections`; `docs/CONTRIBUTING.md` and `docs/ARCHITECTURE.md` get `extension_strategy: "bootstrap"` (no other strategy fields needed); `docs/rfc-process.md` gets `extension_strategy: "authoritative"` with `region_end_marker` removed. |
-| Modify | `skills/sync/SKILL.md` | Extend the canonicalization-rules block (at lines 334-340) and apply-actions block (at lines 440-456) with three new branches: `additive-merge` (item-level matching against the manifest's `owned_sections`; LLM-assisted comparison helper); `bootstrap` (presence-check short-circuit; no canonicalization, no diff); `authoritative` (silent overwrite, no prompt). Extend the classification matrix at lines 323-332 with three new outcome branches that route `additive-merge`, `bootstrap`, and `authoritative` files to their strategy-specific paths before the existing matrix runs. Extend Step 4b's resolution menu to handle the one prompt `additive-merge` can produce (item-level contradiction). |
+| Modify | `skills/sync/SKILL.md` | Extend the canonicalization-rules block (at lines 334-340), the Step 4a batch-confirmation block (at lines 380-394), and the apply-actions block (at lines 440-456) with three new branches: `additive-merge` (item-level matching against the manifest's `owned_sections`; LLM-assisted comparison helper); `bootstrap` (presence-check short-circuit; batch checkbox on file-absent; no canonicalization or diff on file-present); `authoritative` (full-content compare after two-line-header strip; batch checkbox on differing content; no Step 4b menu). Extend the classification matrix at lines 323-332 with three new outcome branches that route `additive-merge`, `bootstrap`, and `authoritative` files to their strategy-specific paths before the existing matrix runs. Convert the Step 4a yes/no two-question pattern to a single `multiSelect: true` AskUserQuestion with per-file checkboxes spanning additions, fast-forwards, legacy-marker insertions, bootstrap creations, authoritative adds, and authoritative updates. Extend Step 4b's resolution menu to handle the one prompt `additive-merge` can produce (item-level contradiction). |
 | Modify | `.claude-plugin/scripts/templates/CONTRIBUTING.md.tpl` | No structural change — the template body stays as-is (the existing generic skeleton with `<PREREQUISITES_SECTION>`, `<INSTALL_COMMAND>`, `<QUALITY_GATE_DESCRIPTION>` placeholders is still the right thing for a new project to start with). Verified: the current template at lines 1-67 is a reasonable starting point for any project. |
 | Modify | `.claude-plugin/scripts/templates/ARCHITECTURE.md.tpl` | No structural change — the placeholder-heavy template is the right thing for a new project to start with (the placeholders guide the user through composing each section). |
-| Modify | `docs/rfc-process.md` (in the bytewyrd plugin's own checkout; this is the file consumer projects sync from) | Remove the `## Project Extensions` section entirely (lines 230-232 inclusive: heading, blank, placeholder body), the separator line before it (line 228: `---`), and the `<!-- END_UPSTREAM_CONTENT -->` marker on line 226. Under `authoritative` the entire file is plugin-owned; the separator and the project-extensions section no longer have meaning. The three leader comments on lines 1-3 (`<!-- UPSTREAM: ... -->`, `<!-- LAST_SYNCED: ... -->`, and the explanatory comment about `END_UPSTREAM_CONTENT`) plus the blank line 4 are also removed — they were part of the older marker convention and are not needed under `authoritative`, which has no leader-comment requirement. After the edits, the file's line 1 is the H1 `# RFC Process` (currently line 5). |
+| Modify | `docs/rfc-process.md` (in the bytewyrd plugin's own checkout; this is the file consumer projects sync from) | Remove the `## Project Extensions` section entirely (lines 230-232 inclusive: heading, blank, placeholder body), the separator line before it (line 228: `---`), and the `<!-- END_UPSTREAM_CONTENT -->` marker on line 226. Under `authoritative` the entire file is plugin-owned; the separator and the project-extensions section no longer have meaning. The three leader comments on lines 1-3 (`<!-- UPSTREAM: ... -->`, `<!-- LAST_SYNCED: ... -->`, and the explanatory comment about `END_UPSTREAM_CONTENT`) plus the blank line 4 are also removed — they were part of the older marker convention. After the edits, the file's line 1 is the H1 `# RFC Process` (currently line 5). The plugin's source file in the repo does **not** carry the two-line `authoritative` header — that header is inserted by the sync skill at write time on every consumer-project apply, not stored in the plugin source. |
 | Add | (none) | No new files. Three new strategies live as additional branches inside the existing `skills/sync/SKILL.md` body; no new template files; no new manifest fields beyond the three strategy values. |
 
 ### Exact manifest changes
@@ -282,20 +317,30 @@ The helper is invoked once per (plugin_item, local_item) pair. For a typical `CL
 ```
 If extension_strategy == "bootstrap":
     if target_file is absent:
-        classify as "add"
+        classify as "bootstrap_create"
     else:
         classify as "local_only"  (regardless of marker state)
     return
 ```
 
+`bootstrap_create` is surfaced in the Step 4a batch confirmation as a checkbox item labeled e.g. `Create docs/CONTRIBUTING.md from plugin template (bootstrap — this project will own it going forward)`. The label explicitly names the strategy so the user understands the long-term consequence (the plugin will not update the file in future runs). If the user confirms the item, the apply step runs; if the user deselects it, the file is not created this run and the item re-surfaces on the next `/sync`.
+
 The `local_only` classification means: no diff is computed, no prompt is presented, the file is preserved exactly as it is. The Step 8 report lists the file under "Local-only edits (N files, plugin unchanged)" (verified: skills/sync/SKILL.md:L362).
 
 **Apply step.**
 
-- `add` outcome: render the template with `project_inputs` (for `bootstrap` files with `templated: true` — none in this RFC's scope, but the strategy supports it). For `templated: false`, read the template source as-is. Insert the `<!-- bootstrap-content-version: ... -->` marker as line 2 per `skills/sync/SKILL.md:L434`. Write the file. Track as `added`.
+- `bootstrap_create` outcome (confirmed in Step 4a): render the template with `project_inputs` (for `bootstrap` files with `templated: true` — none in this RFC's scope, but the strategy supports it). For `templated: false`, read the template source as-is. Prepend the **two-line bootstrap header** as lines 1-2 of the file:
+  ```
+  <!-- bootstrap-content-version: <upstream_key>:<sha12> -->
+  <!-- Bootstrapped by the Bytewyrd plugin. This file is now owned by this project — /sync will not update it. Maintain it as part of your codebase. -->
+  ```
+  Write the file. Track as `bootstrapped`. On all subsequent `/sync` runs the file classifies as `local_only`.
+- `bootstrap_create` outcome (deselected in Step 4a): no write. Track as `deferred (bootstrap)`.
 - `local_only` outcome: no write. Track as `local-only edit preserved`.
 
-There is no `fast_forward`, `conflict`, `conflict_legacy`, `unchanged_legacy`, or `unchanged` outcome for `bootstrap` files. The strategy's classification is bimodal: either the file does not exist (and the plugin writes it once) or it exists (and the plugin leaves it alone forever).
+There is no `fast_forward`, `conflict`, `conflict_legacy`, `unchanged_legacy`, or `unchanged` outcome for `bootstrap` files. The strategy's classification is trimodal at first creation (create / defer / file already exists) and bimodal thereafter (the file exists and is `local_only` forever).
+
+**Two-line header canonicalization rule.** When the diff engine canonicalizes a file produced by `bootstrap` for any future strategy compare, both header lines (lines 1 and 2) are stripped before hashing. The rule extends the existing single-marker strip at `skills/sync/SKILL.md:L336` (verified) — the canonicalizer skips every contiguous line at the top of the file that starts with `<!-- bootstrap-content-version:` or `<!-- Bootstrapped by the Bytewyrd plugin.`, plus any immediately following blank line. This generalization is described in the canonicalization-rules update in step 3 of "Exact steps" below.
 
 #### `authoritative` — `docs/rfc-process.md`
 
@@ -303,38 +348,53 @@ There is no `fast_forward`, `conflict`, `conflict_legacy`, `unchanged_legacy`, o
 
 ```
 If extension_strategy == "authoritative":
-    plugin_content = read plugin source, strip any existing marker line(s)
+    plugin_content = read plugin source, strip the two-line header if present
     if target_file is absent:
-        classify as "add"
-    elif local_content (stripped of marker) == plugin_content:
-        classify as "unchanged"
+        classify as "authoritative_add"
     else:
-        classify as "fast_forward"   # but with no user prompt
+        local_content_stripped = read target, strip the two-line header if present
+        if local_content_stripped == plugin_content:
+            classify as "unchanged"
+        else:
+            classify as "authoritative_update"
     return
 ```
 
-The `fast_forward` here is a strategy-specific variant — it is auto-applied without entering Step 4a's "fast-forward updates" confirmation list. Step 4a is the right place for that confirmation in the `whole`/`section`/`region`/`structured` strategies because the user might want to review changes; for `authoritative` the plugin is the source of truth by design, and confirming each run defeats the strategy's purpose.
+`authoritative_add` and `authoritative_update` are both surfaced in the Step 4a batch confirmation as checkbox items. The label for an `authoritative_update` item is e.g. `Update docs/rfc-process.md to plugin version <sha12> (authoritative — local edits will be replaced)`; the label for `authoritative_add` is e.g. `Add docs/rfc-process.md from plugin (authoritative — plugin owns this file)`. The label explicitly names the strategy and its consequence (local edits replaced; plugin owns the file). If the user confirms the item, the apply step runs; if the user deselects it, the file is not modified this run and the item re-surfaces on the next `/sync`.
+
+Unlike the existing four strategies, `authoritative_update` does not enter the Step 4b conflict-resolution menu — `authoritative` has no per-line merge or "keep local" path. The batch checkbox is the only decision point.
 
 **Apply step.**
 
-- `add`: read the plugin source, insert the marker as line 2 per `skills/sync/SKILL.md:L434`, write the file. Track as `added`.
-- `unchanged`: no write. Track as `unchanged`.
-- `fast_forward`: read the plugin source, insert the marker, write the file (silently overwriting any local content). Track as `authoritative update applied`.
+- `authoritative_add` (confirmed in Step 4a): read the plugin source, prepend the two-line `authoritative` header as lines 1-2 of the file:
+  ```
+  <!-- bootstrap-content-version: <upstream_key>:<sha12> -->
+  <!-- Managed by the Bytewyrd plugin — do not customize. This file is overwritten on every /sync. -->
+  ```
+  Write the file. Track as `added`.
+- `authoritative_add` (deselected): no write. Track as `deferred (authoritative)`.
+- `unchanged`: no write, not surfaced in Step 4a. Track as `unchanged`.
+- `authoritative_update` (confirmed in Step 4a): read the plugin source, prepend the same two-line header, write the file (replacing any local content). Track as `authoritative update applied`.
+- `authoritative_update` (deselected): no write. Track as `deferred (authoritative)`.
 
-**Migration-time check (one-time, on the first `/sync` after this RFC ships):** if the local file contains a `## Project Extensions` section whose body (after trimming) is anything other than the placeholder `*(no project-specific extensions — the global process applies as-is)*` or an empty body, print a one-time warning:
+**Two-line header canonicalization rule.** When computing `local_content_stripped` for the classification compare, the canonicalizer strips every contiguous line at the top of the file that starts with `<!-- bootstrap-content-version:` or `<!-- Managed by the Bytewyrd plugin.`, plus any immediately following blank line. This generalization is described in the canonicalization-rules update in step 3 of "Exact steps" below. The plugin source itself does not carry the two-line header (the header is inserted on write, not stored in the upstream source).
+
+**Migration-time check (one-time, on the first `/sync` after this RFC ships, before the Step 4a batch is rendered):** if the local file contains a `## Project Extensions` section whose body (after trimming) is anything other than the placeholder `*(no project-specific extensions — the global process applies as-is)*` or an empty body, print a one-time warning before composing the Step 4a question set:
 
 ```
 docs/rfc-process.md — your '## Project Extensions' section will be removed
-on this /sync because the file is now plugin-authoritative. The content was:
+if you approve the upcoming batch item, because the file is now plugin-authoritative.
+The content was:
 
   <quoted section body, indented 2 spaces, truncated to 200 chars>
 
 If you need to keep these customizations, copy them now to another file
 (e.g., docs/CONTRIBUTING.md or a new docs/rfc-process-extensions.md)
-before continuing. Press Ctrl-C to abort, or proceed to overwrite.
+before deciding whether to approve the docs/rfc-process.md update in the
+batch confirmation that follows.
 ```
 
-The warning is presented as a synchronous read-line prompt (the existing `/sync` agent loop already uses synchronous prompts via AskUserQuestion — verified: skills/sync/SKILL.md:L14-L17). If the user proceeds, the file is overwritten. If the user aborts, `/sync` exits cleanly with no writes. This is the only per-file user interaction `authoritative` produces, and it fires exactly once per project (after the first apply, the local content matches the plugin and the strategy classifies as `unchanged` on subsequent runs).
+The warning is printed inline above the Step 4a batch prompt and does not itself ask a question — the existing batch checkbox is the decision point. If the user deselects the `docs/rfc-process.md` item in the batch, the local file (including the `## Project Extensions` section) is preserved for this run, and the warning re-prints on the next `/sync` until either the item is approved or the local extensions section is removed. After the first successful apply, local content matches the plugin and the strategy classifies as `unchanged` on subsequent runs.
 
 ### Diff-engine integration
 
@@ -346,24 +406,24 @@ def classify(artifact, target_path, plugin_root, project_inputs):
 
     if strategy == "bootstrap":
         if not target_path.exists():
-            return "add"
+            return "bootstrap_create"
         return "local_only"
 
     if strategy == "authoritative":
-        plugin_content = strip_markers(read_plugin_source(artifact, plugin_root))
+        plugin_content = strip_two_line_header(read_plugin_source(artifact, plugin_root))
         if not target_path.exists():
-            return "add"
-        local_content = strip_markers(target_path.read_text())
+            return "authoritative_add"
+        local_content = strip_two_line_header(target_path.read_text())
         if local_content == plugin_content:
             return "unchanged"
-        return "authoritative_fast_forward"
+        return "authoritative_update"
 
     if strategy == "additive-merge":
         # Cheap pre-check via canonical-form hashing (same as section strategy)
-        plugin_canonical = canonicalize_sections(render_template(artifact, project_inputs), artifact.owned_sections)
-        local_canonical = canonicalize_sections(target_path.read_text(), artifact.owned_sections) if target_path.exists() else None
         if not target_path.exists():
             return "add"
+        plugin_canonical = canonicalize_sections(render_template(artifact, project_inputs), artifact.owned_sections)
+        local_canonical = canonicalize_sections(target_path.read_text(), artifact.owned_sections)
         if sha256_12(plugin_canonical) == sha256_12(local_canonical):
             return "unchanged"
         return "additive_merge_apply"
@@ -372,32 +432,57 @@ def classify(artifact, target_path, plugin_root, project_inputs):
     return classify_existing(artifact, target_path, plugin_root, project_inputs)
 ```
 
+`strip_two_line_header` removes the contiguous block of header comments at the top of the file (lines starting with `<!-- bootstrap-content-version:`, `<!-- Managed by the Bytewyrd plugin.`, or `<!-- Bootstrapped by the Bytewyrd plugin.`) plus any immediately following blank line. It is a strict superset of the existing single-marker strip used by `whole`, `section`, `region`, and `structured` strategies (verified: skills/sync/SKILL.md:L336-L340 — each existing rule says "marker line(s) removed", which already supports a multi-line block; the new function makes the rule explicit and adds the `Managed by` and `Bootstrapped by` line prefixes).
+
+After classification, the Step 4a batch composer (see "Step 4a batch confirmation" below) gathers every classification in `{add, fast_forward, unchanged_legacy, bootstrap_create, authoritative_add, authoritative_update}` into a single AskUserQuestion before the apply step runs. The user's per-item checkbox choices are recorded on each artifact and consumed by the apply function below.
+
 The apply function gets matching dispatch:
 
 ```
-def apply(artifact, classification, target_path, plugin_root, project_inputs):
-    if classification == "add":
-        # All three new strategies share the "add" path: render, insert marker, write
+def apply(artifact, classification, batch_choice, target_path, plugin_root, project_inputs):
+    # batch_choice is "approved" / "deselected" / None (None for classifications
+    # that bypass Step 4a, e.g. "unchanged", "local_only", "additive_merge_apply",
+    # and existing "conflict"/"conflict_legacy" which are routed through Step 4b).
+
+    if classification == "bootstrap_create":
+        if batch_choice == "deselected":
+            return "deferred (bootstrap)"
         rendered = render_or_read(artifact, plugin_root, project_inputs)
-        write_with_marker(target_path, rendered, artifact)
+        write_with_two_line_header(target_path, rendered, artifact,
+                                   second_line=BOOTSTRAP_SECOND_LINE)
+        return "bootstrapped"
+
+    if classification == "local_only" and artifact.extension_strategy == "bootstrap":
+        return "local-only edit preserved"
+
+    if classification == "authoritative_add":
+        if batch_choice == "deselected":
+            return "deferred (authoritative)"
+        rendered = render_or_read(artifact, plugin_root, project_inputs)
+        write_with_two_line_header(target_path, rendered, artifact,
+                                   second_line=AUTHORITATIVE_SECOND_LINE)
         return "added"
 
-    if artifact.extension_strategy == "bootstrap":
-        return "local-only edit preserved"  # classification == "local_only"
-
-    if artifact.extension_strategy == "authoritative":
-        if classification == "unchanged":
-            return "unchanged"
-        # classification == "authoritative_fast_forward"
+    if classification == "authoritative_update":
+        if batch_choice == "deselected":
+            return "deferred (authoritative)"
         if first_run_with_authoritative(artifact, target_path):
-            warn_project_extensions_if_present(target_path)
+            warn_project_extensions_if_present(target_path)  # printed before Step 4a runs
         rendered = render_or_read(artifact, plugin_root, project_inputs)
-        write_with_marker(target_path, rendered, artifact)
+        write_with_two_line_header(target_path, rendered, artifact,
+                                   second_line=AUTHORITATIVE_SECOND_LINE)
         return "authoritative update applied"
+
+    if artifact.extension_strategy == "authoritative" and classification == "unchanged":
+        return "unchanged"
 
     if artifact.extension_strategy == "additive-merge":
         if classification == "unchanged":
             return "unchanged"
+        if classification == "add":
+            rendered = render_template(artifact, project_inputs)
+            write_with_marker(target_path, rendered, artifact)  # single-line marker for additive-merge
+            return "added"
         # classification == "additive_merge_apply"
         return apply_additive_merge(artifact, target_path, plugin_root, project_inputs)
 
@@ -405,7 +490,35 @@ def apply(artifact, classification, target_path, plugin_root, project_inputs):
     return apply_existing(artifact, classification, target_path, plugin_root, project_inputs)
 ```
 
-`apply_additive_merge` implements the section-by-section, item-by-item algorithm described above. `apply_existing` is the current Step 5 apply logic at `skills/sync/SKILL.md:L440-L456` (verified) unchanged.
+Constants used above:
+
+```
+BOOTSTRAP_SECOND_LINE     = "<!-- Bootstrapped by the Bytewyrd plugin. This file is now owned by this project — /sync will not update it. Maintain it as part of your codebase. -->"
+AUTHORITATIVE_SECOND_LINE = "<!-- Managed by the Bytewyrd plugin — do not customize. This file is overwritten on every /sync. -->"
+```
+
+`write_with_two_line_header` writes the file with these two lines as the first two lines (header on line 1, second-line label on line 2, then a blank line on line 3, then the body). `write_with_marker` is the existing single-line writer used by all other strategies. `apply_additive_merge` implements the section-by-section, item-by-item algorithm described above. `apply_existing` is the current Step 5 apply logic at `skills/sync/SKILL.md:L440-L456` (verified) unchanged.
+
+### Step 4a batch confirmation — combined for additions, fast-forwards, bootstrap creations, and authoritative updates
+
+The existing Step 4a (verified: skills/sync/SKILL.md:L380-L394) asks one AskUserQuestion containing up to two questions (additions, fast-forwards). This RFC extends it to a single AskUserQuestion with **per-file checkboxes** rather than a per-category yes/no, so the user can selectively defer individual items across the four batched classifications.
+
+The AskUserQuestion has `multiSelect: true` and groups options by category for readability. Each option corresponds to one artifact:
+
+- **Additions** (existing): `Add <path>` (label as today)
+- **Fast-forward updates** (existing): `Update <path> (fast-forward — no local edits exist)`
+- **Legacy marker insertions** (existing `unchanged_legacy`): `Stamp marker on <path> (content matches; first sync after upgrade)`
+- **Bootstrap creations** (new): `Create <path> from plugin template (bootstrap — this project will own it going forward)`
+- **Authoritative additions** (new): `Add <path> from plugin (authoritative — plugin owns this file)`
+- **Authoritative updates** (new): `Update <path> to plugin version <sha12> (authoritative — local edits will be replaced)`
+
+The label format includes the category and its consequence so the user can decide each item with full context. Selecting an option means "apply this item this run"; deselecting means "defer it." Deferred items are tracked in the Step 8 report under a `Deferred (N items, re-presented next run)` section and re-classify on the next `/sync`.
+
+If the AskUserQuestion's `multiSelect` mode is not used (e.g., a legacy fallback path where only a single question is in flight), the composer falls back to a per-item yes/no flow: each batched item becomes a separate AskUserQuestion with `Apply` / `Defer` options. The default flow is the multiSelect batch.
+
+The `Review each` mode at `skills/sync/SKILL.md:L394` (verified) still exists as a per-category escape hatch for the existing `additions` / `fast_forwards` questions in projects that prefer one prompt per file with the unified diff printed; it is unchanged by this RFC and orthogonal to the per-file checkbox model added here. A future RFC may converge the two, but the existing behavior is preserved for backward compatibility.
+
+If the union of all six batched categories is empty (i.e., every artifact classifies as `unchanged`, `local_only`, `conflict`, or `conflict_legacy`), Step 4a is skipped entirely as it is today.
 
 ### Exact steps
 
@@ -415,10 +528,11 @@ def apply(artifact, classification, target_path, plugin_root, project_inputs):
 
 3. **Update `skills/sync/SKILL.md`** with three new strategy branches. The changes are localized to:
 
-   - The Canonicalization rules block (currently lines 334-340): add three new bullet points for `additive-merge`, `bootstrap`, and `authoritative`, each documenting the strategy's classification short-circuit. The `bootstrap` and `authoritative` entries explicitly note "no canonicalization — strategy bypasses the canonicalization-and-hash classification matrix."
+   - The Canonicalization rules block (currently lines 334-340): generalize the existing "marker line(s) removed" rule to a single `strip_two_line_header` function that removes every contiguous line at the top of the file starting with `<!-- bootstrap-content-version:`, `<!-- Managed by the Bytewyrd plugin.`, or `<!-- Bootstrapped by the Bytewyrd plugin.`, plus any immediately following blank line. The new function is a superset of today's strip (which already supports "marker line(s)" — plural) and is shared by every strategy's canonicalizer. Add three new bullet points for `additive-merge`, `bootstrap`, and `authoritative`. The `bootstrap` and `authoritative` entries explicitly note "no canonical-form hash compare against plugin canonical content — strategy bypasses the canonicalization-and-hash classification matrix in favor of presence-check (bootstrap) or full-content compare after header strip (authoritative)."
    - The Classification matrix block (currently lines 323-332): add a preamble paragraph that documents the strategy-first dispatch: "Before applying the matrix below, dispatch to the strategy-specific classifier when `extension_strategy` is `additive-merge`, `bootstrap`, or `authoritative`. The matrix below applies only to the four canonicalization-based strategies (`whole`, `section`, `region`, `structured`)."
-   - The Step 4b resolution menu (currently lines 396-423): add a new variant for `additive-merge`'s contradiction case (the four-option menu described in the `additive-merge` algorithm above).
-   - The Apply actions block (currently lines 440-456): add three new top-level cases for `additive-merge`, `bootstrap`, and `authoritative`, each documenting their apply step. The `additive-merge` case references the item-by-item algorithm; the `bootstrap` and `authoritative` cases are short (no diff, deterministic write or no-op).
+   - The Step 4a batch-confirmation block (currently lines 380-394): replace the two-question yes/no pattern with the single-question multiSelect pattern described in "Step 4a batch confirmation" above. The new question's options come from the union of additions, fast-forwards, legacy-marker insertions, bootstrap creations, authoritative additions, and authoritative updates — one option per artifact, with the label format that names the category and consequence. Preserve the existing `Review each` mode as a per-category escape hatch.
+   - The Step 4b resolution menu (currently lines 396-423): add a new variant for `additive-merge`'s contradiction case (the four-option menu described in the `additive-merge` algorithm above). `authoritative` and `bootstrap` files never enter Step 4b — their decision is the Step 4a checkbox.
+   - The Apply actions block (currently lines 440-456): add three new top-level cases for `additive-merge`, `bootstrap`, and `authoritative`, each documenting their apply step. The `additive-merge` case references the item-by-item algorithm; the `bootstrap` and `authoritative` cases describe the two-line header write (using the `BOOTSTRAP_SECOND_LINE` and `AUTHORITATIVE_SECOND_LINE` constants defined in "Diff-engine integration" above) and the deferred-item bookkeeping for deselected batch items.
 
 4. **Regenerate the manifest.** Run `.claude-plugin/scripts/build-manifest.sh` from the repo root (verified: build-manifest.sh:L1-L55 walks the manifest and recomputes `sha256`/`template_sha` for each artifact's source file). Expected stdout: `Regenerated /home/divoxx/code/bytewyrd/claude-bytewyrd/.worktrees/rfc-sync-section-ownership/.claude-plugin/bootstrap-manifest.json`. Expected exit code: `0`.
 
@@ -426,20 +540,24 @@ def apply(artifact, classification, target_path, plugin_root, project_inputs):
 
 6. **Run `/sync` in a consumer project (smoke test).** From a consumer project (the bytewyrd plugin's own worktree at `/home/divoxx/code/bytewyrd/claude-bytewyrd/.worktrees/rfc-sync-section-ownership/` is a valid consumer for testing), invoke `/sync`. Expected classification per file on the first run after this RFC ships:
 
-   - `CLAUDE.md` → **additive_merge_apply** (or **unchanged** if every plugin-owned item already has a `same_concept` match in local). On the bytewyrd plugin's own checkout, the file has all ten plugin-owned sections present with bodies that match the template's items conceptually — verified by inspection of CLAUDE.md vs CLAUDE.md.tpl in this RFC's session. Outcome: `additive_merge_apply` with all items resolved as `same_concept` (no contradictions), local wording potentially replaced where plugin and local differ. Marker stamped on completion.
+   - `CLAUDE.md` → **additive_merge_apply** (or **unchanged** if every plugin-owned item already has a `same_concept` match in local). On the bytewyrd plugin's own checkout, the file has all ten plugin-owned sections present with bodies that match the template's items conceptually — verified by inspection of CLAUDE.md vs CLAUDE.md.tpl in this RFC's session. Outcome: `additive_merge_apply` with all items resolved as `same_concept` (no contradictions), local wording potentially replaced where plugin and local differ. Single-line marker stamped on completion.
    - `docs/CONTRIBUTING.md` → **local_only** — the file exists; `bootstrap` short-circuits to `local_only`. No prompt, no diff, no write.
    - `docs/ARCHITECTURE.md` → **local_only** — same.
-   - `docs/rfc-process.md` → **authoritative_fast_forward** on first run (local content has leader comments and `## Project Extensions` section, plugin content does not, so they differ after stripping markers). The migration-time check fires: the warning is printed; the user proceeds; the file is overwritten with the plugin's canonical content; marker stamped. On the very next run, classification is **unchanged** and no further interaction.
+   - `docs/rfc-process.md` → **authoritative_update** on first run (local content has leader comments and `## Project Extensions` section, plugin content does not, so they differ after stripping the two-line header). The migration-time warning is printed inline above the Step 4a batch prompt (the local `## Project Extensions` body in this worktree is the placeholder, so the warning's "non-placeholder content" branch does not fire for this specific run — but the migration-check code is exercised). The Step 4a batch prompt renders with one item: `Update docs/rfc-process.md to plugin version <sha12> (authoritative — local edits will be replaced)`. The user approves it; the file is overwritten with the plugin's canonical content and the two-line `authoritative` header is stamped. On the very next run, classification is **unchanged** and no further interaction.
 
-   The Step 4a batch-confirmation prompt is skipped for all four files (none of them produces an `add` or `fast_forward` in the existing strategies' sense). The Step 4b conflict prompt fires only for `additive-merge` items in `contradiction` state, of which there are zero in the bytewyrd plugin's own checkout (verified by item-by-item inspection of CLAUDE.md vs CLAUDE.md.tpl during this RFC's session — every plugin item has a same-concept match in local).
+   The Step 4a batch prompt fires for `docs/rfc-process.md` (one `authoritative_update` item) on the first post-RFC run, and `CLAUDE.md` enters Step 4a only if it has new `additive-merge` *additions* (plugin items that need to be appended — this is the `add`-shaped sub-case of `additive_merge_apply`). On the bytewyrd plugin's own checkout there are zero such additions today, so `CLAUDE.md` does not enter Step 4a. The Step 4b conflict prompt fires only for `additive-merge` items in `contradiction` state, of which there are zero in the bytewyrd plugin's own checkout (verified by item-by-item inspection of CLAUDE.md vs CLAUDE.md.tpl during this RFC's session — every plugin item has a same-concept match in local).
 
-7. **Verify the markers were written.** After `/sync`:
+7. **Verify the headers were written.** After `/sync`:
 
    ```bash
-   sed -n '2p' CLAUDE.md docs/CONTRIBUTING.md docs/ARCHITECTURE.md docs/rfc-process.md
+   sed -n '1,2p' CLAUDE.md docs/rfc-process.md
+   ls -la docs/CONTRIBUTING.md docs/ARCHITECTURE.md  # files exist, not touched by /sync
    ```
 
-   Expected: `CLAUDE.md` and `docs/rfc-process.md` line 2 are `<!-- bootstrap-content-version: ... -->` markers matching the plugin's canonical-form SHA. `docs/CONTRIBUTING.md` and `docs/ARCHITECTURE.md` line 2 is whatever was already there (these are `local_only` — no marker is injected because the strategy does not require it; the file is project-owned).
+   Expected:
+   - `CLAUDE.md` line 1 is the first line of body (no leading marker on this strategy unless the marker convention has changed for `additive-merge`); line 2 is `<!-- bootstrap-content-version: ... -->` (single-line marker per the existing `section`/`additive-merge` convention at `skills/sync/SKILL.md:L434`, verified).
+   - `docs/rfc-process.md` lines 1-2 are the two-line `authoritative` header: `<!-- bootstrap-content-version: ... -->` on line 1, `<!-- Managed by the Bytewyrd plugin — do not customize. This file is overwritten on every /sync. -->` on line 2.
+   - `docs/CONTRIBUTING.md` and `docs/ARCHITECTURE.md` are unmodified by this `/sync` (these are `local_only` — no header is injected because the strategy classified them as already-owned-by-project; the two-line `bootstrap` header is only written on the initial `bootstrap_create` apply, which does not fire on this run because the files already exist).
 
 8. **Run `/sync` again (idempotence check).** Invoke `/sync` a second time. Expected stdout: `Everything is up to date.` (per `skills/sync/SKILL.md:L367`, verified) — every file classifies as `unchanged` or `local_only`. No prompts, no resolutions, no per-file output.
 
@@ -447,11 +565,11 @@ def apply(artifact, classification, target_path, plugin_root, project_inputs):
 
 After step 8 succeeds, the four files are out of the `conflict_legacy` loop permanently:
 
-- `CLAUDE.md` carries a bootstrap-content-version marker. Subsequent plugin updates re-run the `additive-merge` algorithm: same-concept matches silently update local wording, new plugin items are appended, local-only items are preserved, contradictions prompt explicitly.
-- `docs/CONTRIBUTING.md` and `docs/ARCHITECTURE.md` are never re-checked. The plugin can update the template body in future versions and the change does not flow to existing projects — by design.
-- `docs/rfc-process.md` carries a bootstrap-content-version marker. Subsequent plugin updates apply silently with no prompt; any future local edits are silently overwritten on the next `/sync`.
+- `CLAUDE.md` carries a single-line `<!-- bootstrap-content-version: ... -->` marker on line 2 (as today). Subsequent plugin updates re-run the `additive-merge` algorithm: same-concept matches silently update local wording, new plugin items are appended (and surface as `add`-shaped items in Step 4a for confirmation), local-only items are preserved, contradictions prompt explicitly in Step 4b.
+- `docs/CONTRIBUTING.md` and `docs/ARCHITECTURE.md` carry the two-line `bootstrap` header only if they were created by this RFC's `/sync` flow. Existing files (the common case on first run after this RFC ships) are not modified and do not gain the header — they are classified as `local_only` from this point forward, and the plugin can update the template body in future versions without the change flowing to existing projects (by design).
+- `docs/rfc-process.md` carries the two-line `authoritative` header on lines 1-2 after the first approved update. Subsequent plugin updates appear as `authoritative_update` items in Step 4a; approving the item overwrites local content with the plugin version; deselecting the item defers the update to the next run.
 
-The `conflict_legacy` cycle for these files is terminated. The only per-run interactions that can still arise are: (a) an `additive-merge` contradiction on `CLAUDE.md`, which is bounded by genuine semantic opposition between project and plugin rules; and (b) the one-time migration warning on `docs/rfc-process.md` for projects with non-empty `## Project Extensions` content.
+The `conflict_legacy` cycle for these files is terminated. The only per-run interactions that can still arise are: (a) an `additive-merge` contradiction on `CLAUDE.md` (Step 4b), which is bounded by genuine semantic opposition between project and plugin rules; (b) an `additive-merge` plugin-item addition on `CLAUDE.md` (Step 4a checkbox), which is bounded by the rate at which the plugin ships new items; (c) the one-time migration warning on `docs/rfc-process.md` for projects with non-empty `## Project Extensions` content; and (d) every plugin-version update to `docs/rfc-process.md` surfaces as one Step 4a checkbox.
 
 ## Risks and open questions
 
@@ -467,9 +585,9 @@ The `conflict_legacy` cycle for these files is terminated. The only per-run inte
 
    **Mitigation (out of scope of this RFC, documented as an open question):** a future RFC may introduce a "re-bootstrap" command (e.g., `/sync --rebootstrap docs/ARCHITECTURE.md`) that explicitly opts the user into overwriting a `bootstrap` file with the plugin's current template, with a backup of the existing content (written to `docs/ARCHITECTURE.md.local-backup`) before the overwrite. This is a deliberate manual escape hatch, not an automated update — it inverts the strategy temporarily for one file, prompting the user explicitly. Out of scope here because no consumer project currently needs it.
 
-4. **`authoritative` silently dropping local customizations is a new failure mode for projects that previously used `## Project Extensions`.** Today, the local copy of `docs/rfc-process.md` has a `## Project Extensions` section that the diff engine preserves (because `region` strategy stops at `<!-- END_UPSTREAM_CONTENT -->`). After this RFC, that section is removed on the first `/sync` and any future local edits to the file are silently overwritten on subsequent runs.
+4. **`authoritative` dropping local customizations after a single batch confirmation is a new failure mode for projects that previously used `## Project Extensions`.** Today, the local copy of `docs/rfc-process.md` has a `## Project Extensions` section that the diff engine preserves (because `region` strategy stops at `<!-- END_UPSTREAM_CONTENT -->`). After this RFC, that section is removed on the first `/sync` whose batch confirmation the user approves, and any future local edits to the file are replaced on the next approved batch confirmation. The user does see and approve each replacement (it is a Step 4a checkbox), but the strategy provides no per-line conflict resolution path — the choice per run is "approve the overwrite" or "defer."
 
-   **Mitigation:** the migration-time check described in the implementation spec fires exactly once on the first `/sync` after this RFC ships. If the local `## Project Extensions` section has non-placeholder content, the user is prompted with the section's content quoted, given a clear "press Ctrl-C to abort" path, and instructed to copy the content elsewhere before continuing. After the migration, future local edits to `docs/rfc-process.md` are silently overwritten — this is the strategy's defining property and is documented in `docs/CONTRIBUTING.md` and release notes (per the drawback above).
+   **Mitigation:** the migration-time check described in the implementation spec fires exactly once on the first `/sync` after this RFC ships. If the local `## Project Extensions` section has non-placeholder content, the warning is printed inline above the Step 4a batch prompt with the section's content quoted and instructions to copy the content elsewhere before deciding how to vote on the rfc-process.md checkbox. The user can defer the rfc-process.md item (deselect its checkbox) to preserve the local file for now; the warning re-prints on every subsequent `/sync` until either the item is approved or the local extensions section is removed. After the migration, future plugin-version updates to `docs/rfc-process.md` continue to surface as Step 4a checkboxes — this is the strategy's defining property and is documented on line 2 of the file itself (the `Managed by the Bytewyrd plugin` header), in `docs/CONTRIBUTING.md` for the plugin, and in release notes (per the drawback above).
 
 5. **Per-`/sync` token cost for `additive-merge`'s LLM helper.** The helper invokes the agent's underlying model once per (plugin_item, local_item) pair, per section. For `CLAUDE.md` with ten sections averaging seven items per side, that's up to 490 invocations per `/sync` run. With short prompts and short responses, each invocation is a few hundred tokens; the total token spend is bounded but non-zero on every run that classifies `CLAUDE.md` as `additive_merge_apply`.
 
