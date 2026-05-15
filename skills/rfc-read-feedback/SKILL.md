@@ -21,23 +21,26 @@ A marker applies to the content immediately above it in the same section. Marker
 
 ### 1. Identify the RFC
 
-If an RFC number or filename is provided as argument, use it. Otherwise:
+Resolve the target RFC using the helper script. `$ARG` is the user-supplied identifier from the skill's argument, if any; omit it to let the script use the heuristic fallbacks.
 
-1. Run `git diff --name-only HEAD -- docs/rfcs/ && git status --short docs/rfcs/`. If exactly one RFC file appears as modified or staged, treat it as the candidate.
-2. If none or multiple are modified, list files in `docs/rfcs/` sorted by name and take the last (most recently dated) as the candidate.
-3. Ask: "Which RFC? [default: RFC-NNN — `docs/rfcs/NNN-title.md`]" — accept a blank response as confirmation of the default.
+```bash
+result="$(bash scripts/rfc-resolve.sh "${ARG:-}")"
+RFC_PATH="$(printf '%s' "$result" | jq -r .path)"
+label="$(printf '%s' "$result" | jq -r .label)"
+```
 
-Read the matching `docs/rfcs/NNN-*.md` file.
+Show `$label` and ask "Use this RFC? (yes/no)" — accept blank as yes. If the script exited non-zero, extract `.error` from `$result` and show it.
+
+Read the matching RFC file.
 
 ### 2. Find all FEEDBACK: markers
 
-Search for lines starting with `FEEDBACK:`:
-
 ```bash
-grep -n "^FEEDBACK:" docs/rfcs/<filename>
+result="$(bash scripts/rfc-feedback-list.sh "$RFC_PATH")"
+count="$(printf '%s' "$result" | jq '.markers | length')"
 ```
 
-If none found: report **"No FEEDBACK: markers found in <filename>."** and stop.
+`$result` is the JSON object `{"markers": [{"line": N, "text": "FEEDBACK: ..."}]}`. If `$count` equals 0: report **"No FEEDBACK: markers found in <filename>."** and stop. Otherwise iterate `printf '%s' "$result" | jq -r '.markers[] | "\(.line)\t\(.text)"'` to display rows to the user for step 3.
 
 ### 3. Display for human confirmation
 

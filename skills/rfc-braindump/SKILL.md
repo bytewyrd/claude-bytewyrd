@@ -36,20 +36,12 @@ Instruct the agent to return **only** the `* **Title.** paragraph` bullet — no
 
 ### 4. Append to `docs/rfc-braindump.md`
 
-Read `docs/rfc-braindump.md`. If the file doesn't exist, create it with this header first:
-
-```markdown
-# RFC Braindump
-
-Potential RFC ideas. Add with `/rfc-braindump`, promote to full RFC with `/rfc-new`.
-
+```bash
+result="$(bash scripts/rfc-braindump-append.sh "$ENTRY_BODY")"
+created_file="$(printf '%s' "$result" | jq -r .created_file)"
 ```
 
-Append the new entry as a bullet at the end of the file:
-
-```
-* **<Title>.** <paragraph>
-```
+Where `$ENTRY_BODY` is the formatted bullet text from Step 3 (*excluding* the leading `* ` marker), e.g., `**Title.** Paragraph text.`. The script creates the file with the standard header if absent — `$created_file` is `true` in that case, useful when the agent wants to surface "created docs/rfc-braindump.md" in its running log alongside the standard "appended" message.
 
 ### 5. Confirm
 

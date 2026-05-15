@@ -11,20 +11,30 @@ Approves a Draft RFC. Only humans invoke this skill — agents write and review,
 
 ### 1. Identify the RFC
 
-If an RFC number or filename is provided as argument, use it. Otherwise:
+Resolve the target RFC using the helper script. The script handles the argument-vs-heuristic logic; the agent surfaces the candidate label to the user. `$ARG` is the user-supplied identifier from the skill's argument, if any; omit it to let the script use the heuristic fallbacks.
 
-1. Run `git diff --name-only HEAD -- docs/rfcs/ && git status --short docs/rfcs/`. If exactly one RFC file appears as modified or staged, treat it as the candidate.
-2. If none or multiple are modified, list files in `docs/rfcs/` sorted by name and take the last (most recently dated) as the candidate.
-3. Ask: "Which RFC? [default: RFC-NNN — `docs/rfcs/NNN-title.md`]" — accept a blank response as confirmation of the default.
+```bash
+result="$(bash scripts/rfc-resolve.sh "${ARG:-}")"
+RFC_PATH="$(printf '%s' "$result" | jq -r .path)"
+label="$(printf '%s' "$result" | jq -r .label)"
+```
 
-Read the matching `docs/rfcs/NNN-*.md` file.
+`$RFC_PATH` is the resolved absolute path; `$label` is a one-line summary such as `RFC 2026-05-12-foo (unique modified file)`. Show `$label` and ask "Use this RFC? (yes/no)" — accept blank as yes. If the user declines, ask "Which RFC?" and re-run with their answer as `$ARG`. If the script exited non-zero, `result` will contain `{"error":"..."}` — extract with `jq -r .error` and show it. `$RFC_PATH` is used by subsequent steps to identify the file being acted on.
 
 ### 2. Verify status
 
-Check `status` in the frontmatter. If it is not `Draft`:
+Read the frontmatter:
+
+```bash
+fm="$(bash scripts/rfc-frontmatter.sh "$RFC_PATH")"
+status="$(printf '%s' "$fm" | jq -r .status)"
+drop_reason="$(printf '%s' "$fm" | jq -r .drop_reason)"
+```
+
+If `$status` is not `Draft`:
 - `Approved` → "Already approved."
 - `Done` → "Already done."
-- `Dropped` → "This RFC was dropped: <drop_reason>."
+- `Dropped` → "This RFC was dropped: $drop_reason."
 
 Stop in any of these cases.
 
@@ -32,7 +42,7 @@ Stop in any of these cases.
 
 Show:
 ```
-RFC NNN — <title>
+RFC <identifier> — <title>
 Status: Draft → Approved
 Author: <author>
 Created: <date>
@@ -46,13 +56,19 @@ Wait for explicit confirmation.
 
 ### 4. Update status
 
-Change `status: "Draft"` to `status: "Approved"` in the frontmatter.
+```bash
+result="$(bash scripts/rfc-set-status.sh "$RFC_PATH" Approved)"
+old="$(printf '%s' "$result" | jq -r .old_status)"
+new="$(printf '%s' "$result" | jq -r .new_status)"
+```
+
+The script validates the new status and rewrites the frontmatter in place. Use `$old` and `$new` in the agent's running log (e.g., `rfc-set-status: <path>: Draft -> Approved`).
 
 ### 5. Commit
 
 ```bash
-git add docs/rfcs/<filename>
-git commit -m "rfc: approve RFC-NNN — <title>"
+git add "$RFC_PATH"
+git commit -m "rfc: approve RFC <identifier> — <title>"
 ```
 
-Report: "RFC-NNN approved and committed. Use `/rfc-implement` to begin implementation."
+Report: "RFC <identifier> approved and committed. Use `/rfc-implement` to begin implementation."

@@ -9,12 +9,18 @@ description: Use to begin implementing an Approved RFC. Spawns a feature-enginee
 
 This skill creates a pull request at the end of implementation. PR creation uses the GitHub MCP when available, falling back to the `gh` CLI:
 
-1. Probe whether the GitHub MCP is enabled: `grep -q '"github@claude-plugins-official"[[:space:]]*:[[:space:]]*true' ~/.claude/settings.json .claude/settings.json 2>/dev/null`.
-2. If enabled, use the `mcp__plugin_github_github__create_pull_request` MCP tool. Print: `Using GitHub MCP for PR creation.`
-3. If not enabled, fall back to `gh pr create`. Before invoking, run `command -v gh >/dev/null 2>&1` to verify the CLI is present and `gh auth status` to verify it is logged in. Print exactly: `GitHub MCP not enabled — using gh CLI for PR creation.`
-4. If neither is available, abort PR creation with: `Cannot create PR: neither GitHub MCP nor gh CLI is available. Fix: install github@claude-plugins-official OR install gh CLI and run gh auth login.`
+```bash
+mcp_out="$(bash scripts/tool-probe.sh github-mcp)"; mcp_status=$?
+gh_out="$(bash scripts/tool-probe.sh gh)";           gh_status=$?
+mcp_result="$(printf '%s' "$mcp_out" | jq -r .result)"
+gh_result="$(printf '%s' "$gh_out"  | jq -r .result)"
+```
 
-The implementation itself (code edits, commit, push) completes regardless of which PR-creation path is taken.
+- `mcp_status=0` (i.e. `$mcp_result` = `available`) → use the `mcp__plugin_github_github__create_pull_request` MCP tool. Print: `Using GitHub MCP for PR creation.`
+- `mcp_status!=0 && gh_status=0` → fall back to `gh pr create`. Print: `GitHub MCP not enabled — using gh CLI for PR creation.`
+- both nonzero → abort PR creation with: `Cannot create PR: neither GitHub MCP nor gh CLI is available. Fix: install github@claude-plugins-official OR install gh CLI and run gh auth login.` (Use `printf '%s' "$gh_out" | jq -r .hint` and the matching hint from `$mcp_out` to phrase the remediation precisely.)
+
+`$gh_result` carries one of `available`, `missing`, or `unauthenticated`; use it when the message text needs to distinguish "gh not installed" from "gh not logged in." The implementation itself (code edits, commit, push) completes regardless of which PR-creation path is taken.
 
 Implements an Approved RFC by spawning a `feature-engineer` agent and marking the RFC `Done` when complete.
 
@@ -22,13 +28,17 @@ Implements an Approved RFC by spawning a `feature-engineer` agent and marking th
 
 ### 1. Identify the RFC
 
-If an RFC number or filename is provided as argument, use it. Otherwise:
+Resolve the target RFC using the helper script. `$ARG` is the user-supplied identifier from the skill's argument, if any; omit it to let the script use the heuristic fallbacks.
 
-1. Run `git diff --name-only HEAD -- docs/rfcs/ && git status --short docs/rfcs/`. If exactly one RFC file appears as modified or staged, treat it as the candidate.
-2. If none or multiple are modified, list files in `docs/rfcs/` sorted by name and take the last (most recently dated) as the candidate.
-3. Ask: "Which RFC? [default: RFC-NNN — `docs/rfcs/NNN-title.md`]" — accept a blank response as confirmation of the default.
+```bash
+result="$(bash scripts/rfc-resolve.sh "${ARG:-}")"
+RFC_PATH="$(printf '%s' "$result" | jq -r .path)"
+label="$(printf '%s' "$result" | jq -r .label)"
+```
 
-Read the matching `docs/rfcs/NNN-*.md` file in full.
+Show `$label` and ask "Use this RFC? (yes/no)" — accept blank as yes. If the script exited non-zero, extract `.error` from `$result` and show it.
+
+Read the matching RFC file in full.
 
 ### 2. Verify status
 
@@ -56,8 +66,12 @@ Do **not** start implementation if the spec has gaps. Fix the RFC first.
 
 ### 5. Mark Done after merge
 
-After implementation is complete and the PR is merged, update the RFC:
-- Change `status: "Approved"` to `status: "Done"`
-- Commit: `"rfc: mark RFC-NNN done — <title>"`
+After the PR is merged:
 
-Report: "RFC-NNN marked as Done."
+```bash
+result="$(bash scripts/rfc-set-status.sh "$RFC_PATH" Done)"
+git add "$RFC_PATH"
+git commit -m "rfc: mark $(basename "${RFC_PATH%.md}") done"
+```
+
+`$result` is the JSON object `{"file": "...", "old_status": "Approved", "new_status": "Done"}` — extract fields with `jq -r` if the agent wants to surface the transition in its log. Report: "RFC <identifier> marked as Done."
