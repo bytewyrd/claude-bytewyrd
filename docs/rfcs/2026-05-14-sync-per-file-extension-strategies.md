@@ -51,7 +51,7 @@ This RFC introduces five new strategies — `additive-merge`, `additive-merge-wi
 - **`section`** — replaced by `owned-regions`. The `section` value is recognized as a deprecation alias (see `owned-regions` strategy below) and triggers a one-time upgrade notice; behavior is unchanged.
 - **`region`** — replaced by `owned-regions`. Zero files use `region` after this RFC ships (the only current user, `docs/rfc-process.md`, moves to `authoritative`). The diff engine emits an error rather than carrying alias logic, because no in-tree file exercises the alias path.
 
-After this RFC ships, every artifact in `.claude-plugin/bootstrap-manifest.json` is assigned to one of seven strategies (each row reflects the final assignment after the manifest changes documented in "Implementation spec" below):
+After this RFC ships, every artifact in `bootstrap-manifest.json` (relocated from `.claude-plugin/bootstrap-manifest.json` per Decision 3) is assigned to one of seven strategies (each row reflects the final assignment after the manifest changes documented in "Implementation spec" below):
 
 - **`whole`** — no remaining in-tree files. (Strategy retained in the schema for backward compatibility with consumer manifests; deprecated for new entries.)
 - **`section`** — replaced by `owned-regions`; no files remain.
@@ -209,6 +209,30 @@ The transformation is mechanical and the apply logic is unchanged — the only b
 
 A consistent shape would be appealing — every file gets the same additive treatment. Rejected for three reasons. First, it would force semantic merging on `docs/ARCHITECTURE.md`, where the plugin's contribution is a placeholder template and the local file is a fully-composed document; there are no overlapping "concepts" to merge, just a template that has served its purpose. Second, it would force semantic merging on `docs/rfc-process.md`, where the plugin's intent is to be authoritative (the workflow must be shared exactly); allowing additive local extensions would re-introduce the divergence problem `authoritative` exists to solve. Third, files where the user benefits from reviewing the merged result hunk-by-hunk before writing (PR templates, CI workflows) would either get silent merges they cannot inspect or would force the same hunk-level diff prompt on every `additive-merge` file (including `CLAUDE.md`, where a hunk-level diff would be hostile noise for the common case of a single same-concept replacement). The five strategies exist because the five relationships are genuinely different.
 
+### Decision 3 — Correct plugin directory layout to match official conventions
+
+**Problem.** The current plugin puts infrastructure files inside `.claude-plugin/` that the official Claude Code plugin authoring convention does not allow there. The official constraint is: only `plugin.json` goes inside `.claude-plugin/`; all other directories must be at the plugin root level (verified: the working tree confirms this — verified: .claude-plugin/ contains `bootstrap-manifest.json`, `CLAUDE.md`, `marketplace.json`, `hooks/`, and `scripts/`, none of which are `plugin.json`). Placing these artifacts inside `.claude-plugin/` means the manifest `source` paths, the pre-commit hook symlink, and the build script path all assume a non-standard nesting that the official convention explicitly prohibits.
+
+**Required moves.** The following files are relocated from inside `.claude-plugin/` to the plugin root or a new top-level directory:
+
+| Current path (wrong) | Correct path |
+|---|---|
+| `.claude-plugin/scripts/build-manifest.sh` | `scripts/build-manifest.sh` |
+| `.claude-plugin/scripts/templates/` (all `.tpl` files) | `templates/` (new top-level directory) |
+| `.claude-plugin/hooks/hooks.json` | `hooks/hooks.json` |
+| `.claude-plugin/hooks/pre-commit/manifest-check.sh` | `hooks/pre-commit/manifest-check.sh` |
+| `.claude-plugin/bootstrap-manifest.json` | `bootstrap-manifest.json` |
+| `.claude-plugin/marketplace.json` | `marketplace.json` |
+| `.claude-plugin/CLAUDE.md` | deleted (orphaned — not consumed by Claude Code's plugin system, which only auto-loads `plugin.json`; not used by `/sync`, which reads from `templates/CLAUDE.md.tpl`) |
+
+**Two cascading updates after the moves:**
+
+1. **`bootstrap-manifest.json` source paths** — every `"source": ".claude-plugin/scripts/templates/FILENAME"` entry changes to `"source": "templates/FILENAME"`. This includes `.bootstrap-versions.json.tpl`, `settings.json.tpl`, `settings.local.json.tpl`, `PULL_REQUEST_TEMPLATE.md.tpl`, `ci.yml.tpl`, `.gitignore.tpl`, `CLAUDE.md.tpl`, `README.md.tpl`, `ARCHITECTURE.md.tpl`, `BEST_PRACTICES.md.tpl`, `CONTRIBUTING.md.tpl`, and `mise.toml.tpl`. The manifest `source` path for `docs/rfc-process.md` is already `"rfc-process.md"` (a plugin-root-relative path with no `.claude-plugin/` prefix — verified: .claude-plugin/bootstrap-manifest.json:L181) and does not change.
+
+2. **Git pre-commit hook symlink** — the symlink at `.git/hooks/pre-commit` currently resolves to `../../.claude-plugin/hooks/pre-commit/manifest-check.sh`. After the move it must resolve to `../../hooks/pre-commit/manifest-check.sh`. The symlink is a developer machine artifact (created by the one-time setup step in `docs/CONTRIBUTING.md`), not a committed file. Existing contributors must re-run the setup command to update their symlink. The setup instruction in `docs/CONTRIBUTING.md` and the reminder in `CLAUDE.md` must be updated to reference the new path.
+
+**Why this belongs in this RFC.** The manifest restructuring in Decision 1 and Decision 2 already requires opening `bootstrap-manifest.json` and editing every artifact entry. Correcting the `source` paths at the same time (same file, same edit pass) is the lowest-friction moment to apply the directory fix. Doing the structural correction in a separate RFC would require a second manifest edit pass and a second round of consumer-project re-syncs. The directory restructuring is a mechanical rename with no behavioral change to `/sync`'s runtime logic; it does not introduce new strategies or alter the classification matrix.
+
 ## Drawbacks
 
 1. **`additive-merge` requires LLM-assisted semantic comparison and accepts its failure modes.** The diff engine cannot do byte-equality for "same concept, different wording" — it has to ask an LLM. This carries two costs: (a) a per-`/sync` token spend proportional to the size of `additive-merge` files (small in practice — `CLAUDE.md` is ~180 lines, comparisons are bounded by the number of plugin-owned items, not file length); and (b) the LLM can produce false positives ("two items mean the same thing" when they don't — leading to silent overwrites of local wording) and false negatives ("two items are different" when they're conceptually identical — leading to spurious additions or false-flagged conflicts). The error rate is low for well-defined rules with clear semantic boundaries, higher for vague boilerplate. The cost is real but bounded: false positives produce a wording change the user can revert via git; false negatives produce a duplicate item the user can clean up manually. Both modes are recoverable, unlike the current loop, which is not.
@@ -227,17 +251,26 @@ A consistent shape would be appealing — every file gets the same additive trea
 
 | Action | Path | Responsibility |
 |--------|------|----------------|
-| Modify | `.claude-plugin/bootstrap-manifest.json` | Replace artifact declarations: `CLAUDE.md` gets `extension_strategy: "additive-merge"` with the unchanged ten-section `owned_sections`; `docs/CONTRIBUTING.md` and `docs/ARCHITECTURE.md` get `extension_strategy: "bootstrap"`; `docs/rfc-process.md` gets `extension_strategy: "authoritative"` with `region_end_marker` removed; `.github/PULL_REQUEST_TEMPLATE.md` and `.github/workflows/ci.yml` get `extension_strategy: "additive-merge-with-diff"`; `README.md` and `docs/BEST_PRACTICES.md` convert from `extension_strategy: "section"` to `extension_strategy: "owned-regions"` with `owned_sections` rewritten as `owned_boundaries` (one heading entry per current `owned_sections` entry); the `.bootstrap-versions.json` artifact moves to a new entry — `target` changes from `.claude/.bootstrap-versions.json` to `.bytewyrd/.bootstrap-versions.json`, `extension_strategy` changes from `whole` to `structured` with `owned_paths: ["*"]` (every key in the JSON object is plugin-managed), and `upstream_key` bumps to `bytewyrd/.bytewyrd/.bootstrap-versions.json@v2` (path changed, requires re-sync). |
-| Modify | `.claude-plugin/scripts/templates/.gitignore.tpl` | Change the `.bytewyrd/` ignore entry to `.bytewyrd/*` plus `!.bytewyrd/.bootstrap-versions.json` so the sidecar is tracked while other runtime state files under `.bytewyrd/` remain ignored. |
+| Move | `.claude-plugin/scripts/build-manifest.sh` → `scripts/build-manifest.sh` | Relocate to plugin root per official convention; path referenced in Step 5 and Step 6 of Exact steps below. |
+| Move | `.claude-plugin/scripts/templates/` → `templates/` | Relocate entire templates directory to plugin root; all twelve `.tpl` files move with the directory. |
+| Move | `.claude-plugin/hooks/hooks.json` → `hooks/hooks.json` | Relocate to plugin root `hooks/` directory. |
+| Move | `.claude-plugin/hooks/pre-commit/manifest-check.sh` → `hooks/pre-commit/manifest-check.sh` | Relocate pre-commit hook script; pre-commit symlink path must be updated in `docs/CONTRIBUTING.md` and `CLAUDE.md`. |
+| Move | `.claude-plugin/bootstrap-manifest.json` → `bootstrap-manifest.json` | Relocate to plugin root. |
+| Move | `.claude-plugin/marketplace.json` → `marketplace.json` | Relocate to plugin root. |
+| Delete | `.claude-plugin/CLAUDE.md` | Orphaned file — not consumed by the Claude Code plugin system (only `plugin.json` is auto-loaded from `.claude-plugin/`), and not used by `/sync` (the template source is `templates/CLAUDE.md.tpl`). |
+| Modify | `bootstrap-manifest.json` | Replace artifact declarations: `CLAUDE.md` gets `extension_strategy: "additive-merge"` with the unchanged ten-section `owned_sections`; `docs/CONTRIBUTING.md` and `docs/ARCHITECTURE.md` get `extension_strategy: "bootstrap"`; `docs/rfc-process.md` gets `extension_strategy: "authoritative"` with `region_end_marker` removed; `.github/PULL_REQUEST_TEMPLATE.md` and `.github/workflows/ci.yml` get `extension_strategy: "additive-merge-with-diff"`; `README.md` and `docs/BEST_PRACTICES.md` convert from `extension_strategy: "section"` to `extension_strategy: "owned-regions"` with `owned_sections` rewritten as `owned_boundaries` (one heading entry per current `owned_sections` entry); the `.bootstrap-versions.json` artifact moves to a new entry — `target` changes from `.claude/.bootstrap-versions.json` to `.bytewyrd/.bootstrap-versions.json`, `extension_strategy` changes from `whole` to `structured` with `owned_paths: ["*"]` (every key in the JSON object is plugin-managed), and `upstream_key` bumps to `bytewyrd/.bytewyrd/.bootstrap-versions.json@v2` (path changed, requires re-sync). All `source` paths are updated from `.claude-plugin/scripts/templates/FILENAME` to `templates/FILENAME` (see Decision 3). |
+| Modify | `templates/.gitignore.tpl` | Change the `.bytewyrd/` ignore entry to `.bytewyrd/*` plus `!.bytewyrd/.bootstrap-versions.json` so the sidecar is tracked while other runtime state files under `.bytewyrd/` remain ignored. |
 | Modify | `skills/sync/SKILL.md` | Extend the canonicalization-rules block (currently lines 334-340), the Step 4a batch-confirmation block (currently lines 380-394), and the apply-actions block (currently lines 440-456) with five new strategy branches: `additive-merge` (item-level matching with one auto-apply soundness pass); `additive-merge-with-diff` (item-level matching with two soundness passes — pre-diff auto-apply, post-accept explain-and-ask — plus a unified-diff review prompt with `Accept all`/`Accept with exclusions`/`Manual 3-way merge`/`Defer` options); `bootstrap` (presence-check short-circuit; batch checkbox on file-absent; no canonicalization or diff on file-present); `authoritative` (full-content compare after two-line-header strip; batch checkbox on differing content; no Step 4b menu); `owned-regions` (unified replacement for `section` and `region`; reads `owned_boundaries` or the `owned_sections` deprecation alias). Extend the classification matrix at lines 323-332 with five new outcome branches that route files to their strategy-specific paths before the existing matrix runs; emit an error on `extension_strategy: "region"` and a deprecation notice on `extension_strategy: "section"`. Convert the Step 4a yes/no two-question pattern to a single `multiSelect: true` AskUserQuestion with per-file checkboxes spanning additions, fast-forwards, legacy-marker insertions, bootstrap creations, authoritative adds, and authoritative updates. Extend Step 4b's resolution menu to handle the one prompt `additive-merge` can produce (item-level contradiction); add the diff-review prompt and the soundness Pass 2 explain-and-ask prompt for `additive-merge-with-diff`. Update Step 5.5's sidecar path from `.claude/.bootstrap-versions.json` to `.bytewyrd/.bootstrap-versions.json` (currently referenced at SKILL.md L295, L309, L557, L698, verified). Add a one-time migration check at the top of Step 3 that copies the sidecar from `.claude/` to `.bytewyrd/` if the old path exists and the new path does not, then deletes the old file. |
-| Modify | `.claude-plugin/scripts/templates/CONTRIBUTING.md.tpl` | No structural change — the template body stays as-is (the existing generic skeleton with `<PREREQUISITES_SECTION>`, `<INSTALL_COMMAND>`, `<QUALITY_GATE_DESCRIPTION>` placeholders is still the right thing for a new project to start with). Verified: the current template at lines 1-67 is a reasonable starting point for any project. |
-| Modify | `.claude-plugin/scripts/templates/ARCHITECTURE.md.tpl` | No structural change — the placeholder-heavy template is the right thing for a new project to start with (the placeholders guide the user through composing each section). |
+| Modify | `templates/CONTRIBUTING.md.tpl` | No structural change — the template body stays as-is (the existing generic skeleton with `<PREREQUISITES_SECTION>`, `<INSTALL_COMMAND>`, `<QUALITY_GATE_DESCRIPTION>` placeholders is still the right thing for a new project to start with). Verified: the current template at lines 1-67 is a reasonable starting point for any project. |
+| Modify | `templates/ARCHITECTURE.md.tpl` | No structural change — the placeholder-heavy template is the right thing for a new project to start with (the placeholders guide the user through composing each section). |
 | Modify | `docs/rfc-process.md` (in the bytewyrd plugin's own checkout; this is the file consumer projects sync from) | Remove the `## Project Extensions` section entirely (lines 230-232 inclusive: heading, blank, placeholder body), the separator line before it (line 228: `---`), and the `<!-- END_UPSTREAM_CONTENT -->` marker on line 226. Under `authoritative` the entire file is plugin-owned; the separator and the project-extensions section no longer have meaning. The three leader comments on lines 1-3 (`<!-- UPSTREAM: ... -->`, `<!-- LAST_SYNCED: ... -->`, and the explanatory comment about `END_UPSTREAM_CONTENT`) plus the blank line 4 are also removed — they were part of the older marker convention. After the edits, the file's line 1 is the H1 `# RFC Process` (currently line 5). The plugin's source file in the repo does **not** carry the two-line `authoritative` header — that header is inserted by the sync skill at write time on every consumer-project apply, not stored in the plugin source. |
-| Add | (none) | No new files. Five new strategies live as additional branches inside the existing `skills/sync/SKILL.md` body; no new template files; new manifest fields are the `owned_boundaries` array (for `owned-regions`) — added alongside the existing `owned_paths`/`owned_sections` fields, not replacing them. |
+| Modify | `docs/CONTRIBUTING.md` | Update the pre-commit hook setup command: the symlink target path changes from `../../.claude-plugin/hooks/pre-commit/manifest-check.sh` to `../../hooks/pre-commit/manifest-check.sh`. |
+| Modify | `CLAUDE.md` | Update any path references to the pre-commit hook or to `.claude-plugin/` subdirectories to use the new plugin-root paths. |
+| Add | (none) | No new files. Five new strategies live as additional branches inside the existing `skills/sync/SKILL.md` body; no new template files (all existing templates move from `.claude-plugin/scripts/templates/` to `templates/`); new manifest fields are the `owned_boundaries` array (for `owned-regions`) — added alongside the existing `owned_paths`/`owned_sections` fields, not replacing them. |
 
 ### Exact manifest changes
 
-The full diff against the current `.claude-plugin/bootstrap-manifest.json`:
+The full diff against `bootstrap-manifest.json` (relocated from `.claude-plugin/bootstrap-manifest.json` per Decision 3):
 
 **1. `CLAUDE.md` — change `extension_strategy` to `additive-merge`.**
 
@@ -246,7 +279,7 @@ Replace the existing `extension_strategy: "section"` value (currently at line 84
 ```json
 {
   "upstream_key": "bytewyrd/CLAUDE.md@v1",
-  "source": ".claude-plugin/scripts/templates/CLAUDE.md.tpl",
+  "source": "templates/CLAUDE.md.tpl",
   "target": "CLAUDE.md",
   "template_sha": "<existing hash>",
   "extension_strategy": "additive-merge",
@@ -281,7 +314,7 @@ Replace the existing entry (currently lines 171-178 in the manifest) with:
 ```json
 {
   "upstream_key": "bytewyrd/docs/CONTRIBUTING.md@v1",
-  "source": ".claude-plugin/scripts/templates/CONTRIBUTING.md.tpl",
+  "source": "templates/CONTRIBUTING.md.tpl",
   "target": "docs/CONTRIBUTING.md",
   "sha256": "<existing hash, recomputed by build-manifest.sh>",
   "extension_strategy": "bootstrap",
@@ -289,7 +322,7 @@ Replace the existing entry (currently lines 171-178 in the manifest) with:
 }
 ```
 
-The `sha256` field stays — `build-manifest.sh` writes it from the template source (verified: .claude-plugin/scripts/build-manifest.sh:L36-L42), and the diff engine uses it only on the very first `/sync` in a project that lacks the file (where the SHA records the plugin version that produced the local file's contents). No `owned_sections`, `owned_paths`, or `region_end_marker` fields — `bootstrap` has no concept of partial ownership.
+The `sha256` field stays — `build-manifest.sh` writes it from the template source (verified: .claude-plugin/scripts/build-manifest.sh:L36-L42; relocated to `scripts/build-manifest.sh` per Decision 3), and the diff engine uses it only on the very first `/sync` in a project that lacks the file (where the SHA records the plugin version that produced the local file's contents). No `owned_sections`, `owned_paths`, or `region_end_marker` fields — `bootstrap` has no concept of partial ownership.
 
 **3. `docs/ARCHITECTURE.md` — change `extension_strategy` to `bootstrap`.**
 
@@ -298,7 +331,7 @@ Replace the existing entry (currently lines 126-133 in the manifest) with:
 ```json
 {
   "upstream_key": "bytewyrd/docs/ARCHITECTURE.md@v1",
-  "source": ".claude-plugin/scripts/templates/ARCHITECTURE.md.tpl",
+  "source": "templates/ARCHITECTURE.md.tpl",
   "target": "docs/ARCHITECTURE.md",
   "sha256": "<existing hash, recomputed by build-manifest.sh>",
   "extension_strategy": "bootstrap",
@@ -306,7 +339,7 @@ Replace the existing entry (currently lines 126-133 in the manifest) with:
 }
 ```
 
-Same shape as `docs/CONTRIBUTING.md`. `templated` stays `false` because the existing template body is plain text (verified: .claude-plugin/scripts/templates/ARCHITECTURE.md.tpl has no `<...>` placeholders that the renderer would substitute — the angle-bracket strings inside the body are documentation guidance, not renderer tokens; the renderer's "Unrecognized placeholders are replaced with empty string" rule at `skills/sync/SKILL.md:L431` would silently delete them if `templated` were `true`).
+Same shape as `docs/CONTRIBUTING.md`. `templated` stays `false` because the existing template body is plain text (verified: templates/ARCHITECTURE.md.tpl has no `<...>` placeholders that the renderer would substitute — the angle-bracket strings inside the body are documentation guidance, not renderer tokens; the renderer's "Unrecognized placeholders are replaced with empty string" rule at `skills/sync/SKILL.md:L431` would silently delete them if `templated` were `true`).
 
 **4. `docs/rfc-process.md` — change `extension_strategy` to `authoritative`; remove `region_end_marker`.**
 
@@ -332,7 +365,7 @@ Replace the existing entry (currently lines 47-53 in the manifest, verified) wit
 ```json
 {
   "upstream_key": "bytewyrd/.github/PULL_REQUEST_TEMPLATE.md@v1",
-  "source": ".claude-plugin/scripts/templates/PULL_REQUEST_TEMPLATE.md.tpl",
+  "source": "templates/PULL_REQUEST_TEMPLATE.md.tpl",
   "target": ".github/PULL_REQUEST_TEMPLATE.md",
   "sha256": "<existing hash, recomputed by build-manifest.sh>",
   "extension_strategy": "additive-merge-with-diff",
@@ -340,7 +373,7 @@ Replace the existing entry (currently lines 47-53 in the manifest, verified) wit
 }
 ```
 
-The item parser for `additive-merge-with-diff` operates on the markdown items inside each H2 section (`## Summary`, `## Changes`, `## Testing`, `## Notes for Reviewers` — verified: .claude-plugin/scripts/templates/PULL_REQUEST_TEMPLATE.md.tpl:L1-L21); there is no manifest field that enumerates the sections, because the parser walks the file's actual H2 headings.
+The item parser for `additive-merge-with-diff` operates on the markdown items inside each H2 section (`## Summary`, `## Changes`, `## Testing`, `## Notes for Reviewers` — verified: templates/PULL_REQUEST_TEMPLATE.md.tpl:L1-L21, relocated from `.claude-plugin/scripts/templates/` per Decision 3); there is no manifest field that enumerates the sections, because the parser walks the file's actual H2 headings.
 
 **6. `.github/workflows/ci.yml` — change `extension_strategy` to `additive-merge-with-diff`.**
 
@@ -349,7 +382,7 @@ Replace the existing entry (currently lines 54-69 in the manifest, verified) wit
 ```json
 {
   "upstream_key": "bytewyrd/.github/workflows/ci.yml@v1",
-  "source": ".claude-plugin/scripts/templates/ci.yml.tpl",
+  "source": "templates/ci.yml.tpl",
   "target": ".github/workflows/ci.yml",
   "template_sha": "<existing hash, recomputed by build-manifest.sh>",
   "extension_strategy": "additive-merge-with-diff",
@@ -370,7 +403,7 @@ Replace the existing entry (currently lines 107-126 in the manifest, verified) w
 ```json
 {
   "upstream_key": "bytewyrd/README.md@v1",
-  "source": ".claude-plugin/scripts/templates/README.md.tpl",
+  "source": "templates/README.md.tpl",
   "target": "README.md",
   "template_sha": "<existing hash>",
   "extension_strategy": "owned-regions",
@@ -398,7 +431,7 @@ Replace the existing entry (currently lines 134-167 in the manifest, verified) w
 ```json
 {
   "upstream_key": "bytewyrd/docs/BEST_PRACTICES.md@v1",
-  "source": ".claude-plugin/scripts/templates/BEST_PRACTICES.md.tpl",
+  "source": "templates/BEST_PRACTICES.md.tpl",
   "target": "docs/BEST_PRACTICES.md",
   "template_sha": "<existing hash>",
   "extension_strategy": "owned-regions",
@@ -444,7 +477,7 @@ Replace the existing entry (currently lines 3-9 in the manifest, verified) with:
 ```json
 {
   "upstream_key": "bytewyrd/.bytewyrd/.bootstrap-versions.json@v2",
-  "source": ".claude-plugin/scripts/templates/.bootstrap-versions.json.tpl",
+  "source": "templates/.bootstrap-versions.json.tpl",
   "target": ".bytewyrd/.bootstrap-versions.json",
   "sha256": "<existing hash>",
   "extension_strategy": "structured",
@@ -463,7 +496,7 @@ The `.gitignore` template change (item below) tracks the relocated sidecar while
 
 **10. `.gitignore.tpl` — ignore `.bytewyrd/*` but track the relocated sidecar.**
 
-Modify `.claude-plugin/scripts/templates/.gitignore.tpl` (verified — current content includes a `.bytewyrd/` line per the template at .claude-plugin/scripts/templates/.gitignore.tpl). Change the existing `.bytewyrd/` line (which ignores the whole folder) to:
+Modify `templates/.gitignore.tpl` (relocated from `.claude-plugin/scripts/templates/` per Decision 3; current content verified — includes a `.bytewyrd/` line at `.claude-plugin/scripts/templates/.gitignore.tpl`). Change the existing `.bytewyrd/` line (which ignores the whole folder) to:
 
 ```
 .bytewyrd/*
@@ -532,8 +565,8 @@ The helper is invoked once per (plugin_item, local_item) pair. For a typical `CL
 1. **Run the same item-by-item merge as `additive-merge`** (steps 1-5 of the `additive-merge` algorithm above): parse plugin and local items, run the LLM-comparison helper, append plugin items that have no `same_concept` match, replace local item text when a `same_concept` match exists, preserve local-only items, collect contradictions into `pending_contradictions`.
 
 2. **File-type-specific item parsing.** The item parser used in step 1 has rules per file type:
-   - `.github/PULL_REQUEST_TEMPLATE.md` — markdown items as in `additive-merge` (list items, code blocks, paragraphs, labeled blocks). The top-level structure is H2 headings (`## Summary`, `## Changes`, `## Testing`, `## Notes for Reviewers` — verified: .claude-plugin/scripts/templates/PULL_REQUEST_TEMPLATE.md.tpl:L1-L21). The merge runs section-by-section within those headings.
-   - `.github/workflows/ci.yml` — YAML structure parsing: each top-level YAML key (`name:`, `on:`, `jobs:`, `env:`) is one item. Within `jobs:`, each job key is a sub-item. The parser preserves YAML indentation and structure when emitting the merged file. Verified: .claude-plugin/scripts/templates/ci.yml.tpl:L1-L8 — the current template has top-level keys `name`, `on`, `jobs` and a `<CI_JOBS_SECTION>` placeholder under `jobs:`; the strategy's item parser treats each top-level key as a single item and walks into `jobs:` to enumerate per-job sub-items.
+   - `.github/PULL_REQUEST_TEMPLATE.md` — markdown items as in `additive-merge` (list items, code blocks, paragraphs, labeled blocks). The top-level structure is H2 headings (`## Summary`, `## Changes`, `## Testing`, `## Notes for Reviewers` — verified: templates/PULL_REQUEST_TEMPLATE.md.tpl:L1-L21, relocated from `.claude-plugin/scripts/templates/` per Decision 3). The merge runs section-by-section within those headings.
+   - `.github/workflows/ci.yml` — YAML structure parsing: each top-level YAML key (`name:`, `on:`, `jobs:`, `env:`) is one item. Within `jobs:`, each job key is a sub-item. The parser preserves YAML indentation and structure when emitting the merged file. Verified: templates/ci.yml.tpl:L1-L8 (relocated from `.claude-plugin/scripts/templates/` per Decision 3) — the current template has top-level keys `name`, `on`, `jobs` and a `<CI_JOBS_SECTION>` placeholder under `jobs:`; the strategy's item parser treats each top-level key as a single item and walks into `jobs:` to enumerate per-job sub-items.
 
 3. **Pass 1 — soundness review before showing the diff (auto-apply).** Run the soundness reviewer (defined in "Soundness review" below) against the merged candidate body. Apply all suggested fixes automatically. The diff that the user sees in step 4 reflects the already-corrected result; the user never sees the pre-correction state. Zero issues → proceed directly to step 4.
 
@@ -690,7 +723,7 @@ The warning is printed inline above the Step 4a batch prompt and does not itself
 
 **`region` error path.** If the diff engine encounters `extension_strategy: "region"` in any manifest, it emits the error `no files use 'region' strategy — did you mean 'owned-regions'?` and aborts classification for that artifact. The artifact is listed in the Step 8 report under "Manifest errors" so the user knows to fix the manifest entry; other artifacts continue to classify normally.
 
-**Pre-existing `section` entries.** For consumer projects that have not yet upgraded their manifest, the diff engine routes `extension_strategy: "section"` to the `owned-regions` apply path via the alias. Behavior is identical; only the deprecation notice is new. Existing `section` entries in `.claude-plugin/bootstrap-manifest.json` for `README.md` and `docs/BEST_PRACTICES.md` are rewritten as part of this RFC's manifest changes (see "Implementation spec" below) so that the plugin itself no longer ships with the legacy strategy.
+**Pre-existing `section` entries.** For consumer projects that have not yet upgraded their manifest, the diff engine routes `extension_strategy: "section"` to the `owned-regions` apply path via the alias. Behavior is identical; only the deprecation notice is new. Existing `section` entries in `bootstrap-manifest.json` (the plugin's own manifest, relocated from `.claude-plugin/bootstrap-manifest.json` per Decision 3) for `README.md` and `docs/BEST_PRACTICES.md` are rewritten as part of this RFC's manifest changes (see "Implementation spec" below) so that the plugin itself no longer ships with the legacy strategy.
 
 ### Diff-engine integration
 
@@ -852,9 +885,45 @@ If the union of all six batched categories is empty (i.e., every artifact classi
 
 ### Exact steps
 
-1. **Edit the manifest.** Open `.claude-plugin/bootstrap-manifest.json`. Apply the nine entry replacements documented under "Exact manifest changes" above (`CLAUDE.md`, `docs/CONTRIBUTING.md`, `docs/ARCHITECTURE.md`, `docs/rfc-process.md`, `.github/PULL_REQUEST_TEMPLATE.md`, `.github/workflows/ci.yml`, `README.md`, `docs/BEST_PRACTICES.md`, and the `.bootstrap-versions.json` relocation). After editing, the `template_sha` for `CLAUDE.md`, `README.md`, `docs/BEST_PRACTICES.md`, and `.github/workflows/ci.yml` is unchanged (no template body changes in this RFC); the `sha256` values for files without a template body are recomputed by step 5 below.
+0. **Restructure the plugin directory layout (Decision 3).** Move files out of `.claude-plugin/` to the plugin root per the official convention, then delete the orphaned `CLAUDE.md`:
 
-2. **Update `.claude-plugin/scripts/templates/.gitignore.tpl`.** Change the existing `.bytewyrd/` line (which ignores the whole folder) to `.bytewyrd/*` plus `!.bytewyrd/.bootstrap-versions.json`. Consumer projects that re-run `/sync` after this RFC ships pick up the updated template via the `structured`-strategy merge of `.gitignore` (the new lines are owned by the `bytewyrd:base` block).
+   ```bash
+   # Move scripts and templates
+   git mv .claude-plugin/scripts/build-manifest.sh scripts/build-manifest.sh
+   git mv .claude-plugin/scripts/templates templates
+
+   # Move hooks
+   git mv .claude-plugin/hooks/hooks.json hooks/hooks.json
+   git mv .claude-plugin/hooks/pre-commit/manifest-check.sh hooks/pre-commit/manifest-check.sh
+   rmdir .claude-plugin/hooks/pre-commit .claude-plugin/hooks .claude-plugin/scripts
+
+   # Move root files
+   git mv .claude-plugin/bootstrap-manifest.json bootstrap-manifest.json
+   git mv .claude-plugin/marketplace.json marketplace.json
+
+   # Delete orphaned file
+   git rm .claude-plugin/CLAUDE.md
+   ```
+
+   After the moves, `.claude-plugin/` contains only `plugin.json`.
+
+   **Update `bootstrap-manifest.json` source paths.** Every `"source": ".claude-plugin/scripts/templates/FILENAME"` entry becomes `"source": "templates/FILENAME"`. The twelve affected entries are: `.bootstrap-versions.json.tpl`, `settings.json.tpl`, `settings.local.json.tpl`, `PULL_REQUEST_TEMPLATE.md.tpl`, `ci.yml.tpl`, `.gitignore.tpl`, `CLAUDE.md.tpl`, `README.md.tpl`, `ARCHITECTURE.md.tpl`, `BEST_PRACTICES.md.tpl`, `CONTRIBUTING.md.tpl`, and `mise.toml.tpl`. The `rfc-process.md` entry already uses `"source": "rfc-process.md"` (no `.claude-plugin/` prefix) and does not change.
+
+   **Update the pre-commit hook symlink instruction.** In `docs/CONTRIBUTING.md`, change the one-time setup command for the pre-commit hook from:
+   ```
+   ln -sf ../../.claude-plugin/hooks/pre-commit/manifest-check.sh .git/hooks/pre-commit
+   ```
+   to:
+   ```
+   ln -sf ../../hooks/pre-commit/manifest-check.sh .git/hooks/pre-commit
+   ```
+   Make the same correction in `CLAUDE.md` if it references the pre-commit hook path.
+
+   Existing contributors must re-run the updated setup command to replace their symlink. The old symlink will silently fail (target no longer exists) until re-created; the pre-commit check simply does not run until then.
+
+1. **Edit the manifest.** Open `bootstrap-manifest.json` (relocated in step 0). Apply the nine strategy-change replacements documented under "Exact manifest changes" above (`CLAUDE.md`, `docs/CONTRIBUTING.md`, `docs/ARCHITECTURE.md`, `docs/rfc-process.md`, `.github/PULL_REQUEST_TEMPLATE.md`, `.github/workflows/ci.yml`, `README.md`, `docs/BEST_PRACTICES.md`, and the `.bootstrap-versions.json` relocation). After editing, the `template_sha` for `CLAUDE.md`, `README.md`, `docs/BEST_PRACTICES.md`, and `.github/workflows/ci.yml` is unchanged (no template body changes in this RFC); the `sha256` values for files without a template body are recomputed by step 5 below.
+
+2. **Update `templates/.gitignore.tpl` (relocated from `.claude-plugin/scripts/templates/` in step 0).** Change the existing `.bytewyrd/` line (which ignores the whole folder) to `.bytewyrd/*` plus `!.bytewyrd/.bootstrap-versions.json`. Consumer projects that re-run `/sync` after this RFC ships pick up the updated template via the `structured`-strategy merge of `.gitignore` (the new lines are owned by the `bytewyrd:base` block).
 
 3. **Remove the `## Project Extensions` section from `docs/rfc-process.md` in the bytewyrd plugin's own checkout.** Delete lines 226-232 inclusive (the `<!-- END_UPSTREAM_CONTENT -->` marker on line 226, the blank line 227, the `---` separator on line 228, the blank line 229, the `## Project Extensions` heading on line 230, the blank line 231, and the placeholder body on line 232). Also delete lines 1-4 inclusive (the `<!-- UPSTREAM: ... -->` comment on line 1, the `<!-- LAST_SYNCED: ... -->` comment on line 2, the explanatory comment about `END_UPSTREAM_CONTENT` on line 3, and the blank line 4). After the edits, line 1 of the file is the H1 `# RFC Process` (currently at line 5). After the edit, the file is the canonical plugin RFC process content with no leader comments and no extension region.
 
@@ -867,9 +936,9 @@ If the union of all six batched categories is empty (i.e., every artifact classi
    - **The Apply actions block** (currently lines 440-456): add five new top-level cases for `additive-merge`, `additive-merge-with-diff`, `bootstrap`, `authoritative`, and `owned-regions`, each documenting their apply step. The `additive-merge` case references the item-by-item algorithm and the single-pass soundness review; the `additive-merge-with-diff` case adds the diff-review prompt and the two-pass soundness review; the `bootstrap` and `authoritative` cases describe the two-line header write (using the `BOOTSTRAP_SECOND_LINE` and `AUTHORITATIVE_SECOND_LINE` constants defined in "Diff-engine integration" above) and the deferred-item bookkeeping for deselected batch items; the `owned-regions` case reuses the existing `section`-apply logic, parameterized by `owned_boundaries`.
    - **Sidecar-path migration in Step 3** (currently SKILL.md L295, L309): replace `.claude/.bootstrap-versions.json` with `.bytewyrd/.bootstrap-versions.json`. Add a migration check at the top of Step 3: if `.claude/.bootstrap-versions.json` exists and `.bytewyrd/.bootstrap-versions.json` does not, copy the contents to the new path and delete the old file. Log the migration in the Step 8 report (`Migrated .bootstrap-versions.json: .claude/ → .bytewyrd/`). Update the per-file references at SKILL.md L557 (sidecar manifest entry description) and L698 (sidecar rewrite step) to the new path.
 
-5. **Regenerate the manifest.** Run `.claude-plugin/scripts/build-manifest.sh` from the repo root (verified: build-manifest.sh:L1-L55 walks the manifest and recomputes `sha256`/`template_sha` for each artifact's source file). Expected stdout: `Regenerated /home/divoxx/code/bytewyrd/claude-bytewyrd/.worktrees/rfc-sync-section-ownership/.claude-plugin/bootstrap-manifest.json`. Expected exit code: `0`.
+5. **Regenerate the manifest.** Run `scripts/build-manifest.sh` from the repo root (relocated from `.claude-plugin/scripts/` in step 0; verified: build-manifest.sh:L1-L55 walks the manifest and recomputes `sha256`/`template_sha` for each artifact's source file). Expected stdout: `Regenerated /home/divoxx/code/bytewyrd/claude-bytewyrd/.worktrees/rfc-sync-section-ownership/bootstrap-manifest.json`. Expected exit code: `0`.
 
-6. **Verify the manifest passes the pre-commit check.** Run `.claude-plugin/scripts/build-manifest.sh --check` (verified: build-manifest.sh:L45-L51 exits non-zero if regenerated output differs from the committed manifest). Expected exit code: `0`. If non-zero, re-run step 5.
+6. **Verify the manifest passes the pre-commit check.** Run `scripts/build-manifest.sh --check` (relocated from `.claude-plugin/scripts/` in step 0; verified: build-manifest.sh:L45-L51 exits non-zero if regenerated output differs from the committed manifest). Expected exit code: `0`. If non-zero, re-run step 5.
 
 7. **Run `/sync` in a consumer project (smoke test).** From a consumer project (the bytewyrd plugin's own worktree at `/home/divoxx/code/bytewyrd/claude-bytewyrd/.worktrees/rfc-sync-section-ownership/` is a valid consumer for testing), invoke `/sync`. Expected classification per file on the first run after this RFC ships:
 
@@ -938,7 +1007,7 @@ The `conflict_legacy` cycle for these files is terminated. The only per-run inte
 
    **Mitigation:** the integrated skill body in step 3 of "Exact steps" above explicitly differentiates the two menus in the Step 4b documentation. The implementation can also factor the option-rendering into two named helpers (`render_file_conflict_menu` and `render_item_contradiction_menu`) so the call sites are unambiguous in code. This is a small refactor, not a structural change.
 
-7. **The manifest pre-commit hook does not validate strategy-specific fields.** `build-manifest.sh --check` (verified: .claude-plugin/scripts/build-manifest.sh:L45-L51) verifies that recorded SHAs match source files. It does not check that `additive-merge` entries have `owned_sections`, that `bootstrap` entries omit `owned_sections`/`owned_paths`/`region_end_marker`, or that `authoritative` entries omit `region_end_marker`. A maintainer who edits the manifest by hand and forgets to remove an obsolete field will see no error.
+7. **The manifest pre-commit hook does not validate strategy-specific fields.** `build-manifest.sh --check` (verified: .claude-plugin/scripts/build-manifest.sh:L45-L51; relocated to `scripts/build-manifest.sh` per Decision 3) verifies that recorded SHAs match source files. It does not check that `additive-merge` entries have `owned_sections`, that `bootstrap` entries omit `owned_sections`/`owned_paths`/`region_end_marker`, or that `authoritative` entries omit `region_end_marker`. A maintainer who edits the manifest by hand and forgets to remove an obsolete field will see no error.
 
    **Mitigation:** extending the pre-commit check to validate per-strategy field requirements is a small follow-up (out of scope here). The first symptom of a malformed manifest is a runtime error during `/sync` classification dispatch, which is loud and immediate; the manifest is a small file and the strategy fields are easy to inspect manually.
 
@@ -961,6 +1030,10 @@ The `conflict_legacy` cycle for these files is terminated. The only per-run inte
 12. **`.bootstrap-versions.json` relocation leaves an orphaned file at the old path.** Existing consumer projects have the sidecar at `.claude/.bootstrap-versions.json`. After this RFC ships, the manifest declares the target at `.bytewyrd/.bootstrap-versions.json` and the `upstream_key` bumps to `@v2` (path changed, requires re-sync). The diff engine treats the new path as a fresh artifact — it does not know that the old path's content is the same sidecar data.
 
     **Mitigation:** the sync skill's Step 3 (post-manifest-load, pre-classification) performs a one-time migration check: if `.claude/.bootstrap-versions.json` exists and `.bytewyrd/.bootstrap-versions.json` does not, the skill copies the contents to the new path and deletes the old file. The migration is logged in the Step 8 report ("Migrated .bootstrap-versions.json: `.claude/` → `.bytewyrd/`") and is idempotent — on every subsequent run, the old path is absent and the migration is a no-op.
+
+13. **Plugin directory restructuring breaks the git pre-commit hook symlink for existing contributors.** The symlink at `.git/hooks/pre-commit` on each contributor's machine currently resolves to `../../.claude-plugin/hooks/pre-commit/manifest-check.sh`. After the directory moves in step 0, that path no longer exists. The symlink becomes dangling and the pre-commit check silently stops running — contributors can commit without the manifest freshness check until they re-create the symlink.
+
+    **Mitigation:** update the one-time setup command in `docs/CONTRIBUTING.md` and `CLAUDE.md` to reference the new path (`../../hooks/pre-commit/manifest-check.sh`) as part of step 0 of the implementation. Include a note in the PR description (or a changelog entry) calling out that existing contributors must re-run the one-time setup command to update their local symlink. The failure mode is silent (no error at commit time — the check simply does not run), so the call-out must be explicit; contributors who miss it will have a passing pre-commit step that does nothing until they update.
 
 ## Relationship to other RFCs
 
