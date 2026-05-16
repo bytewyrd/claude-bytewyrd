@@ -21,6 +21,7 @@ setup() {
   # tests because we only read git config user.name (which we explicitly set
   # per-test as needed).
   git config user.email "test@example.com"
+  git config user.name "Test User"
   git config commit.gpgsign false
   git commit --allow-empty -q -m "init"
 

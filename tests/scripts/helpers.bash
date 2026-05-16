@@ -9,9 +9,9 @@
 # scripts/ via absolute path: bash "$SCRIPT_ROOT/scripts/rfc-resolve.sh"
 
 setup_common() {
-  load "../test_helper/bats-support/load"
-  load "../test_helper/bats-assert/load"
-  load "../test_helper/bats-file/load"
+  load "../bats-support/load"
+  load "../bats-assert/load"
+  load "../bats-file/load"
   # bats-file is now loaded; temp_make is available.
   TEST_TMPDIR="$(temp_make --prefix 'rfc-scripts-test-')"
   export TEST_TMPDIR
