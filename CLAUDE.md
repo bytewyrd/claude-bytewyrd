@@ -34,7 +34,7 @@ claude-bytewyrd/
 | Code reviews | code-reviewer |
 | Refactoring (deliberate) | refactoring-specialist (via `/refactor`) |
 | Architecture / RFCs | rfc-architect |
-| User-facing docs (`docs/guide/**`) | docs-agent (via `/docs-review`) |
+| User-facing docs (`docs/guide/**`, `README.md`) | docs-agent (via `/docs-review`) |
 | General-purpose docs (ad-hoc) | documentation-writer |
 | Claude agent authoring | claude-agent-author |
 | Debugging | debugger |
@@ -161,7 +161,7 @@ Run `/docs-review <scope-hint>` when:
 - A user reports a tutorial does not work, a how-to guide references a missing flag, or a reference page is out of date.
 - Before a release — sweep `docs/guide/**` to confirm no broken examples or stale references ship to users.
 
-`/docs-review` spawns the `docs-agent` subagent on Sonnet. It is scoped strictly to `docs/guide/**` and the contributor section — it never touches `docs/ARCHITECTURE.md`, `docs/CONTRIBUTING.md`, `docs/BEST_PRACTICES.md`, `docs/project-brief.md`, or anything under `docs/rfcs/`. Those files have separate owners.
+`/docs-review` spawns the `docs-agent` subagent on Sonnet. It is scoped to `docs/guide/**`, the contributor section, and `README.md` (bootstrap-once: written by `/sync` at project creation, then project-owned) — it never touches `docs/ARCHITECTURE.md`, `docs/CONTRIBUTING.md`, `docs/BEST_PRACTICES.md`, `docs/project-brief.md`, or anything under `docs/rfcs/`. Those files have separate owners.
 
 The skill enforces a seven-phase protocol: resolve scope → coverage audit → drift detection → plan → **approval gate** → apply → report. The approval gate stops the subagent before any mutation; review the plan, approve specific findings, and the subagent applies them one commit at a time.
 

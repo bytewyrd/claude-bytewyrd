@@ -719,7 +719,7 @@ The `rfc-process.md` source (`bytewyrd/docs/rfc-process.md@v1`) is read directly
   - Go: `| golang-pro | Go-specific code |`
   - Python: `| python-pro | Python-specific code |`
   - Shell/Infra: terraform-engineer, kubernetes-specialist, cloud-architect, sre-engineer
-  - Always: feature-engineer (new features), code-reviewer (code reviews), rfc-architect (architecture/RFCs), documentation-writer (docs), debugger (debugging)
+  - Always: feature-engineer (new features), code-reviewer (code reviews), rfc-architect (architecture/RFCs), docs-agent via `/docs-review` (`docs/guide/**` and `README.md`), documentation-writer (ad-hoc docs outside `docs/guide/**`), debugger (debugging)
 
 - `<TOOL_USAGE_SECTION>`: build from installed tools. Exa and Firefox MCP are unconditional. Context7 only if `context7@claude-plugins-official` is installed. If none installed, omit the `## Tool Usage` section entirely.
 
