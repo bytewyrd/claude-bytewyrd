@@ -2,7 +2,7 @@
   "artifacts": [
     {
       "upstream_key": "bytewyrd/.claude/.bootstrap-versions.json@v1",
-      "source": ".claude-plugin/scripts/templates/.bootstrap-versions.json.tpl",
+      "source": "templates/.bootstrap-versions.json.tpl",
       "target": ".claude/.bootstrap-versions.json",
       "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
       "extension_strategy": "whole",
@@ -10,7 +10,7 @@
     },
     {
       "upstream_key": "bytewyrd/.claude/settings.json@v1",
-      "source": ".claude-plugin/scripts/templates/settings.json.tpl",
+      "source": "templates/settings.json.tpl",
       "target": ".claude/settings.json",
       "template_sha": "c7540e89943605c6f192dec854430afbde23cb67ee74d04b592207d5d12b5c55",
       "extension_strategy": "structured",
@@ -33,7 +33,7 @@
     },
     {
       "upstream_key": "bytewyrd/.claude/settings.local.json@v1",
-      "source": ".claude-plugin/scripts/templates/settings.local.json.tpl",
+      "source": "templates/settings.local.json.tpl",
       "target": ".claude/settings.local.json",
       "template_sha": "",
       "extension_strategy": "structured",
@@ -47,7 +47,7 @@
     },
     {
       "upstream_key": "bytewyrd/.github/PULL_REQUEST_TEMPLATE.md@v1",
-      "source": ".claude-plugin/scripts/templates/PULL_REQUEST_TEMPLATE.md.tpl",
+      "source": "templates/PULL_REQUEST_TEMPLATE.md.tpl",
       "target": ".github/PULL_REQUEST_TEMPLATE.md",
       "sha256": "250662b840027cd82490e597996cebf9ce77055014c0bb54dd3bbb1e6db42ac8",
       "extension_strategy": "whole",
@@ -55,7 +55,7 @@
     },
     {
       "upstream_key": "bytewyrd/.github/workflows/ci.yml@v1",
-      "source": ".claude-plugin/scripts/templates/ci.yml.tpl",
+      "source": "templates/ci.yml.tpl",
       "target": ".github/workflows/ci.yml",
       "template_sha": "cdd7c920475280a2134dd186a732f229fe0230084ba0b2ee6ec45186229f93b2",
       "extension_strategy": "whole",
@@ -67,7 +67,7 @@
     },
     {
       "upstream_key": "bytewyrd/.gitignore@v1",
-      "source": ".claude-plugin/scripts/templates/.gitignore.tpl",
+      "source": "templates/.gitignore.tpl",
       "target": ".gitignore",
       "sha256": "3a5929ed8d1c871cf94abc210cf435089b2d199355590c78ef426605a1ea5518",
       "extension_strategy": "structured",
@@ -78,7 +78,7 @@
     },
     {
       "upstream_key": "bytewyrd/CLAUDE.md@v1",
-      "source": ".claude-plugin/scripts/templates/CLAUDE.md.tpl",
+      "source": "templates/CLAUDE.md.tpl",
       "target": "CLAUDE.md",
       "template_sha": "0993a89ec9e87cfa7d01eafd93b2e307eaf16d30ab8cb085e2351e1fe0614f67",
       "extension_strategy": "section",
@@ -106,7 +106,7 @@
     },
     {
       "upstream_key": "bytewyrd/README.md@v1",
-      "source": ".claude-plugin/scripts/templates/README.md.tpl",
+      "source": "templates/README.md.tpl",
       "target": "README.md",
       "template_sha": "efd02c9f1d3e8860f3eaf2f94150a8abe9a7e72d1cb0b1f7b0bdb877f528f52b",
       "extension_strategy": "section",
@@ -125,7 +125,7 @@
     },
     {
       "upstream_key": "bytewyrd/docs/ARCHITECTURE.md@v1",
-      "source": ".claude-plugin/scripts/templates/ARCHITECTURE.md.tpl",
+      "source": "templates/ARCHITECTURE.md.tpl",
       "target": "docs/ARCHITECTURE.md",
       "sha256": "6e7f1602bba0139dd87dd168eb8d09d059d0eb9d007d1e2f4a8c85eb7b5c55a8",
       "extension_strategy": "whole",
@@ -133,7 +133,7 @@
     },
     {
       "upstream_key": "bytewyrd/docs/BEST_PRACTICES.md@v1",
-      "source": ".claude-plugin/scripts/templates/BEST_PRACTICES.md.tpl",
+      "source": "templates/BEST_PRACTICES.md.tpl",
       "target": "docs/BEST_PRACTICES.md",
       "template_sha": "143d5240f6e53e3cb61873935a182d3425cefbaae3fe8999745fe0dce7291a16",
       "extension_strategy": "section",
@@ -170,7 +170,7 @@
     },
     {
       "upstream_key": "bytewyrd/docs/CONTRIBUTING.md@v1",
-      "source": ".claude-plugin/scripts/templates/CONTRIBUTING.md.tpl",
+      "source": "templates/CONTRIBUTING.md.tpl",
       "target": "docs/CONTRIBUTING.md",
       "sha256": "76fc00220ae50d664b49ec3d2a36b87ccd841627f1febe1ecdd565766272a4e9",
       "extension_strategy": "whole",
@@ -187,7 +187,7 @@
     },
     {
       "upstream_key": "bytewyrd/mise.toml@v1",
-      "source": ".claude-plugin/scripts/templates/mise.toml.tpl",
+      "source": "templates/mise.toml.tpl",
       "target": "mise.toml",
       "template_sha": "8ae46e038f0fd4d80c30849b4710a60ceeb3493916b3c525d98885c60cb9f599",
       "extension_strategy": "structured",

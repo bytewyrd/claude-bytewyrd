@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Regenerate .claude-plugin/bootstrap-manifest.json from current artifact content.
+# Regenerate bootstrap-manifest.json from current artifact content.
 # Usage: build-manifest.sh           — regenerate in place
 #        build-manifest.sh --check    — exit non-zero if regenerated differs from committed
 set -euo pipefail
 
 PLUGIN_ROOT="$(git rev-parse --show-toplevel)"
-MANIFEST="$PLUGIN_ROOT/.claude-plugin/bootstrap-manifest.json"
+MANIFEST="$PLUGIN_ROOT/bootstrap-manifest.json"
 TMP="$(mktemp)"
 trap 'rm -f "$TMP"' EXIT
 
@@ -44,7 +44,7 @@ jq -c '.artifacts[]' "$MANIFEST" \
 
 if [[ "${1:-}" == "--check" ]]; then
   if ! diff -q "$MANIFEST" "$TMP" >/dev/null; then
-    echo "bootstrap-manifest.json is stale; run .claude-plugin/scripts/build-manifest.sh to regenerate." >&2
+    echo "bootstrap-manifest.json is stale; run scripts/build-manifest.sh to regenerate." >&2
     diff "$MANIFEST" "$TMP" >&2 || true
     exit 1
   fi
