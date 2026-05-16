@@ -92,6 +92,8 @@ teardown() {
   assert_equal "$(echo "$output" | jq -r '.docs_agent_drifted | type')" "boolean"
   # New fields introduced by preflight consolidation:
   assert_equal "$(echo "$output" | jq -r 'has("plugin_root")')" "true"
+  assert_equal "$(echo "$output" | jq -r 'has("plugin_version")')" "true"
+  assert_equal "$(echo "$output" | jq -r '.plugin_version | type')" "string"
   assert_equal "$(echo "$output" | jq -r 'has("sidecar_migrated")')" "true"
   assert_equal "$(echo "$output" | jq -r 'has("sidecar_message")')" "true"
   assert_equal "$(echo "$output" | jq -r '.sidecar_migrated | type')" "boolean"

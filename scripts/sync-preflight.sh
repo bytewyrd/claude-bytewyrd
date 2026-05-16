@@ -45,6 +45,7 @@
 #       "project_docs_ver":       "<version string or empty>",
 #       "docs_agent_drifted":     <bool>,
 #       "plugin_root":            "<abs path to plugin checkout>",
+#       "plugin_version":         "<semver string or empty>",
 #       "sidecar_migrated":       <bool>,
 #       "sidecar_message":        "<human-readable migration result>",
 #       "languages":              ["rust", "js", ...],
@@ -213,6 +214,13 @@ if ! find_plugin_root; then
 fi
 # find_plugin_root sets PLUGIN_ROOT, PLUGIN_MANIFEST, PLUGIN_SOURCE.
 
+# Plugin version: read from .claude-plugin/plugin.json inside the resolved root.
+plugin_version=""
+plugin_json="$PLUGIN_ROOT/.claude-plugin/plugin.json"
+if [ -f "$plugin_json" ]; then
+  plugin_version="$(jq -r '.version // ""' "$plugin_json" 2>/dev/null || echo "")"
+fi
+
 # --- Sidecar migration (one-time move) ---
 # Inline rather than calling scripts/sync-sidecar-migrate.sh: there is exactly
 # one in-process caller (this script) that benefits from the consolidation,
@@ -260,6 +268,7 @@ jq -n \
   --arg project_docs_ver "$project_docs_ver" \
   --argjson docs_agent_drifted "$docs_agent_drifted" \
   --arg plugin_root "$PLUGIN_ROOT" \
+  --arg plugin_version "$plugin_version" \
   --argjson sidecar_migrated "$sidecar_migrated" \
   --arg sidecar_message "$sidecar_message" \
   --argjson languages "$DL_LANGUAGES" \
@@ -287,6 +296,7 @@ jq -n \
     project_docs_ver: $project_docs_ver,
     docs_agent_drifted: $docs_agent_drifted,
     plugin_root: $plugin_root,
+    plugin_version: $plugin_version,
     sidecar_migrated: $sidecar_migrated,
     sidecar_message: $sidecar_message,
     languages: $languages,
