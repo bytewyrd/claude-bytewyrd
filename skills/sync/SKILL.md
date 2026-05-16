@@ -24,7 +24,7 @@ When `docs/project-brief.md` already exists with complete identity *and* all plu
 Run the consolidated deterministic-phase script **exactly once** and write its output to a session file:
 
 ```bash
-bash scripts/sync-run.sh > /tmp/bytewyrd-sync-data.json && \
+bash scripts/sync-run.sh > $TMPDIR/bytewyrd-sync-data.json && \
 jq -r '
   "REPO_ROOT="          + .preflight.repo_root,
   "GIT_USER="           + .preflight.git_user,
@@ -48,12 +48,12 @@ jq -r '
   "MISSING_CRITICAL="   + (.preflight.missing_critical | tostring),
   "MISSING_RECOMMENDED="+ (.preflight.missing_recommended | tostring),
   "CLASSIFICATIONS_COUNT=" + (.classifications | length | tostring)
-' /tmp/bytewyrd-sync-data.json
+' $TMPDIR/bytewyrd-sync-data.json
 ```
 
 If `sync-run.sh` exits non-zero, stop immediately — it has already printed the relevant error to stderr. The error is self-explanatory; no further wrapping needed.
 
-**Do not re-run `sync-run.sh` in any subsequent step.** All data for Steps 2–8 comes from `/tmp/bytewyrd-sync-data.json`. Use `jq <filter> /tmp/bytewyrd-sync-data.json` whenever you need a field not printed above (e.g., `jq '.preflight.languages' /tmp/bytewyrd-sync-data.json` or `jq '.classifications[] | select(.classification != "unchanged")' /tmp/bytewyrd-sync-data.json`).
+**Do not re-run `sync-run.sh` in any subsequent step.** All data for Steps 2–8 comes from `$TMPDIR/bytewyrd-sync-data.json`. Use `jq <filter> $TMPDIR/bytewyrd-sync-data.json` whenever you need a field not printed above (e.g., `jq '.preflight.languages' $TMPDIR/bytewyrd-sync-data.json` or `jq '.classifications[] | select(.classification != "unchanged")' $TMPDIR/bytewyrd-sync-data.json`).
 
 The script also writes `.bytewyrd/docs-agent-version` as a side effect when the plugin's docs-agent version differs from the project's recorded version — no separate Step 1.5 logic is required in the skill.
 
@@ -203,8 +203,8 @@ The brief file is written in Step 5 — not here — so that `/sync` writes all 
 Language detection ran in Step 1. The `HAS_*` flags were printed in the Step 1 output. `LANGUAGES` and `COMPONENT_ROOTS` are available from the session file:
 
 ```bash
-jq '.preflight.languages' /tmp/bytewyrd-sync-data.json
-jq '.preflight.component_roots' /tmp/bytewyrd-sync-data.json
+jq '.preflight.languages' $TMPDIR/bytewyrd-sync-data.json
+jq '.preflight.component_roots' $TMPDIR/bytewyrd-sync-data.json
 ```
 
 `COMPONENT_ROOTS` is a list of `{ language, path, name }` entries with these rules baked into the script:
@@ -226,7 +226,7 @@ This step replaces the former "Print creation summary." It runs the pre-flight d
 
 ### Pre-flight diff procedure
 
-`PLUGIN_ROOT` was printed by Step 1. If needed: `jq -r '.preflight.plugin_root' /tmp/bytewyrd-sync-data.json`.
+`PLUGIN_ROOT` was printed by Step 1. If needed: `jq -r '.preflight.plugin_root' $TMPDIR/bytewyrd-sync-data.json`.
 
 Read the manifest at `$PLUGIN_ROOT/bootstrap-manifest.json`. Also read the sidecar at `.bytewyrd/.bootstrap-versions.json` (treat as `{}` if absent).
 
@@ -235,7 +235,7 @@ Read the manifest at `$PLUGIN_ROOT/bootstrap-manifest.json`. Also read the sidec
 `CLASSIFICATIONS` comes from the session file written in Step 1 — no second bash call to `sync-run.sh` is needed:
 
 ```bash
-jq '.classifications' /tmp/bytewyrd-sync-data.json
+jq '.classifications' $TMPDIR/bytewyrd-sync-data.json
 ```
 
 Each element includes the manifest entry fields (`upstream_key`, `source`, `templated`, `owned_paths`, `owned_boundaries`, `owned_sections`) merged with the classification result (`classification`, `strategy`, `target`, `recorded_sha`, `plugin_sha`, `chunks`). Parse `.classification` for the verdict; `.recorded_sha` and `.plugin_sha` are surfaced for Steps 4b/4c prompts; `.chunks` drives the per-file chunk detail in the summary.
