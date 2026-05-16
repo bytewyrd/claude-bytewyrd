@@ -74,9 +74,18 @@
 #   canonical SHA into the marker.
 
 set -uo pipefail
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=_lib/common.bash
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib/common.bash"
+source "$script_dir/_lib/common.bash"
+# shellcheck source=_lib/chunks.bash
+source "$script_dir/_lib/chunks.bash"
 require_jq
+
+# Detect whether a target path is a .gitignore-style target — controls the
+# chunk-extraction branch under the structured strategy.
+is_gitignore_target() {
+  case "$1" in *.gitignore|*/.gitignore|.gitignore) return 0 ;; *) return 1 ;; esac
+}
 
 if [ "${1:-}" = "" ] || [ "${2:-}" = "" ] || [ "${3:-}" = "" ]; then
   emit_error "usage: sync-classify.sh <manifest-entry-json|-> <target-path> <plugin-root>"
@@ -112,7 +121,8 @@ emit() {
   local classification="$1"
   local recorded_sha="${2:-null}"
   local plugin_sha="${3:-null}"
-  local args=( --arg classification "$classification" --arg strategy "$strategy" --arg target "$target" )
+  local chunks_json="${4:-[]}"
+  local args=( --arg classification "$classification" --arg strategy "$strategy" --arg target "$target" --argjson chunks "$chunks_json" )
   local filter='{classification: $classification, strategy: $strategy, target: $target'
   if [ "$recorded_sha" = "null" ]; then
     filter+=', recorded_sha: null'
@@ -121,16 +131,16 @@ emit() {
     filter+=', recorded_sha: $recorded'
   fi
   if [ "$plugin_sha" = "null" ]; then
-    filter+=', plugin_sha: null}'
+    filter+=', plugin_sha: null'
   else
     args+=( --arg plugin "$plugin_sha" )
-    filter+=', plugin_sha: $plugin}'
+    filter+=', plugin_sha: $plugin'
   fi
+  filter+=', chunks: $chunks}'
   jq -n "${args[@]}" "$filter"
 }
 
 # Helper: read marker sha from a file via the sister script.
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 read_marker_sha() {
   local f="$1"
   if [ ! -f "$f" ]; then
@@ -231,31 +241,53 @@ case "$strategy" in
       exit 2
     fi
     plugin_sha="$(canonical_sha "$strategy" "$plugin_source")"
+
+    # Compute the per-chunk array for display. Chunks are only meaningful when
+    # both target and plugin source exist; for the `add` case (no target file)
+    # we pass `[]` since the entire plugin file is new content.
+    chunks="[]"
+    if [ -f "$target" ] && [ -f "$plugin_source" ]; then
+      case "$strategy" in
+        owned-regions|section)
+          boundaries="$(echo "$manifest_json" | jq -c '.owned_boundaries // []')"
+          chunks="$(owned_regions_chunks "$boundaries" "$target" "$plugin_source")"
+          ;;
+        structured)
+          paths="$(echo "$manifest_json" | jq -c '.owned_paths // []')"
+          if is_gitignore_target "$target"; then
+            chunks="$(gitignore_chunks "$paths" "$target" "$plugin_source")"
+          else
+            chunks="$(json_dotpath_chunks "$paths" "$target" "$plugin_source")"
+          fi
+          ;;
+      esac
+    fi
+
     if [ ! -f "$target" ]; then
-      emit "add" "null" "$plugin_sha"
+      emit "add" "null" "$plugin_sha" "[]"
     else
       local_sha="$(canonical_sha "$strategy" "$target")"
       recorded="$(read_marker_sha "$target")"
       if [ -z "$recorded" ]; then
         # legacy file (no marker yet)
         if [ "$local_sha" = "$plugin_sha" ]; then
-          emit "unchanged_legacy" "null" "$plugin_sha"
+          emit "unchanged_legacy" "null" "$plugin_sha" "$chunks"
         else
-          emit "conflict_legacy" "null" "$plugin_sha"
+          emit "conflict_legacy" "null" "$plugin_sha" "$chunks"
         fi
       else
         # marker present
         if [ "$recorded" = "$plugin_sha" ]; then
-          emit "unchanged" "$recorded" "$plugin_sha"
+          emit "unchanged" "$recorded" "$plugin_sha" "$chunks"
         elif [ "$local_sha" = "$recorded" ] && [ "$plugin_sha" != "$recorded" ]; then
-          emit "fast_forward" "$recorded" "$plugin_sha"
+          emit "fast_forward" "$recorded" "$plugin_sha" "$chunks"
         elif [ "$local_sha" != "$recorded" ] && [ "$plugin_sha" = "$recorded" ]; then
-          emit "local_only" "$recorded" "$plugin_sha"
+          emit "local_only" "$recorded" "$plugin_sha" "$chunks"
         elif [ "$local_sha" = "$plugin_sha" ]; then
           # all differ but local == plugin: converged
-          emit "unchanged" "$recorded" "$plugin_sha"
+          emit "unchanged" "$recorded" "$plugin_sha" "$chunks"
         else
-          emit "conflict" "$recorded" "$plugin_sha"
+          emit "conflict" "$recorded" "$plugin_sha" "$chunks"
         fi
       fi
     fi

@@ -19,14 +19,6 @@
       ]
     },
     {
-      "upstream_key": "bytewyrd/.claude/settings.local.json@v1",
-      "source": "templates/settings.local.json.tpl",
-      "target": ".claude/settings.local.json",
-      "sha256": "253fd0f10cb62eaa0efbdb3393206dd3f2a3d7404dea397d732e520cf07de552",
-      "extension_strategy": "bootstrap",
-      "templated": false
-    },
-    {
       "upstream_key": "bytewyrd/.github/PULL_REQUEST_TEMPLATE.md@v1",
       "source": "templates/PULL_REQUEST_TEMPLATE.md.tpl",
       "target": ".github/PULL_REQUEST_TEMPLATE.md",
