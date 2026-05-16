@@ -274,6 +274,11 @@ owned_regions_chunks() {
       | jq --arg h "$heading" '. + [$h]' 2>/dev/null)" || owned_headings_json="[]"
 
     local_body="$(_owned_region_body "$heading" "$local_file" 2>/dev/null)" || local_body=""
+    # If the section is absent from the local file, skip it — we can't compare
+    # it against the plugin source (which may be a raw .tpl with template syntax).
+    # The apply step handles addition correctly via the rendered template.
+    [ -z "$local_body" ] && continue
+
     plugin_body="$(_owned_region_body "$heading" "$plugin_file" 2>/dev/null)" || plugin_body=""
 
     if [ "$local_body" = "$plugin_body" ]; then

@@ -63,3 +63,33 @@ teardown() {
   assert_failure
   rm -rf "$tmp_dir"
 }
+
+@test "success — output includes brief_complete, rfc_process, summary_text" {
+  run bash "$SCRIPT"
+  assert_success
+  run bash -c "echo '$output' | jq -e 'has(\"brief_complete\") and has(\"rfc_process\") and has(\"summary_text\")'"
+  assert_success
+}
+
+@test "success — brief_complete is false when docs/project-brief.md is absent" {
+  run bash "$SCRIPT"
+  assert_success
+  run bash -c "echo '$output' | jq -e '.brief_complete == false'"
+  assert_success
+}
+
+@test "success — brief_complete is true when brief has real name and description" {
+  mkdir -p docs
+  printf '# My Project\n\n## Description\n\nA real project description.\n' > docs/project-brief.md
+  run bash "$SCRIPT"
+  assert_success
+  run bash -c "echo '$output' | jq -e '.brief_complete == true'"
+  assert_success
+}
+
+@test "success — summary_text starts with /sync" {
+  run bash "$SCRIPT"
+  assert_success
+  run bash -c "echo '$output' | jq -r '.summary_text' | head -1"
+  assert_output "/sync — change summary:"
+}
