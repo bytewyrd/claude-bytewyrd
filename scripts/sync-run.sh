@@ -75,7 +75,7 @@ partial_json="$(jq -n \
 
 summary_text=""
 summary_text="$(printf '%s' "$partial_json" \
-  | python3 "$SCRIPT_DIR/sync-summary.py" 2>/dev/null \
+  | bash "$SCRIPT_DIR/sync-summary.sh" 2>/dev/null \
   || echo "(summary generation failed)")"
 
 # --- Combine and emit ---
