@@ -16,6 +16,20 @@ Append a single, user-confirmed best-practice entry to the **global** `~/.claude
 
 Both skills run the same triage-and-lift procedure (see `../best-practices-extract/TRIAGE-AND-LIFT.md`), so the resulting entry has the same quality bar regardless of which path produced it. The confirmation UX is also aligned: in `record` the user confirms a one-row checkbox; in `extract` the user confirms a multi-row checkbox. Both surface the agent's recommendation (checked vs. unchecked) based on the triage result.
 
+## Preflight
+
+Run once at the start and store the output — subsequent steps reference it instead of reading files manually:
+
+```bash
+BP_PREFLIGHT="$(bash scripts/best-practices-preflight.sh)"
+```
+
+The JSON contains:
+- `project_file_exists`, `project_sections`, `project_entries` — state of `docs/BEST_PRACTICES.md`
+- `global_file_exists`, `global_has_rationale`, `global_sections`, `global_entries` — state of `~/.claude/BEST_PRACTICES.md`
+- `claude_md_has_ref` — whether `CLAUDE.md` already references `BEST_PRACTICES.md`
+- `gh_available`, `gh_result` — gh CLI state (not used by this skill, but present for consistency)
+
 ## Inputs
 
 The user invokes this skill with a single sentence or short paragraph stating the practice. If the invocation lacks the practice text, ask: "What is the best practice to record?" — wait for the answer before proceeding.
@@ -111,15 +125,9 @@ recommendation tag. The user either accepts the recommendation (single confirm) 
   If this is a project-specific learning, consider using `/best-practices-extract` instead to
   route it to the project's `docs/BEST_PRACTICES.md`."
 
-## Write Format
+## Label Table
 
-Format matches `best-practices-extract`:
-
-```markdown
-- _<Category>_: One or two sentences max.
-```
-
-The italic category label uses a canonical abbreviated form for each section header — never the verbatim header text. Use this table:
+The italic category label uses a canonical abbreviated form for each section header:
 
 | Section header | Italic label to use |
 |---|---|
@@ -138,51 +146,30 @@ The italic category label uses a canonical abbreviated form for each section hea
 | `## Python` | `_Python_` |
 | `## Ruby` | `_Ruby_` |
 | `## Rails` | `_Rails_` |
-| `## Kubernetes / CUE / kapply` | `_K8s_`, `_K8s/CUE_`, or `_kapply_` (use `_K8s_` for general Kubernetes best-practices — scheduling, security, probes, namespaces; use `_K8s/CUE_` for CUE-schema and manifest-rendering topics; use `_kapply_` for kapply-tool-specific behavior) |
-| `## Terraform / Terragrunt` | `_Terraform_` or `_Terragrunt_` (use the specific tool the entry applies to) |
+| `## Kubernetes / CUE / kapply` | `_K8s_`, `_K8s/CUE_`, or `_kapply_` |
+| `## Terraform / Terragrunt` | `_Terraform_` or `_Terragrunt_` |
 
-Using the verbatim header (e.g., `_JavaScript / TypeScript_`) instead of the canonical abbreviation (`_JS/TS_`) breaks the dedup logic in `best-practices-sync` — the existing sync entries use the abbreviated forms.
+Using the verbatim header (e.g., `_JavaScript / TypeScript_`) instead of the canonical abbreviation (`_JS/TS_`) breaks the dedup logic in `best-practices-sync`.
 
-## File Bootstrap
+## Write Step
 
-If `~/.claude/BEST_PRACTICES.md` does not exist, create it with this header before appending:
+After the user confirms the checkbox checked, write the entry via script — do not use Read/Write/Edit tools for file IO:
 
-```markdown
-# Global Best Practices
-
-## Where do entries live, and why?
-
-This file is the **global cross-project pool**. It accumulates engineering principles that should
-ship with every future project — captured deliberately (via `/best-practices-record`) or promoted
-from a project's `docs/BEST_PRACTICES.md` (via the per-entry promotion prompt in
-`/best-practices-extract`). The quality bar here is intentionally higher than any project file's:
-every entry must have passed the three portability questions (framework / project / audience)
-defined in the shared `TRIAGE-AND-LIFT.md` procedure.
-
-| File | Scope | Source | Path of entries from here |
-|---|---|---|---|
-| `~/.claude/BEST_PRACTICES.md` (this file) | Cross-project | User statement OR project promotion | `/best-practices-sync` lifts vetted subset into `skills/sync/SKILL.md` |
-| `<project>/docs/BEST_PRACTICES.md` | Per-project | Session extraction | Generalizable entries may be promoted here via `/best-practices-extract`'s prompt |
-| `skills/sync/SKILL.md` (bootstrap content) | Distributed | `/best-practices-sync` from this file | Renders into every new project's starter `docs/BEST_PRACTICES.md` at `/sync` time |
-
-Project-specific entries (those that fail any portability question) never reach this file by
-design — they live only in the source project's `## Project-Specific` section.
-
-Format matches `best-practices-extract`:
-
-```markdown
-- _<Category>_: One or two sentences max.
+```bash
+echo '<JSON>' | python3 scripts/best-practices-write.py
 ```
 
-If the target section header (`## <Category>`) does not exist, append it (with a blank line before) before writing the entry.
+JSON shape:
+```json
+{
+  "global_entries": [{"section": "<Section>", "label": "<label>", "text": "<entry text>"}],
+  "project_entries": [],
+  "write_sentinel": false,
+  "patch_claude_md": false
+}
+```
 
-**Header backfill for existing global files.** If the file exists but its top-of-file lacks the
-"## Where do entries live, and why?" header (any global file created before this RFC), insert the
-rationale block (everything from `## Where do entries live, and why?` through the line ending
-`Format: _Category_: Concise statement...`) immediately after the existing H1 (`# Global Best
-Practices` or whatever H1 the file already has) and before the first H2. Do not modify any
-existing entries. Run the backfill check on every invocation — it is idempotent (the block is
-either present or absent; presence skips the backfill).
+The script handles: global file bootstrap (creates `~/.claude/BEST_PRACTICES.md` with the rationale header if absent), rationale block backfill for existing files missing it, section creation if needed, and entry append. Output is JSON — report `errors` to the user if non-empty.
 
 ## Red Flags — Stop and Reconsider
 
@@ -190,4 +177,4 @@ either present or absent; presence skips the backfill).
 - The statement is project-specific ("our deploy script does X") → handled by the Triage Step refusal above, but if it slips through Triage, refuse here too.
 - The statement is a library quirk ("the K8s HPA controller does X") → that's library documentation; suggest looking it up via Context7 / Exa instead of recording.
 - The lifted version differs from the original only in cosmetic ways (whitespace, capitalization) → the lift didn't actually change anything; either the original was already lifted, or Pass 1 missed identifiers. Re-check.
-- A near-duplicate already exists under the target section → present the existing entry and ask whether to replace, append, or skip.
+- A near-duplicate already exists under the target section → scan `BP_PREFLIGHT.global_entries` for similar text, present the matching entry, and ask whether to replace, append, or skip.

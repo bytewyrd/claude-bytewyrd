@@ -5,18 +5,21 @@ description: Use at the end of a meaningful session to extract non-obvious learn
 
 # Extract Best Practices
 
-## Requirement check
+## Preflight
 
-This skill optionally enriches its output with PR context from the GitHub CLI. The CLI is a soft dependency:
+Run once at the start and store the output — subsequent steps reference it instead of reading files manually:
 
 ```bash
-result="$(bash scripts/tool-probe.sh gh)"; gh_status=$?
-gh_result="$(printf '%s' "$result" | jq -r .result)"
+BP_PREFLIGHT="$(bash scripts/best-practices-preflight.sh)"
 ```
 
-- `gh_status=0` (and `$gh_result` = `available`) → use `gh` for PR context as designed.
-- `gh_status=1` and `$gh_result` = `missing` → print exactly: `gh CLI not on PATH — extracting without PR context.` and continue. (Use `printf '%s' "$result" | jq -r .hint` if a longer remediation hint is needed.)
-- `gh_status=1` and `$gh_result` = `unauthenticated` → print exactly: `gh CLI not logged in — extracting without PR context.` and continue.
+The JSON contains file state (`project_file_exists`, `project_sections`, `project_entries`, `global_file_exists`, `global_sections`, `global_entries`, `claude_md_has_ref`) and gh availability (`gh_available`, `gh_result`).
+
+**gh handling** (soft dependency):
+
+- `BP_PREFLIGHT.gh_result = "available"` → use `gh` for PR context as designed.
+- `BP_PREFLIGHT.gh_result = "missing"` → print exactly: `gh CLI not on PATH — extracting without PR context.` and continue.
+- `BP_PREFLIGHT.gh_result = "unauthenticated"` → print exactly: `gh CLI not logged in — extracting without PR context.` and continue.
 
 The skill must not fail or block on this missing dependency; it must produce its primary output regardless.
 
@@ -72,11 +75,10 @@ For candidates that failed triage:
 
 After triage, apply these additional skip filters to *generalizable* candidates only (project-specific candidates have their own routing above):
 
-- Already documented in `CLAUDE.md`, `BEST_PRACTICES.md`, or a code comment
+- Already documented — scan `BP_PREFLIGHT.project_entries` and `BP_PREFLIGHT.global_entries` for matching content; also check `CLAUDE.md` and inline code comments
 - Technology behavior that belongs in library docs, not project conventions (K8s quirks, serde edge cases, API semantics — look these up, don't memorize them here)
 - One-off (environment setup, temporary workaround, single-use debugging step)
 - Inferrable by reading the code for 5 minutes
-- Already covered by an existing entry in `~/.claude/BEST_PRACTICES.md` or the project's `docs/BEST_PRACTICES.md`
 
 If nothing passes triage and filtering, say so — "Nothing new to capture this session." Do not pad.
 
@@ -181,16 +183,36 @@ Specific`), skip the Promotion Step entirely.
 
 ### Writing the entries
 
-For every row the user confirmed checked, write the entry to *both* the project file (the
-already-planned write) and `~/.claude/BEST_PRACTICES.md`. Write order is project-first,
-global-second across the whole batch:
+After the Promotion Step checkbox is confirmed, write all approved entries in one script call — do not use Read/Write/Edit tools for file IO:
 
-1. Write all approved entries (regardless of promotion state) to `docs/BEST_PRACTICES.md` in
-   their respective destination sections.
-2. After the project-file write succeeds, write each promoted entry (same lifted text, same
-   canonical category label) to `~/.claude/BEST_PRACTICES.md` in the matching section.
+```bash
+echo '<JSON>' | python3 scripts/best-practices-write.py
+```
 
-If the global write fails, report the error to the user with this exact message:
+Build the JSON from the approved entry sets:
+
+```json
+{
+  "project_entries": [
+    {"section": "<Section>", "label": "<label>", "text": "<entry text>"},
+    {"section": "Project-Specific", "label": "_Project-Specific_", "text": "<entry text>"}
+  ],
+  "global_entries": [
+    {"section": "<Section>", "label": "<label>", "text": "<entry text>"}
+  ],
+  "write_sentinel": true,
+  "patch_claude_md": true
+}
+```
+
+- `project_entries` = all approved entries (generalizable + project-specific, regardless of promotion).
+- `global_entries` = only entries the user left checked in the Promotion Step bulk checkbox.
+- `write_sentinel: true` — script writes `.bytewyrd/precompact-extraction-done`.
+- `patch_claude_md: true` — script adds the `BEST_PRACTICES.md` reference to `CLAUDE.md` if absent.
+
+The script handles: project file creation, global file bootstrap (with rationale header) and rationale backfill for older files, section creation, entry append, sentinel, and CLAUDE.md patch — all in the correct project-first order. Read the `errors` array from the output and report any failures to the user.
+
+If global write fails, report:
 
 ```
 Wrote N entries to docs/BEST_PRACTICES.md (succeeded).
@@ -198,26 +220,12 @@ Failed to write M entries to ~/.claude/BEST_PRACTICES.md: <error>.
 
 The project file is up to date. Re-run /best-practices-record for the affected entries:
   - <entry 1>
-  - <entry 2>
-  ...
 ```
-
-The reverse ordering (global-first, project-second) is wrong — a successful global write paired
-with a failed project write would leave the entry promoted but unrecorded in its source project.
 
 ### Project-specific entries
 
-Entries triaged as `## Project-Specific` do not appear in the checkbox list. They are not
-eligible for promotion (the global pool admits only generalizable entries — see
-`TRIAGE-AND-LIFT.md`).
-
-### Global file bootstrap
-
-If `~/.claude/BEST_PRACTICES.md` does not exist, create it with the header block defined in
-`skills/best-practices-record/SKILL.md`'s "File Bootstrap" section. If the file exists but
-lacks the "Where do entries live, and why?" rationale block (a one-time backfill for users
-whose global file was created before this RFC), prepend the rationale block after the existing
-H1 and before the first section header. Do not modify any existing entries.
+Entries triaged as `## Project-Specific` do not appear in the checkbox list and are not
+eligible for promotion — they go only in `project_entries`, never in `global_entries`.
 
 ### Non-interactive invocations (e.g., auto-triggered by a PreCompact hook)
 
@@ -248,42 +256,26 @@ Categories for **generalizable** entries: `Testing`, `Architecture`, `Documentat
 
 Categories for **project-specific** entries: use `_Project-Specific_` as the italic label and place under the `## Project-Specific` section.
 
-Create the section header if it doesn't exist yet. The `## Project-Specific` section uses this introductory text the first time it is created:
-
-```markdown
-## Project-Specific
-
-Entries below describe rules and gotchas specific to this codebase. They are not promoted to the global pool by `/best-practices-sync` and they are not transferable to other projects. Do not move entries into or out of this section without re-triaging — see `skills/best-practices-extract/TRIAGE-AND-LIFT.md`.
-```
-
-## Post-Write Check
-
-Verify the project's root `CLAUDE.md` references `BEST_PRACTICES.md`. If not, add:
-
-```
-For accumulated session learnings, see [BEST_PRACTICES.md](BEST_PRACTICES.md).
-```
+The write script creates section headers automatically, including the `## Project-Specific` introductory block on first creation.
 
 ## Mark Extraction Done (Required — Last Step)
 
-After every invocation of this skill, regardless of whether any entries were added, run:
+When entries are written, `python3 scripts/best-practices-write.py` handles the sentinel automatically via `write_sentinel: true`. When no entries are written (user declined all, or nothing passed filters), write the sentinel directly:
 
 ```bash
 mkdir -p .bytewyrd && : > .bytewyrd/precompact-extraction-done
 ```
 
-This writes the sentinel file the `PreCompact` hook uses as its release condition. The sentinel signals "extraction has run in this session" — the next compaction trigger will be allowed through without re-blocking.
-
 The sentinel-write runs on **every normally-completing exit path**:
 
-- After approved entries are written to `docs/BEST_PRACTICES.md`.
-- After the user declined all candidates (`none`).
-- After the skill exited with "Nothing new to capture this session" because nothing passed triage and filtering.
-- After any partial-success path (e.g., one entry approved, one declined).
+- After approved entries are written (handled by the write script).
+- After the user declined all candidates (`none`) — run the bash command above.
+- After "Nothing new to capture this session" — run the bash command above.
+- After any partial-success path — the write script handles it.
 
-The only cases where the sentinel is **not** written are: a hard failure of the skill itself (e.g., the disk is full when writing `docs/BEST_PRACTICES.md`), or session termination mid-execution before the final step is reached. In either case, the next compaction will re-block, which is the correct behavior — the user re-runs the skill.
+The only cases where the sentinel is **not** written are: a hard failure of the skill itself (disk full when writing entries), or session termination mid-execution. In either case the next compaction will re-block, which is correct — the user re-runs the skill.
 
-Do not skip this step "because nothing was written." The skill ran; the gate is satisfied; the sentinel records that. Skipping the sentinel leaves the `PreCompact` hook in an unresolved-block state and the user has to bypass manually.
+Do not skip this step. The skill ran; the gate is satisfied; the sentinel records that.
 
 ## When to Run
 
