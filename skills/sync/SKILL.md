@@ -342,11 +342,10 @@ If no items qualify for the batch prompt, skip Step 4a entirely.
 
 For each conflict or merge-apply item, run sequentially. The exact prompt depends on the artifact's strategy.
 
-**`conflict` / `conflict_legacy` (structured, owned-regions strategies).** Before each question, print:
+**`conflict` (structured, owned-regions strategies — marker present, all three SHAs differ).** Before each question, print:
 
 - The file path and the conflict scope (e.g., "conflict in `## Tool Usage` section of `CLAUDE.md`" for `owned-regions` strategy).
 - A compact unified diff (first 40 lines) of local content vs plugin content restricted to the affected owned region/section/path.
-- For `conflict_legacy` only: a note that this file pre-dates per-file markers, so the diff is between local content and the plugin's current content — not a true 3-way merge.
 
 Then ask one AskUserQuestion:
 
@@ -357,17 +356,33 @@ Then ask one AskUserQuestion:
 - `Merge into local manually (write scratch files, then re-run /sync)`
 - `Skip for now (revisit later)`
 
-For `conflict_legacy` only, add a fifth option:
-
-- `Adopt plugin and add marker (recommended if you haven't customized this file)`
-
 **Actions:**
 
 - `Adopt plugin version` → write plugin content merged per the artifact's `extension_strategy` (owned regions/sections/paths replaced; user-owned regions preserved). Update the marker.
 - `Keep local version` → no write; marker not updated; conflict re-surfaces on next run.
 - `Merge into local manually` → write plugin content to `.claude/sync-conflict-<sanitized-path>.txt` and local content to `.claude/sync-local-<sanitized-path>.txt`. Print: "Wrote scratch files for manual merge. Re-run `/sync` after merging." Do not write the target file.
 - `Skip for now` → identical to `Keep local version` but recorded separately in the Step 8 report.
-- `Adopt plugin and add marker` (legacy only) → write plugin content and set the marker to the plugin's current sha.
+
+**`conflict_legacy` (structured, owned-regions strategies — no prior marker).** This file pre-dates per-file markers, so there is no recorded baseline. Rather than presenting a raw adopt-or-reject binary, the agent **first applies the extension strategy** to produce a best-effort merged result, then shows the diff and asks the user to accept or reject:
+
+1. **Apply the strategy** to produce the merged content:
+   - `owned-regions`: run `bash scripts/sync-owned-regions-apply.sh <local> <plugin-source> '<owned_boundaries-json>'` — plugin-owned regions get the plugin version, user-owned regions are preserved.
+   - `structured` (JSON/TOML/`.gitignore`): apply only the `owned_paths` from the plugin; all other paths/blocks in the local file are preserved.
+
+2. **Generate the unified diff** of (local → merged result):
+   ```bash
+   bash scripts/sync-unified-diff.sh <local-file> <merged-content-file>
+   ```
+   Parse `.diff` for the human-readable diff and `.hunks` for per-hunk exclusion. Print the diff (first 40 lines) before the prompt.
+
+3. **Ask one AskUserQuestion** — "Apply strategy-merged update to `<path>`?" — with options:
+
+   - `Accept merge (strategy-aware, recommended)` — write the merged result; stamp the marker. Track as `conflict_legacy resolved via strategy merge`.
+   - `Accept with exclusions` — present the hunk multiSelect checkbox list (same format as `additive-merge-with-diff`). Deselected hunks revert to local content for that range. Write the result; stamp the marker.
+   - `Keep local as-is` — no write; no marker stamped; re-surfaces on next run.
+   - `Manual merge` — write plugin content to `.claude/sync-conflict-<sanitized-path>.txt` and local content to `.claude/sync-local-<sanitized-path>.txt`. Print: "Wrote scratch files for manual merge. Re-run `/sync` after merging." Do not write the target file.
+
+**Rationale:** the extension strategy already encodes what the plugin owns vs what the project owns. Applying the strategy (even without a baseline) is strictly better than the raw binary — it preserves all local content outside the plugin-owned paths/regions and only surfaces genuine conflicts within those regions.
 
 **`additive_merge_apply` (additive-merge strategy).** Run the per-section merge (see "Apply actions" below for `additive-merge`). When the merge produces a `pending_contradictions` list for a section, present a four-option item-level menu for each contradiction:
 
@@ -636,7 +651,7 @@ All plugin-managed file content is rendered from templates under `$PLUGIN_ROOT/t
 | `CONTRIBUTING.md.tpl` | `bytewyrd/docs/CONTRIBUTING.md@v1` | Non-templated; bootstrap strategy |
 | `ARCHITECTURE.md.tpl` | `bytewyrd/docs/ARCHITECTURE.md@v1` | Non-templated; bootstrap strategy |
 | `settings.json.tpl` | `bytewyrd/.claude/settings.json@v1` | Templated; structured strategy; sidecar marker |
-| `settings.local.json.tpl` | `bytewyrd/.claude/settings.local.json@v1` | Non-templated; structured strategy; sidecar marker |
+| `settings.local.json.tpl` | `bytewyrd/.claude/settings.local.json@v1` | Non-templated; bootstrap strategy (create once, then project-owned; never updated by sync) |
 | `mise.toml.tpl` | `bytewyrd/mise.toml@v1` | Templated; structured strategy |
 | `.gitignore.tpl` | `bytewyrd/.gitignore@v1` | Non-templated; structured strategy |
 | `ci.yml.tpl` | `bytewyrd/.github/workflows/ci.yml@v1` | Templated; additive-merge-with-diff strategy |
@@ -782,7 +797,9 @@ The `docs/rfc-process.md` file is now managed as a manifest artifact with `exten
 
 ### Step 5.5 — Rewrite sidecar if any JSON artifact's marker advanced
 
-Before printing the report, check whether any JSON-format artifact's marker was updated in Step 5 (i.e., `.claude/settings.json` or `.claude/settings.local.json` was written with a new marker). If yes, rewrite `.bytewyrd/.bootstrap-versions.json` in full with all current marker entries. If no JSON artifact's marker changed, the sidecar is not rewritten.
+Before printing the report, check whether any JSON-format artifact's marker was updated in Step 5 (i.e., `.claude/settings.json` was written with a new marker). If yes, rewrite `.bytewyrd/.bootstrap-versions.json` in full with all current marker entries. If no JSON artifact's marker changed, the sidecar is not rewritten.
+
+Note: `.claude/settings.local.json` is now `bootstrap` strategy and does not use a sidecar marker — it is created once and left project-owned thereafter.
 
 ### Final report
 
@@ -808,7 +825,7 @@ Per-file outcomes:
 | `docs/ARCHITECTURE.md` | bootstrap | bootstrapped / local-only (existing) |
 | `docs/rfc-process.md` | authoritative | authoritative-overwritten / unchanged |
 | `.claude/settings.json` | structured | added / fast-forward applied / conflict resolved / unchanged |
-| `.claude/settings.local.json` | structured | added / fast-forward applied / unchanged |
+| `.claude/settings.local.json` | bootstrap | bootstrapped / local-only (existing, never re-touched by sync) |
 | `.github/workflows/ci.yml` | additive-merge-with-diff | additive-merge-with-diff applied / manual-3-way-pending / unchanged |
 | `.github/PULL_REQUEST_TEMPLATE.md` | additive-merge-with-diff | additive-merge-with-diff applied / manual-3-way-pending / unchanged |
 | `mise.toml` | structured | added / fast-forward applied / unchanged |
