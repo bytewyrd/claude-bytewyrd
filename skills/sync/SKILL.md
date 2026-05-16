@@ -21,52 +21,48 @@ When `docs/project-brief.md` already exists with complete identity *and* all plu
 
 ## Step 1 — Validate environment + detect installed plugins + detect GitHub remote
 
-Run:
-```bash
-git rev-parse --show-toplevel
-git config user.name
-```
-
-If either fails, stop with a clear error message.
-
-**Additional pre-flight checks required for diff computation:**
+Run the consolidated pre-flight helper:
 
 ```bash
-# Required for /sync diff computation
-command -v sha256sum >/dev/null || command -v shasum >/dev/null || { echo "/sync requires sha256sum or shasum for diff computation. Install with: brew install coreutils (macOS) or apt install coreutils (Debian/Ubuntu)" >&2; exit 1; }
-command -v jq >/dev/null || { echo "/sync requires jq for diff computation. Install with: brew install jq (macOS) or apt install jq (Debian/Ubuntu)" >&2; exit 1; }
-command -v python3 >/dev/null || { echo "/sync requires python3 for TOML parsing. Install with: brew install python3 (macOS) or apt install python3 (Debian/Ubuntu)" >&2; exit 1; }
+preflight="$(bash scripts/sync-preflight.sh)"
 ```
 
-If any required tool is missing, stop with the error message shown above naming the missing tool and the one-line install hint.
+If the script exits non-zero, stop immediately — it has already printed the relevant error to stderr (plain text for the missing-`git` case, JSON envelope otherwise). The error is self-explanatory; no further wrapping needed.
 
-**Write target:** all files created or modified by sync go to the directory returned by `git rev-parse --show-toplevel`. This is always the correct target — whether you're in a standard checkout or a worktree. **Never** run `git rev-parse --git-common-dir` or otherwise detect the "main" repo root and redirect writes there. If sync is invoked from a worktree, the worktree is the intended working context; changes land on a branch and flow through a PR — that is the desired workflow.
-
-If the repo already has substantial committed content (more than a LICENSE/README), note: "This repo already has content — sync will skip any files that already exist and only create the ones that are missing."
-
-**Derive `project_slug`** — the repo/package identity name:
+The helper performs three hard environment checks (`git` + git-repo presence, `sha256sum`/`shasum`, `jq`, `python3`) and collects the deterministic context the rest of `/sync` needs. Extract the fields from `$preflight`:
 
 ```bash
-basename $(git rev-parse --show-toplevel)
+REPO_ROOT=$(echo "$preflight" | jq -r .repo_root)
+GIT_USER=$(echo "$preflight" | jq -r .git_user)
+PROJECT_SLUG=$(echo "$preflight" | jq -r .project_slug)
+HAS_SUBSTANTIAL_CONTENT=$(echo "$preflight" | jq -r .has_substantial_content)
+GITHUB_DESCRIPTION=$(echo "$preflight" | jq -r .github_description)
+INSTALLED_PLUGINS=$(echo "$preflight" | jq .installed_plugins)
+MISSING_CRITICAL=$(echo "$preflight" | jq .missing_critical)
+MISSING_RECOMMENDED=$(echo "$preflight" | jq .missing_recommended)
+DOCS_AGENT_DRIFTED=$(echo "$preflight" | jq -r .docs_agent_drifted)
 ```
 
-This is the raw directory name as-is (e.g., `tinywyrd`, `eve-platform`). It is never changed or asked about. It is used anywhere the machine-readable name is needed: CLI binary references, package name examples, `cd <project-slug>` in setup docs, etc.
+The script also writes `.bytewyrd/docs-agent-version` as a side effect when the plugin's docs-agent version differs from the project's recorded version — no separate Step 1.5 logic is required in the skill.
 
-**Detect GitHub remote (use to pre-populate defaults in Step 2):**
+**Surface the collected context to the user as appropriate:**
 
-```bash
-git remote get-url origin 2>/dev/null
-```
+- If `HAS_SUBSTANTIAL_CONTENT == true`, note: "This repo already has content — sync will skip any files that already exist and only create the ones that are missing."
+- If `MISSING_CRITICAL` is a non-empty JSON array, warn that critical plugins are missing (GitHub MCP). Do not stop — the warning is informational; the user can re-run after installing.
+- If `MISSING_RECOMMENDED` is a non-empty JSON array, note the recommended plugins (Context7, Code Review). Same non-blocking semantics.
+- If `DOCS_AGENT_DRIFTED == true`, print the drift suggestion using `plugin_docs_ver` and `project_docs_ver` from the preflight JSON:
 
-If this returns a `github.com` URL, run:
+  ```
+  The plugin's docs-agent has improved (project=<project_docs_ver>, plugin=<plugin_docs_ver>). Consider running /docs-review against docs/guide/** to re-audit user-facing documentation with the updated checks.
+  ```
 
-```bash
-gh repo view --json name,description
-```
+  Do **not** auto-invoke `/docs-review` — `/sync` only prints the suggestion. The decision to run the review belongs to the main agent or the user.
 
-Store `github_description` (the repo's current description, empty string if unset) as the default for the description question in Step 2. If `gh` is unavailable or fails, proceed without it.
+`PROJECT_SLUG` is the raw directory name as-is (e.g., `tinywyrd`, `eve-platform`). It is never changed or asked about. It is used anywhere the machine-readable name is needed: CLI binary references, package name examples, `cd <project-slug>` in setup docs, etc.
 
-Then read `~/.claude/plugins/installed_plugins.json`. Extract the `plugins` object keys to get the set of installed plugin identifiers. Cross-check against:
+`GITHUB_DESCRIPTION` is the current GitHub repo description (empty string when no GitHub remote is configured or `gh` is unavailable). It is the pre-fill default for the description question in Step 2.
+
+The plugin cross-check covers:
 
 | Plugin | Identifier | Criticality |
 |--------|-----------|-------------|
@@ -78,44 +74,7 @@ The `bytewyrd@bytewyrd` plugin is NOT in this table and NOT written to project s
 
 Note: Exa is a separate MCP server (not a plugin) — its permissions go unconditionally in `settings.local.json`.
 
-Store:
-- `installed`: set of installed plugin identifiers
-- `missing`: recommended plugins not in `installed`
-
-If `github@claude-plugins-official` is missing from `installed`, warn but do not stop.
-
----
-
-## Step 1.5 — Detect docs-agent version drift
-
-Read the plugin's `docs-agent-version` marker from `$CLAUDE_PLUGIN_ROOT/agents/docs-agent.md`:
-
-```bash
-PLUGIN_DOCS_VER=$(grep -m1 'docs-agent-version:' "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/agents/docs-agent.md" 2>/dev/null | sed -E 's/.*docs-agent-version: ([^ ]+).*/\1/')
-```
-
-Read the project's recorded marker from `.bytewyrd/docs-agent-version`:
-
-```bash
-PROJECT_DOCS_VER=$(cat .bytewyrd/docs-agent-version 2>/dev/null || echo "")
-```
-
-If `PLUGIN_DOCS_VER` is non-empty and differs from `PROJECT_DOCS_VER` (including the case where `PROJECT_DOCS_VER` is empty because the file does not exist yet), print this suggestion to the agent's output:
-
-```
-The plugin's docs-agent has improved (project=<PROJECT_DOCS_VER>, plugin=<PLUGIN_DOCS_VER>). Consider running /docs-review against docs/guide/** to re-audit user-facing documentation with the updated checks.
-```
-
-Then record the new version so subsequent sync runs do not re-prompt until the marker changes again. Only write the marker if `PLUGIN_DOCS_VER` is non-empty (guard with `[ -n "$PLUGIN_DOCS_VER" ]`) to prevent overwriting a valid marker with an empty string when the plugin's agent file is unreachable.
-
-```bash
-mkdir -p .bytewyrd
-echo "$PLUGIN_DOCS_VER" > .bytewyrd/docs-agent-version
-```
-
-Do **not** auto-invoke `/docs-review` — `/sync` only prints the suggestion. The decision to run the review belongs to the main agent or the user.
-
-If `PLUGIN_DOCS_VER` is empty (the plugin's `agents/docs-agent.md` does not yet exist or does not carry the marker), skip this step silently — the plugin may be on a version that predates this feature.
+**Write target:** all files created or modified by sync go to the directory returned in `REPO_ROOT`. This is always the correct target — whether you're in a standard checkout or a worktree. **Never** run `git rev-parse --git-common-dir` or otherwise detect the "main" repo root and redirect writes there. If sync is invoked from a worktree, the worktree is the intended working context; changes land on a branch and flow through a PR — that is the desired workflow.
 
 **Also record the plugin version** so the `SessionStart` hook can warn collaborators who are on an older version than the one that last ran `/sync` on this project:
 
@@ -236,54 +195,36 @@ The brief file is written in Step 5 — not here — so that `/sync` writes all 
 
 ## Step 3 — Detect component structure
 
-Scan the repo for language manifest files to determine component roots. Run all commands — language detection is the output of this step, not an input:
+Run the consolidated detection helper to scan the repo for language manifest files:
 
 ```bash
-# Rust
-find . -name "Cargo.toml" -not -path "*/target/*" | sort
-
-# JS/TS
-find . -name "package.json" -not -path "*/node_modules/*" | sort
-
-# Go
-find . -name "go.mod" | sort
-
-# Python
-find . -name "pyproject.toml" -o -name "setup.py" | grep -v "*/node_modules/*" | sort
-
-# Svelte
-find . -name "*.svelte" -not -path "*/node_modules/*" | head -1
-
-# Ruby / Rails
-find . -name "Gemfile" -not -path "*/vendor/*" | head -1
-find . -name "config/application.rb" | head -1
-
-# Kubernetes / CUE / kapply
-find . -name "*.cue" -path "*/k8s/*" | head -1
-grep -rl "kapply" .github/ Dockerfile* Makefile 2>/dev/null | head -1
-
-# Terraform / Terragrunt
-find . -name "*.tf" -not -path "*/.terraform/*" | head -1
-find . -name "terragrunt.hcl" | head -1
+lang_info="$(bash scripts/sync-detect-languages.sh)"
 ```
 
-**Build `component_roots`** — a list of `{ language, path, name }` entries:
+The script emits a single JSON object with the deduplicated languages list, the `component_roots` array, and the `has_*` stack flags. Extract the fields:
 
-- **Rust**: If root `Cargo.toml` contains `[workspace]`, read its `members` array — each member is a component. If it's a standalone crate, the component is `.`. If no `Cargo.toml` exists, default to `.`.
-- **JS/TS**: Each directory containing a `package.json` is a component. Use the `name` field from the JSON as the component name, falling back to the directory name.
-- **Go**: Each directory containing a `go.mod` is a module/component.
-- **Python**: Each directory containing `pyproject.toml` or `setup.py` is a component.
-- **If nothing is found for a language**: default to a single component at `.`.
+```bash
+LANGUAGES=$(echo "$lang_info" | jq .languages)
+COMPONENT_ROOTS=$(echo "$lang_info" | jq .component_roots)
+HAS_RUST=$(echo "$lang_info" | jq -r .has_rust)
+HAS_JS=$(echo "$lang_info" | jq -r .has_js)
+HAS_GO=$(echo "$lang_info" | jq -r .has_go)
+HAS_PYTHON=$(echo "$lang_info" | jq -r .has_python)
+HAS_SVELTE=$(echo "$lang_info" | jq -r .has_svelte)
+HAS_RUBY=$(echo "$lang_info" | jq -r .has_ruby)
+HAS_RAILS=$(echo "$lang_info" | jq -r .has_rails)
+HAS_K8S_CUE=$(echo "$lang_info" | jq -r .has_k8s_cue)
+HAS_TERRAFORM=$(echo "$lang_info" | jq -r .has_terraform)
+```
 
-**Derive stack-detection flags** — independent of component roots, the following booleans gate the stack-specific best-practice sections appended in Step 5:
+`COMPONENT_ROOTS` is a list of `{ language, path, name }` entries with these rules baked into the script:
 
-- `has_svelte = true` if any `*.svelte` file is found OR `"svelte"` appears in any `package.json` `dependencies` or `devDependencies` field.
-- `has_ruby = true` if a `Gemfile` is found.
-- `has_rails = true` if `config/application.rb` is found OR `"rails"` gem is listed in the `Gemfile`.
-- `has_k8s_cue = true` if any `*.cue` file under `k8s/` is found OR `kapply` appears in a CI workflow or `Dockerfile`.
-- `has_terraform = true` if any `*.tf` file is found OR any `terragrunt.hcl` is found.
+- **Rust**: If root `Cargo.toml` contains `[workspace]`, the script reads its `members` array via `python3 + tomllib` and emits one entry per member, resolving each member's `package.name` from its Cargo.toml. If it's a standalone crate, the component is `.` with the package name. If no `Cargo.toml` exists, no Rust entries are emitted.
+- **JS/TS**: Each directory containing a `package.json` is a component. The script uses the `name` field from the JSON as the component name, falling back to the directory name.
+- **Go**: Each directory containing a `go.mod` is a module/component (named by its dirname).
+- **Python**: Each directory containing `pyproject.toml` or `setup.py` is a component (named by its dirname).
 
-These flags are consumed by Step 5's `docs/BEST_PRACTICES.md` creation policy: sync appends the matching addition block only when its flag is true (e.g., the Svelte block only when `has_svelte`, the Rails block only when `has_rails` and after the Ruby block since Rails depends on Ruby being present).
+The stack-detection flags `HAS_SVELTE`, `HAS_RUBY`, `HAS_RAILS`, `HAS_K8S_CUE`, `HAS_TERRAFORM` are independent of component roots. They are consumed by Step 5's `docs/BEST_PRACTICES.md` creation policy: sync appends the matching addition block only when its flag is true (e.g., the Svelte block only when `HAS_SVELTE`, the Rails block only when `HAS_RAILS` and after the Ruby block since Rails depends on Ruby being present).
 
 Since sync is idempotent, re-running it after adding new components will detect them and fill in any missing config.
 
@@ -295,13 +236,16 @@ This step replaces the former "Print creation summary." It runs the pre-flight d
 
 ### Pre-flight diff procedure
 
-Determine the plugin root:
+Determine the plugin root using the consolidated lookup helper:
 
 ```bash
-echo "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}"
+plugin_root_info="$(bash scripts/sync-find-plugin-root.sh)"
+PLUGIN_ROOT="$(echo "$plugin_root_info" | jq -r .plugin_root)"
 ```
 
-Use the printed path as `PLUGIN_ROOT`. Read the manifest at `$PLUGIN_ROOT/bootstrap-manifest.json`. Also read the sidecar at `.bytewyrd/.bootstrap-versions.json` (treat as `{}` if absent).
+The script resolves the plugin root in this order: (1) `$CLAUDE_PLUGIN_ROOT` if its `bootstrap-manifest.json` exists, (2) `$HOME/.claude/bootstrap-manifest.json` if it exists, (3) the newest semantic-versioned directory under `$HOME/.claude/plugins/cache/bytewyrd/bytewyrd/` containing `bootstrap-manifest.json`. If none match, the script exits 1 with a JSON error envelope on stderr — stop and surface that error.
+
+Read the manifest at `$PLUGIN_ROOT/bootstrap-manifest.json`. Also read the sidecar at `.bytewyrd/.bootstrap-versions.json` (treat as `{}` if absent).
 
 **Sidecar migration check (one-time):** before reading the sidecar, run `bash scripts/sync-sidecar-migrate.sh` and parse the JSON output. If `.migrated` is `true`, log the `.message` field in the Step 8 report under "Migration notes." The script is idempotent — it only moves the file when the old path exists and the new path does not.
 
@@ -748,7 +692,7 @@ The cleanup is idempotent — re-running on a clean project is a no-op.
 
 Teams that want to mandate project-scope enablement (so Claude Code auto-installs the plugin for collaborators) can do so manually by adding both `enabledPlugins` and `extraKnownMarketplaces` entries themselves and committing them — but this is not the default, and both entries are required (see `docs/guide/installation.md`).
 
-**Include only if installed** — an uninstalled `claude-plugins-official` plugin causes Claude Code to error on startup. Read `~/.claude/plugins/installed_plugins.json` and include each entry only if its identifier is present in the registry. Add `"github@claude-plugins-official": true`, `"context7@claude-plugins-official": true`, `"code-review@claude-plugins-official": true` only for plugins in `installed`.
+**Include only if installed** — an uninstalled `claude-plugins-official` plugin causes Claude Code to error on startup. Check each identifier against the `INSTALLED_PLUGINS` array collected in Step 1 (sourced from `~/.claude/plugins/installed_plugins.json`). Add `"github@claude-plugins-official": true`, `"context7@claude-plugins-official": true`, `"code-review@claude-plugins-official": true` only when the identifier appears in `INSTALLED_PLUGINS`.
 
 The `PreToolUse` hook's quality-gate command chains gate commands for all detected languages with `&&`. Skip Shell/Infra. Wrap non-root component paths in a subshell. If no languages with a standard gate are detected, omit the `PreToolUse` hook entirely.
 
@@ -946,7 +890,7 @@ N conflict(s) deferred — will re-surface on the next /sync run.
 
 Collapse `unchanged` and `local-only edit preserved` to single-line summaries (count only, no per-file listing).
 
-If `missing` (from Step 1) is non-empty, print:
+If `MISSING_RECOMMENDED` (from Step 1) is non-empty, print:
 ```
 Missing plugins — not added to enabledPlugins:
   - <identifier>  →  install: /install <name>
