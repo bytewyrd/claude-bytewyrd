@@ -7,10 +7,7 @@
       "template_sha": "b265f554260ac234a5787d8d8238f700e4ba755b6b56e2f041f32ec96d23ffd5",
       "extension_strategy": "structured",
       "owned_paths": [
-        "hooks.PreCompact[]:_meta.bytewyrd_hook_id",
-        "hooks.PostToolUse[]:_meta.bytewyrd_hook_id",
-        "hooks.Stop[]:_meta.bytewyrd_hook_id",
-        "hooks.PreToolUse[]:_meta.bytewyrd_hook_id"
+        "hooks"
       ],
       "templated": true,
       "template_inputs": [

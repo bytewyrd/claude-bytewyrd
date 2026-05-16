@@ -189,13 +189,33 @@ EOF
   esac
 }
 
-@test "conflict classification returns needs-agent" {
+@test "conflict owned-regions applies plugin section over local edit preserving user content" {
+  mkdir -p docs
+  cat > docs/BEST.md <<'EOF'
+<!-- bootstrap-content-version: x/best@v1:abc123def456 -->
+
+# BEST_PRACTICES
+
+## Workflow
+
+local edit — conflicts with plugin
+
+## Other
+
+user-owned content untouched
+EOF
+  cat > "$PLUGIN_ROOT/templates/best.tpl" <<'EOF'
+## Workflow
+
+plugin version of workflow
+
+EOF
   items_json='[{
     "classification": "conflict",
     "strategy": "owned-regions",
     "target": "docs/BEST.md",
-    "recorded_sha": "aaa111aaa111",
-    "plugin_sha": "bbb222bbb222",
+    "recorded_sha": "abc123def456",
+    "plugin_sha": "fff999fff999",
     "upstream_key": "x/best@v1",
     "source": "templates/best.tpl",
     "templated": false,
@@ -207,7 +227,9 @@ EOF
   run bash "$SCRIPT" "$items_json" "$PLUGIN_ROOT" inputs.json
   assert_success
   result_val="$(echo "$output" | jq -r '.[0].result')"
-  assert_equal "$result_val" "needs-agent"
+  assert_equal "$result_val" "applied"
+  grep -Fq "plugin version of workflow" docs/BEST.md || fail "expected plugin section content"
+  grep -Fq "user-owned content untouched" docs/BEST.md || fail "expected user-owned content preserved"
 }
 
 @test "additive_merge_apply returns needs-agent" {
@@ -231,9 +253,11 @@ EOF
   assert_equal "$result_val" "needs-agent"
 }
 
-@test "structured JSON fast_forward returns needs-agent" {
-  mkdir -p .claude
-  echo '{"a": 1}' > .claude/settings.json
+@test "fast_forward structured JSON dot-path merges plugin value preserving other keys" {
+  mkdir -p .claude "$PLUGIN_ROOT/templates"
+  printf '{"enabledPlugins": {"bytewyrd": true}, "hooks": {}}\n' > .claude/settings.json
+  printf '{"enabledPlugins": {}, "hooks": {"Stop": [{"type": "command", "command": "echo done"}]}}\n' \
+    > "$PLUGIN_ROOT/templates/settings.json.tpl"
   items_json='[{
     "classification": "fast_forward",
     "strategy": "structured",
@@ -244,14 +268,23 @@ EOF
     "source": "templates/settings.json.tpl",
     "templated": false,
     "template_inputs": [],
-    "owned_paths": ["hooks.PreCompact[]:_meta.bytewyrd_hook_id"],
+    "owned_paths": ["hooks"],
     "owned_boundaries": [],
     "owned_sections": []
   }]'
   run bash "$SCRIPT" "$items_json" "$PLUGIN_ROOT" inputs.json
   assert_success
   result_val="$(echo "$output" | jq -r '.[0].result')"
-  assert_equal "$result_val" "needs-agent"
+  assert_equal "$result_val" "applied"
+  # Plugin hooks value applied.
+  hooks_val="$(jq -r '.hooks.Stop[0].command' .claude/settings.json)"
+  assert_equal "$hooks_val" "echo done"
+  # Non-owned key preserved.
+  plugins_val="$(jq -r '.enabledPlugins.bytewyrd' .claude/settings.json)"
+  assert_equal "$plugins_val" "true"
+  # sidecar_update_needed set for JSON file.
+  sidecar_flag="$(echo "$output" | jq -r '.[0].sidecar_update_needed')"
+  assert_equal "$sidecar_flag" "true"
 }
 
 @test "unchanged classification returns skipped" {
@@ -411,4 +444,151 @@ EOF
   [ -f README.md ] || fail "expected README.md to be created"
   result_val="$(echo "$output" | jq -r '.[0].result')"
   assert_equal "$result_val" "applied"
+}
+
+@test "conflict_legacy owned-regions applies plugin section with no prior marker" {
+  mkdir -p docs
+  cat > docs/BEST.md <<'EOF'
+# BEST_PRACTICES
+
+## Workflow
+
+old local content (no marker — pre-dates per-file tracking)
+
+## Other
+
+user-owned section
+EOF
+  cat > "$PLUGIN_ROOT/templates/best.tpl" <<'EOF'
+## Workflow
+
+plugin canonical workflow
+
+EOF
+  items_json='[{
+    "classification": "conflict_legacy",
+    "strategy": "owned-regions",
+    "target": "docs/BEST.md",
+    "recorded_sha": null,
+    "plugin_sha": "fff999fff999",
+    "upstream_key": "x/best@v1",
+    "source": "templates/best.tpl",
+    "templated": false,
+    "template_inputs": [],
+    "owned_paths": [],
+    "owned_boundaries": [{"type":"heading","heading":"## Workflow"}],
+    "owned_sections": []
+  }]'
+  run bash "$SCRIPT" "$items_json" "$PLUGIN_ROOT" inputs.json
+  assert_success
+  result_val="$(echo "$output" | jq -r '.[0].result')"
+  assert_equal "$result_val" "applied"
+  grep -Fq "plugin canonical workflow" docs/BEST.md || fail "expected plugin section applied"
+  grep -Fq "user-owned section" docs/BEST.md || fail "expected user-owned content preserved"
+}
+
+@test "conflict structured gitignore replaces plugin block preserving user content" {
+  cat > .gitignore <<'EOF'
+# bootstrap-content-version: x/.gitignore@v1:abc123def456
+
+# bytewyrd:base
+.worktrees/
+
+# user lines
+build/
+dist/
+EOF
+  cat > "$PLUGIN_ROOT/templates/.gitignore.tpl" <<'EOF'
+# bytewyrd:base
+.worktrees/
+.bytewyrd/*
+
+EOF
+  items_json='[{
+    "classification": "conflict",
+    "strategy": "structured",
+    "target": ".gitignore",
+    "recorded_sha": "abc123def456",
+    "plugin_sha": "fff999fff999",
+    "upstream_key": "x/.gitignore@v1",
+    "source": "templates/.gitignore.tpl",
+    "templated": false,
+    "template_inputs": [],
+    "owned_paths": ["bytewyrd:base"],
+    "owned_boundaries": [],
+    "owned_sections": []
+  }]'
+  run bash "$SCRIPT" "$items_json" "$PLUGIN_ROOT" inputs.json
+  assert_success
+  result_val="$(echo "$output" | jq -r '.[0].result')"
+  assert_equal "$result_val" "applied"
+  grep -Fq ".bytewyrd/*" .gitignore || fail "expected new plugin line applied"
+  grep -Fq "build/" .gitignore || fail "expected user-owned build/ preserved"
+}
+
+@test "conflict_legacy structured gitignore applies plugin block with no prior marker" {
+  cat > .gitignore <<'EOF'
+# bytewyrd:base
+.worktrees/
+
+build/
+dist/
+EOF
+  cat > "$PLUGIN_ROOT/templates/.gitignore.tpl" <<'EOF'
+# bytewyrd:base
+.worktrees/
+.bytewyrd/*
+
+EOF
+  items_json='[{
+    "classification": "conflict_legacy",
+    "strategy": "structured",
+    "target": ".gitignore",
+    "recorded_sha": null,
+    "plugin_sha": "fff999fff999",
+    "upstream_key": "x/.gitignore@v1",
+    "source": "templates/.gitignore.tpl",
+    "templated": false,
+    "template_inputs": [],
+    "owned_paths": ["bytewyrd:base"],
+    "owned_boundaries": [],
+    "owned_sections": []
+  }]'
+  run bash "$SCRIPT" "$items_json" "$PLUGIN_ROOT" inputs.json
+  assert_success
+  result_val="$(echo "$output" | jq -r '.[0].result')"
+  assert_equal "$result_val" "applied"
+  grep -Fq ".bytewyrd/*" .gitignore || fail "expected new plugin line applied"
+  grep -Fq "build/" .gitignore || fail "expected user-owned build/ preserved"
+}
+
+@test "conflict structured JSON dot-path replaces plugin-owned key preserving others" {
+  mkdir -p .claude "$PLUGIN_ROOT/templates"
+  printf '{"enabledPlugins": {"bytewyrd": true}, "hooks": {"old": true}}\n' > .claude/settings.json
+  printf '{"enabledPlugins": {}, "hooks": {"Stop": [{"type": "command", "command": "echo stop"}]}}\n' \
+    > "$PLUGIN_ROOT/templates/settings.json.tpl"
+  items_json='[{
+    "classification": "conflict",
+    "strategy": "structured",
+    "target": ".claude/settings.json",
+    "recorded_sha": "aaa111aaa111",
+    "plugin_sha": "bbb222bbb222",
+    "upstream_key": "x/.claude/settings.json@v1",
+    "source": "templates/settings.json.tpl",
+    "templated": false,
+    "template_inputs": [],
+    "owned_paths": ["hooks"],
+    "owned_boundaries": [],
+    "owned_sections": []
+  }]'
+  run bash "$SCRIPT" "$items_json" "$PLUGIN_ROOT" inputs.json
+  assert_success
+  result_val="$(echo "$output" | jq -r '.[0].result')"
+  assert_equal "$result_val" "applied"
+  hooks_cmd="$(jq -r '.hooks.Stop[0].command' .claude/settings.json)"
+  assert_equal "$hooks_cmd" "echo stop"
+  plugins_val="$(jq -r '.enabledPlugins.bytewyrd' .claude/settings.json)"
+  assert_equal "$plugins_val" "true"
+  sidecar_flag="$(echo "$output" | jq -r '.[0].sidecar_update_needed')"
+  assert_equal "$sidecar_flag" "true"
 }

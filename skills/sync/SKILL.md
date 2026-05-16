@@ -11,14 +11,13 @@ Sets up or refreshes a project repository with all standard conventions. Idempot
 
 ## Interaction model
 
-Sync collects user input at two points:
+/sync has three user interaction points:
 
-1. **Steps 2a–2c (project identity)** — Only when `docs/project-brief.md` is absent or incomplete. Same as before: one AskUserQuestion for gaps in name/description, optional body-fill, brief creation.
-2. **Step 4a (authoritative auto-apply)** — No user input. Authoritative files are written immediately. For `docs/rfc-process.md` only: if a `## Project Extensions` section exists, one acknowledgement prompt is shown before the write.
-3. **Step 4b (batch confirmation)** — One AskUserQuestion with checkboxes for additions, fast-forwards, legacy marker stamps, and bootstrap creations. Omitted when there are none.
-4. **Step 4c (per-conflict and per-merge resolution)** — One AskUserQuestion per conflict or merge-apply item. Run sequentially.
+1. **Steps 2a–2c (project identity)** — Only when `docs/project-brief.md` is absent or incomplete. One AskUserQuestion for name/description gaps; optional body-fill; brief creation.
+2. **Step 4 — single "Proceed?" confirmation** — After printing the full change summary, one AskUserQuestion with options `Proceed` / `Cancel`. Omitted when there are no changes at all.
+3. **Step 4c (additive-merge-with-diff cherry-pick only)** — One AskUserQuestion per `additive_merge_with_diff_apply` artifact. All other strategies (authoritative, structured, owned-regions, additive-merge) are applied without further input after Proceed.
 
-When `docs/project-brief.md` already exists with complete identity *and* all plugin-managed files are already at the current plugin version, Steps 4a, 4b, and 4c are skipped — `/sync` reports everything as unchanged and exits without prompting.
+When `docs/project-brief.md` already exists with complete identity *and* all plugin-managed files are at the current plugin version, Steps 4 and 4c are skipped — `/sync` reports everything as unchanged and exits without prompting.
 
 ## Step 1 — Validate environment + detect installed plugins + detect GitHub remote
 
@@ -295,26 +294,40 @@ Local-only edits (N files, plugin unchanged): <path>, <path>
 Unchanged (N files): (collapsed)
 ```
 
-If any category is empty, omit it entirely. If there are no changes at all, print "Everything is up to date." and skip Steps 4a and 4b.
+If any category is empty, omit it entirely. If there are no changes at all, print "Everything is up to date." and exit without prompting.
 
-If this is the first run after upgrading to a plugin version that ships per-file markers (i.e., any `unchanged_legacy` or `conflict_legacy` entries exist), prepend a one-time banner:
+Otherwise, ask one AskUserQuestion:
 
+**"Apply these changes?"** with options:
+- `Proceed` — continue to Step 4a.
+- `Cancel` — exit without writing any files.
+
+### Step 4a — Deterministic batch apply (no further confirmation)
+
+All artifacts except `additive_merge_with_diff_apply` are applied in a single script call immediately after the user clicks Proceed:
+
+```bash
+BATCH_ITEMS="$(printf '%s' "$CLASSIFICATIONS" | jq -c '[.[] | select(
+  .classification != "additive_merge_with_diff_apply" and
+  .classification != "unchanged" and
+  .classification != "local_only"
+)]')"
+BATCH_RESULT="$(bash scripts/sync-apply-batch.sh "$BATCH_ITEMS" "$PLUGIN_ROOT" <project-inputs-json>)"
 ```
-This is the first /sync run after an upgrade that adds per-file content tracking.
-Existing plugin-managed files have been classified by comparing local content
-against the plugin's current shipped content. Files that match exactly are
-silently marked (no content change, listed under "Legacy marker injection").
-Files that differ are listed under "Conflicts (legacy)" — you will review a
-strategy-aware diff (plugin-owned regions updated, your non-owned content
-preserved) and accept or reject in Step 4c. Future runs will only flag files
-that genuinely diverged within owned regions.
-```
 
-### Step 4a — Authoritative auto-apply (no confirmation)
+The batch script handles all of the following without user input:
 
-Authoritative artifacts are written **without asking** — the plugin owns every byte, there is nothing for the user to decide. For each `authoritative_add` or `authoritative_update` artifact:
+| Classification | Strategy | Action |
+|---|---|---|
+| `authoritative_add`, `authoritative_update` | authoritative | Overwrite and stamp |
+| `add`, `fast_forward`, `unchanged_legacy` | any | Apply owned regions/paths and stamp |
+| `conflict`, `conflict_legacy` | owned-regions | Plugin-owned regions replaced; user-owned preserved; stamp |
+| `conflict`, `conflict_legacy` | structured (.gitignore) | Plugin tag-blocks replaced; all other content preserved; stamp |
+| `conflict`, `conflict_legacy` | structured (JSON) | Plugin dot-path values overwritten; all other keys preserved; stamp |
+| `additive_merge_apply` | additive-merge | Run LLM item merge; write; stamp |
+| `bootstrap_create` | bootstrap | Render template; write; stamp |
 
-**Before writing `docs/rfc-process.md`** (the only authoritative artifact), run `bash scripts/sync-rfc-process-check.sh` and parse the JSON output. If `.has_extensions` is `true`, print this warning and pause (one `AskUserQuestion` with a single acknowledgement option) so the user can copy their customizations before they are overwritten:
+**Special case for `docs/rfc-process.md`** (authoritative): if `sync-rfc-process-check.sh` reports `.has_extensions = true`, print a one-time warning quoting the `## Project Extensions` section before the batch write. No extra prompt — the user already clicked Proceed.
 
 ```
 docs/rfc-process.md — your '## Project Extensions' section will be removed
@@ -324,93 +337,14 @@ The content was:
   <quoted section body, indented 2 spaces, truncated to 200 chars>
 
 Copy anything you want to keep to docs/CONTRIBUTING.md or a new
-docs/rfc-process-extensions.md, then press Continue.
+docs/rfc-process-extensions.md before the next step.
 ```
 
-- `Continue (overwrite rfc-process.md)` — proceed to the batch write below.
+`unchanged` and `local_only` artifacts are silently skipped.
 
-If `.has_extensions` is `false`, proceed immediately without any prompt.
+### Step 4c — Additive-merge-with-diff cherry-pick
 
-Extract all `authoritative_add` and `authoritative_update` items from `$CLASSIFICATIONS`:
-
-```bash
-AUTH_ITEMS="$(printf '%s' "$CLASSIFICATIONS" | jq -c '[.[] | select(.classification == "authoritative_add" or .classification == "authoritative_update")]')"
-bash scripts/sync-apply-batch.sh "$AUTH_ITEMS" "$PLUGIN_ROOT" <project-inputs-json>
-```
-
-The script applies all authoritative files atomically — copies each plugin source to the target and stamps the authoritative two-line header. Track each applied file as `authoritative-overwritten` in the Step 8 report. The rfc-process warning above re-prints on every subsequent `/sync` until the `## Project Extensions` section is removed or the file is at the current plugin version.
-
-`unchanged` authoritative artifacts → no action.
-
-### Step 4b — Batch confirmation for additions, fast-forwards, and bootstrap
-
-Ask one AskUserQuestion with `multiSelect: true` and per-file checkboxes. The options are the union of every file that requires a write decision at this gate:
-
-- **Additions:** `Add <path>` (`add` classification)
-- **Fast-forward updates:** `Update <path> (fast-forward — no local edits exist)` (`fast_forward` classification)
-- **Legacy marker insertions:** `Stamp marker on <path> (content matches; first sync after upgrade)` (`unchanged_legacy` classification)
-- **Bootstrap creations:** `Create <path> from plugin template (bootstrap — this project will own it going forward)` (`bootstrap_create` classification)
-
-The user checks every option they want to apply and unchecks the rest. Deselected items are deferred (no write, re-surfaces next run) — they appear in the Step 8 report under "Deferred."
-
-**Per-category escape hatch (preserves the legacy `Review each` mode):** a separate option per category is presented at the end of the multiSelect list: `Review each addition individually` / `Review each fast-forward individually`. If selected, the user enters per-file review for that category — for each file, ask one AskUserQuestion with "Apply update to `<path>`?" and options `Apply` / `Skip`. Print the first 40 lines of the unified diff between local and plugin-rendered content immediately before the question.
-
-If no items qualify for the batch prompt, skip Step 4b entirely.
-
-### Step 4c — Per-conflict and per-merge resolution
-
-For each conflict or merge-apply item, run sequentially. The exact prompt depends on the artifact's strategy.
-
-**`conflict` (structured, owned-regions strategies — marker present, all three SHAs differ).** Before each question, print:
-
-- The file path and the conflict scope (e.g., "conflict in `## Tool Usage` section of `CLAUDE.md`" for `owned-regions` strategy).
-- A compact unified diff (first 40 lines) of local content vs plugin content restricted to the affected owned region/section/path.
-
-Then ask one AskUserQuestion:
-
-**"How to resolve conflict in `<path>`?"** with options:
-
-- `Adopt plugin version (replace local edits in the owned region)`
-- `Keep local version (skip this update; will re-surface on next /sync)`
-- `Merge into local manually (write scratch files, then re-run /sync)`
-- `Skip for now (revisit later)`
-
-**Actions:**
-
-- `Adopt plugin version` → write plugin content merged per the artifact's `extension_strategy` (owned regions/sections/paths replaced; user-owned regions preserved). Update the marker.
-- `Keep local version` → no write; marker not updated; conflict re-surfaces on next run.
-- `Merge into local manually` → write plugin content to `.claude/sync-conflict-<sanitized-path>.txt` and local content to `.claude/sync-local-<sanitized-path>.txt`. Print: "Wrote scratch files for manual merge. Re-run `/sync` after merging." Do not write the target file.
-- `Skip for now` → identical to `Keep local version` but recorded separately in the Step 8 report.
-
-**`conflict_legacy` (structured, owned-regions strategies — no prior marker).** This file pre-dates per-file markers, so there is no recorded baseline. Rather than presenting a raw adopt-or-reject binary, the agent **first applies the extension strategy** to produce a best-effort merged result, then shows the diff and asks the user to accept or reject:
-
-1. **Apply the strategy** to produce the merged content:
-   - `owned-regions`: run `bash scripts/sync-owned-regions-apply.sh <local> <plugin-source> '<owned_boundaries-json>'` — plugin-owned regions get the plugin version, user-owned regions are preserved.
-   - `structured` (JSON/TOML/`.gitignore`): apply only the `owned_paths` from the plugin; all other paths/blocks in the local file are preserved.
-
-2. **Generate the unified diff** of (local → merged result):
-   ```bash
-   bash scripts/sync-unified-diff.sh <local-file> <merged-content-file>
-   ```
-   Parse `.diff` for the human-readable diff and `.hunks` for per-hunk exclusion. Print the diff (first 40 lines) before the prompt.
-
-3. **Ask one AskUserQuestion** — "Apply strategy-merged update to `<path>`?" — with options:
-
-   - `Accept merge (strategy-aware, recommended)` — write the merged result; stamp the marker. Track as `conflict_legacy resolved via strategy merge`.
-   - `Accept with exclusions` — present the hunk multiSelect checkbox list (same format as `additive-merge-with-diff`). Deselected hunks revert to local content for that range. Write the result; stamp the marker.
-   - `Keep local as-is` — no write; no marker stamped; re-surfaces on next run.
-   - `Manual merge` — write plugin content to `.claude/sync-conflict-<sanitized-path>.txt` and local content to `.claude/sync-local-<sanitized-path>.txt`. Print: "Wrote scratch files for manual merge. Re-run `/sync` after merging." Do not write the target file.
-
-**Rationale:** the extension strategy already encodes what the plugin owns vs what the project owns. Applying the strategy (even without a baseline) is strictly better than the raw binary — it preserves all local content outside the plugin-owned paths/regions and only surfaces genuine conflicts within those regions.
-
-**`additive_merge_apply` (additive-merge strategy).** Run the per-section merge (see "Apply actions" below for `additive-merge`). When the merge produces a `pending_contradictions` list for a section, present a four-option item-level menu for each contradiction:
-
-- `Adopt plugin item (replace local with plugin)`
-- `Keep local item (skip plugin update for this item)`
-- `Keep both (rare — append plugin without removing local)`
-- `Skip for now (re-surface next run)`
-
-No higher-level "adopt all / keep all" prompt is asked first; contradictions are the only decision points, and they are resolved one item at a time. The merged file is written after all sections finish.
+Applies only to `additive_merge_with_diff_apply` artifacts (currently: `.github/PULL_REQUEST_TEMPLATE.md` and `.github/workflows/ci.yml`).
 
 **`additive_merge_with_diff_apply` (additive-merge-with-diff strategy).** Run the per-section merge, run Pass 1 of the soundness review (auto-apply all fix types). Generate the unified diff between the local file and the (merged + Pass 1 result) by running:
 
@@ -436,7 +370,7 @@ Parse the JSON output. Use `.diff` as the human-readable diff to print. Use `.hu
 
 Until the conflict markers are removed, the file classifies as `additive_merge_with_diff_apply` on subsequent runs.
 
-**Note:** `authoritative` files never enter Step 4b or 4c — they are applied automatically in Step 4a. `bootstrap` files go through the Step 4b checkbox but never Step 4c — if deselected they are deferred, no per-conflict prompt.
+**Note:** only `additive_merge_with_diff_apply` artifacts enter Step 4c. All other classifications are handled by the deterministic batch in Step 4a.
 
 ---
 
@@ -460,26 +394,18 @@ The script emits the rendered content on stdout. Internally it substitutes `<pla
 
 To read an existing marker from a file (for diff classification or any other lookup), run `bash scripts/sync-marker-read.sh <file>` and parse `.sha12` (or branch on `.found == false` when no marker is present).
 
-After Step 4b confirmation, collect all approved items (the subset the user checked: `add`, `fast_forward`, `unchanged_legacy`, `bootstrap_create`). Apply them in one call:
+Step 4a runs the batch apply for all deterministic items. The `BATCH_RESULT` JSON array is the source of truth for Step 8 tracking. Items with `"result": "needs-agent"` in the batch result are additive-merge-with-diff items that were deferred to Step 4c.
 
-```bash
-CONFIRMED_ITEMS="$(printf '%s' "$CLASSIFICATIONS" | jq -c '[.[] | select(.classification == "add" or .classification == "fast_forward" or .classification == "unchanged_legacy" or .classification == "bootstrap_create")]')"
-bash scripts/sync-apply-batch.sh "$CONFIRMED_ITEMS" "$PLUGIN_ROOT" <project-inputs-json>
-```
-
-The script returns a JSON array of results. Items with `"result": "needs-agent"` (e.g. structured JSON fast-forwards with complex hook array merging) fall back to per-item agent apply using the existing action descriptions below.
-
-**Apply actions:**
+**Apply actions (for reference — the batch script implements these):**
 
 1. **`add`** — Render the template via `sync-render-template.sh` with `project_inputs`. Compute the canonical SHA via `sync-canonical.sh` for the artifact's strategy. Write the file, then stamp the marker per the "Marker insertion rule" above. Track as `added`.
 
-2. **`fast_forward`** (approved in Step 4b) — Render the template (`sync-render-template.sh`) or read the plugin source. Apply the extension strategy:
-   - `owned-regions`: run `bash scripts/sync-owned-regions-apply.sh <local> <plugin-source> '<owned_boundaries-json>'` and write the result to the target. Then stamp the marker on line 2.
-   - `structured` (JSON/TOML): for each path in `owned_paths`, replace the value at that path with the plugin's current value (use `jq` for JSON). Preserve all other paths. JSON files: update the sidecar marker (Step 5.5). TOML files: stamp the inline `#`-comment marker on line 1.
-   - `structured` (.gitignore): for each tag in `owned_paths`, replace the tagged block. Preserve all untagged blocks. Stamp the inline `#`-comment marker on line 1.
+2. **`fast_forward`** — Apply the extension strategy:
+   - `owned-regions`: run `bash scripts/sync-owned-regions-apply.sh <local> <plugin-source> '<owned_boundaries-json>'` and write the result to the target. Stamp the marker.
+   - `structured` (JSON, dot-path): for each path in `owned_paths`, overwrite the local value with the plugin value via `jq`. All other keys are preserved. JSON files: flag `sidecar_update_needed` (Step 5.5). `.gitignore`: replace each tagged block; stamp the inline marker.
    Track as `fast-forward applied`.
 
-3. **`conflict`** / **`conflict_legacy`** (resolution from Step 4c) — Apply per the chosen resolution option. Track the resolution in the Step 8 report.
+3. **`conflict`** / **`conflict_legacy`** — Same apply logic as `fast_forward` for the matching strategy. Plugin-owned regions/paths always win; project-owned content is preserved. Track as `conflict resolved (deterministic)` or `conflict_legacy resolved (deterministic)`.
 
 4. **`unchanged_legacy`** — Silently re-write the file with the marker inserted (no content change). Track as `unchanged (legacy marker added)`.
 

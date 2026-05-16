@@ -28,13 +28,21 @@
 #       file with the plugin-side block. Stamp the inline marker. Result:
 #       "applied".
 #
+#   fast_forward (structured, JSON)
+#       For each dot-path in owned_paths, overwrite the local JSON value with
+#       the plugin value; all other keys are preserved. Result: "applied".
+#
+#   conflict / conflict_legacy (owned-regions / structured)
+#       Apply the same deterministic merge as fast_forward for the matching
+#       strategy. Plugin-owned regions/paths always win; project-owned content
+#       is preserved. Result: "applied".
+#
 #   bootstrap_create
 #       Render the template, write the rendered content, stamp the bootstrap
 #       header. Result: "applied".
 #
-# Classifications that need agent attention (LLM merge, complex JSON hooks,
-# unresolved conflicts) are reported as "needs-agent". The caller is expected
-# to handle them per the existing per-item flow.
+# Classifications that need agent attention (LLM merge) are reported as
+# "needs-agent". The caller handles additive-merge-with-diff interactively.
 #
 # Args:
 #   $1  Required. JSON array of items OR "-" to read the array from stdin.
@@ -336,6 +344,105 @@ emit_result() {
   fi
 }
 
+# Apply plugin-owned regions to an existing target via sync-owned-regions-apply.sh.
+# Prints the resulting sha12 to stdout on success, or an error message on failure.
+# Return codes: 0 = success (sha12 printed), 1 = failure (error message printed).
+apply_owned_regions() {
+  local item="$1" target="$2" upstream_key="$3"
+  local content_path boundaries merged_path sha
+
+  content_path="$(plugin_content_path "$item")" \
+    || { printf 'apply_owned_regions: failed to resolve plugin source for %s' "$target"; return 1; }
+  [ -f "$target" ] \
+    || { printf 'apply_owned_regions: target missing: %s' "$target"; return 1; }
+
+  boundaries="$(printf '%s' "$item" | jq -c '.owned_boundaries // []')"
+  merged_path="$tmp_workdir/merged.$$.$RANDOM"
+
+  bash "$SCRIPT_DIR/sync-owned-regions-apply.sh" "$target" "$content_path" "$boundaries" \
+      > "$merged_path" 2>>"$tmp_workdir/merge.err" \
+    || { printf 'apply_owned_regions: owned-regions merge failed for %s' "$target"; return 1; }
+  mv "$merged_path" "$target" \
+    || { printf 'apply_owned_regions: failed to write merged content to %s' "$target"; return 1; }
+
+  sha="$(canonical_sha12 owned-regions "$target" --owned-boundaries "$boundaries" 2>/dev/null)"
+  [ -n "$sha" ] \
+    || { printf 'apply_owned_regions: failed to compute sha for %s' "$target"; return 1; }
+
+  stamp_md_header "$target" "$upstream_key" "$sha" bootstrap 2>/dev/null \
+    || { printf 'apply_owned_regions: failed to stamp marker on %s' "$target"; return 1; }
+
+  printf '%s' "$sha"
+}
+
+# Replace plugin-owned tagged blocks in a .gitignore target.
+# Prints the resulting sha12 to stdout on success, or an error message on failure.
+apply_gitignore_blocks() {
+  local item="$1" target="$2" upstream_key="$3"
+  local content_path owned_paths_json count sha i tag
+
+  content_path="$(plugin_content_path "$item")" \
+    || { printf 'apply_gitignore_blocks: failed to resolve plugin source for %s' "$target"; return 1; }
+  [ -f "$target" ] \
+    || { printf 'apply_gitignore_blocks: target missing: %s' "$target"; return 1; }
+
+  owned_paths_json="$(printf '%s' "$item" | jq -c '.owned_paths // []')"
+  count="$(printf '%s' "$owned_paths_json" | jq -r 'length')"
+
+  for ((i = 0; i < count; i++)); do
+    tag="$(printf '%s' "$owned_paths_json" | jq -r ".[$i]")"
+    replace_gitignore_block "# $tag" "$target" "$content_path" 2>>"$tmp_workdir/gitignore.err" \
+      || { printf 'apply_gitignore_blocks: block replacement failed for tag %s in %s' "$tag" "$target"; return 1; }
+  done
+
+  sha="$(canonical_sha12 structured "$target" --owned-paths "$owned_paths_json" 2>/dev/null)"
+  [ -n "$sha" ] \
+    || { printf 'apply_gitignore_blocks: failed to compute sha for %s' "$target"; return 1; }
+
+  stamp_hash_marker "$target" "$upstream_key" "$sha" 2>/dev/null \
+    || { printf 'apply_gitignore_blocks: failed to stamp marker on %s' "$target"; return 1; }
+
+  printf '%s' "$sha"
+}
+
+# Merge plugin-owned dot-path values into a JSON target (e.g. "hooks" in settings.json).
+# All keys not in owned_paths are preserved from the local file.
+# Prints the resulting sha12 to stdout on success, or an error message on failure.
+# NOTE: JSON files use the sidecar marker; the caller must set sidecar_update_needed.
+apply_json_dotpath_merge() {
+  local item="$1" target="$2" upstream_key="$3"
+  local content_path owned_paths_json count merge_tmp sha i path plugin_val merged
+
+  content_path="$(plugin_content_path "$item")" \
+    || { printf 'apply_json_dotpath_merge: failed to resolve plugin source for %s' "$target"; return 1; }
+  [ -f "$target" ] \
+    || { printf 'apply_json_dotpath_merge: target missing: %s' "$target"; return 1; }
+
+  owned_paths_json="$(printf '%s' "$item" | jq -c '.owned_paths // []')"
+  count="$(printf '%s' "$owned_paths_json" | jq -r 'length')"
+
+  merge_tmp="$(mktemp)"
+  cp "$target" "$merge_tmp"
+
+  for ((i = 0; i < count; i++)); do
+    path="$(printf '%s' "$owned_paths_json" | jq -r ".[$i]")"
+    plugin_val="$(jq -S ".${path}" "$content_path" 2>/dev/null)" \
+      || { rm -f "$merge_tmp"; printf 'apply_json_dotpath_merge: failed to read plugin value for path .%s in %s' "$path" "$target"; return 1; }
+    merged="$(jq --argjson v "$plugin_val" ".${path} = \$v" "$merge_tmp" 2>/dev/null)" \
+      || { rm -f "$merge_tmp"; printf 'apply_json_dotpath_merge: failed to merge path .%s into %s' "$path" "$target"; return 1; }
+    printf '%s\n' "$merged" > "$merge_tmp"
+  done
+
+  cp "$merge_tmp" "$target"
+  rm -f "$merge_tmp"
+
+  sha="$(canonical_sha12 structured "$target" --owned-paths "$owned_paths_json" 2>/dev/null)"
+  [ -n "$sha" ] \
+    || { printf 'apply_json_dotpath_merge: failed to compute sha for %s' "$target"; return 1; }
+
+  printf '%s' "$sha"
+}
+
 # Collect results as newline-delimited JSON, wrap into an array at the end.
 results_file="$tmp_workdir/results.jsonl"
 : > "$results_file"
@@ -346,24 +453,23 @@ results_file="$tmp_workdir/results.jsonl"
 is_needs_agent() {
   local classification="$1"
   local strategy="$2"
-  local target="$3"
   case "$classification" in
-    conflict|conflict_legacy|additive_merge_apply|additive_merge_with_diff_apply)
+    additive_merge_apply|additive_merge_with_diff_apply)
       return 0
       ;;
-    fast_forward)
-      # Owned-regions and .gitignore-structured are deterministic. Structured
-      # JSON requires complex hook-array merging that the apply script does
-      # not implement deterministically.
+    conflict|conflict_legacy)
+      # Owned-regions and structured (including JSON dot-paths) are handled
+      # deterministically: plugin-owned regions/paths always win.
       case "$strategy" in
-        owned-regions|section) return 1 ;;
-        structured)
-          if is_gitignore_target "$target"; then
-            return 1
-          else
-            return 0
-          fi
-          ;;
+        owned-regions|section|structured) return 1 ;;
+        *) return 0 ;;
+      esac
+      ;;
+    fast_forward)
+      # All structured fast-forwards are deterministic: .gitignore uses
+      # tagged-block replacement; JSON uses dot-path merge.
+      case "$strategy" in
+        owned-regions|section|structured) return 1 ;;
       esac
       ;;
   esac
@@ -398,7 +504,7 @@ while IFS= read -r item; do
     emit_result "$target" "$upstream_key" "$classification" "skipped" "" >> "$results_file"
     continue
   fi
-  if is_needs_agent "$classification" "$strategy" "$target"; then
+  if is_needs_agent "$classification" "$strategy"; then
     emit_result "$target" "$upstream_key" "$classification" "needs-agent" "" >> "$results_file"
     continue
   fi
@@ -520,74 +626,34 @@ while IFS= read -r item; do
       ;;
 
     fast_forward)
-      content_path="$(plugin_content_path "$item")" || content_path=""
-      if [ -z "$content_path" ] || [ ! -f "$content_path" ]; then
-        err_out="fast_forward: failed to read or render plugin source"
-      elif [ ! -f "$target" ]; then
-        err_out="fast_forward: target missing: $target"
-      else
-        case "$strategy" in
-          owned-regions|section)
-            boundaries="$(printf '%s' "$item" | jq -c '.owned_boundaries // []')"
-            merged_path="$tmp_workdir/merged.$$.$RANDOM"
-            if ! bash "$SCRIPT_DIR/sync-owned-regions-apply.sh" "$target" "$content_path" "$boundaries" > "$merged_path" 2>>"$tmp_workdir/merge.err"; then
-              err_out="fast_forward: owned-regions merge failed for $target"
+      case "$strategy" in
+        owned-regions|section)
+          if result_sha="$(apply_owned_regions "$item" "$target" "$upstream_key" 2>/dev/null)"; then
+            apply_result="applied"; apply_sha="$result_sha"
+          else
+            err_out="fast_forward: $result_sha"
+          fi
+          ;;
+        structured)
+          if is_gitignore_target "$target"; then
+            if result_sha="$(apply_gitignore_blocks "$item" "$target" "$upstream_key" 2>/dev/null)"; then
+              apply_result="applied"; apply_sha="$result_sha"
             else
-              if ! mv "$merged_path" "$target"; then
-                err_out="fast_forward: failed to write merged content to $target"
-              else
-                sha="$(canonical_sha12 owned-regions "$target" --owned-boundaries "$boundaries" 2>/dev/null)"
-                if [ -z "$sha" ]; then
-                  err_out="fast_forward: failed to compute owned-regions sha for $target"
-                elif ! stamp_md_header "$target" "$upstream_key" "$sha" bootstrap 2>/dev/null; then
-                  err_out="fast_forward: failed to stamp marker on $target"
-                else
-                  apply_result="applied"
-                  apply_sha="$sha"
-                fi
-              fi
+              err_out="fast_forward: $result_sha"
             fi
-            ;;
-          structured)
-            if is_gitignore_target "$target"; then
-              owned_paths_json="$(printf '%s' "$item" | jq -c '.owned_paths // []')"
-              count="$(printf '%s' "$owned_paths_json" | jq -r 'length')"
-              merge_ok=1
-              for ((i = 0; i < count; i++)); do
-                tag="$(printf '%s' "$owned_paths_json" | jq -r ".[$i]")"
-                # Tags in the manifest are bare ("bytewyrd:base"); the
-                # in-file tag line includes the leading "# ". Add it.
-                tag_line="# $tag"
-                if ! replace_gitignore_block "$tag_line" "$target" "$content_path" 2>>"$tmp_workdir/gitignore.err"; then
-                  merge_ok=0
-                  break
-                fi
-              done
-              if [ "$merge_ok" != "1" ]; then
-                err_out="fast_forward: gitignore block replacement failed for $target"
-              else
-                sha="$(canonical_sha12 structured "$target" --owned-paths "$owned_paths_json" 2>/dev/null)"
-                if [ -z "$sha" ]; then
-                  err_out="fast_forward: failed to compute gitignore sha for $target"
-                elif ! stamp_hash_marker "$target" "$upstream_key" "$sha" 2>/dev/null; then
-                  err_out="fast_forward: failed to stamp marker on $target"
-                else
-                  apply_result="applied"
-                  apply_sha="$sha"
-                fi
-              fi
+          else
+            if result_sha="$(apply_json_dotpath_merge "$item" "$target" "$upstream_key" 2>/dev/null)"; then
+              apply_result="applied"; apply_sha="$result_sha"
+              apply_extra="$(jq -nc '{sidecar_update_needed: true}')"
             else
-              # Structured JSON fast-forwards require hook-array merging the
-              # apply batch does not implement deterministically. Surface as
-              # needs-agent so the per-item flow can handle it.
-              apply_result="needs-agent"
+              err_out="fast_forward: $result_sha"
             fi
-            ;;
-          *)
-            err_out="fast_forward: unsupported strategy: $strategy"
-            ;;
-        esac
-      fi
+          fi
+          ;;
+        *)
+          err_out="fast_forward: unsupported strategy: $strategy"
+          ;;
+      esac
       ;;
 
     bootstrap_create)
@@ -628,6 +694,40 @@ while IFS= read -r item; do
           fi
         fi
       fi
+      ;;
+
+    conflict|conflict_legacy)
+      # Plugin-owned regions/paths always win. The extension strategy encodes
+      # what the plugin owns vs. what the project owns, so applying it
+      # deterministically is strictly correct even without a baseline marker.
+      case "$strategy" in
+        owned-regions|section)
+          if result_sha="$(apply_owned_regions "$item" "$target" "$upstream_key" 2>/dev/null)"; then
+            apply_result="applied"; apply_sha="$result_sha"
+          else
+            err_out="${classification}: $result_sha"
+          fi
+          ;;
+        structured)
+          if is_gitignore_target "$target"; then
+            if result_sha="$(apply_gitignore_blocks "$item" "$target" "$upstream_key" 2>/dev/null)"; then
+              apply_result="applied"; apply_sha="$result_sha"
+            else
+              err_out="${classification}: $result_sha"
+            fi
+          else
+            if result_sha="$(apply_json_dotpath_merge "$item" "$target" "$upstream_key" 2>/dev/null)"; then
+              apply_result="applied"; apply_sha="$result_sha"
+              apply_extra="$(jq -nc '{sidecar_update_needed: true}')"
+            else
+              err_out="${classification}: $result_sha"
+            fi
+          fi
+          ;;
+        *)
+          apply_result="needs-agent"
+          ;;
+      esac
       ;;
 
     *)
