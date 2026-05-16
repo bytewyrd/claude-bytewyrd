@@ -15,8 +15,8 @@ Sync collects user input at two points:
 
 1. **Steps 2a–2c (project identity)** — Only when `docs/project-brief.md` is absent or incomplete. Same as before: one AskUserQuestion for gaps in name/description, optional body-fill, brief creation.
 2. **Step 4a (authoritative auto-apply)** — No user input. Authoritative files are written immediately. For `docs/rfc-process.md` only: if a `## Project Extensions` section exists, one acknowledgement prompt is shown before the write.
-3. **Step 4b (batch confirmation)** — One AskUserQuestion with up to two questions (one for additions, one for fast-forward updates). Omitted entirely when there are no additions or fast-forward updates.
-4. **Step 4c (per-conflict resolution)** — One AskUserQuestion per conflict. Run sequentially, one at a time.
+3. **Step 4b (batch confirmation)** — One AskUserQuestion with checkboxes for additions, fast-forwards, legacy marker stamps, and bootstrap creations. Omitted when there are none.
+4. **Step 4c (per-conflict and per-merge resolution)** — One AskUserQuestion per conflict or merge-apply item. Run sequentially.
 
 When `docs/project-brief.md` already exists with complete identity *and* all plugin-managed files are already at the current plugin version, Steps 4a, 4b, and 4c are skipped — `/sync` reports everything as unchanged and exits without prompting.
 
@@ -267,7 +267,6 @@ Authoritative overwrites (N files — plugin owns, applied automatically):
 
 Additions (N new files):
   + <path>
-  + <path>
 
 Fast-forward updates (N files, no local edits):
   ~ <path>  (plugin: <brief description of change>)
@@ -275,8 +274,14 @@ Fast-forward updates (N files, no local edits):
 Legacy marker injection (N files, content matches — adding version marker only):
   + <path>  (first sync after upgrade — no content change)
 
+Bootstrap creations (N files — your project owns these going forward):
+  + <path>
+
 Conflicts (N files, local edits collide with plugin update):
   ! <path>  (<conflict scope description>)
+
+Additive merges pending (N files):
+  ~ <path>  (additive-merge)
 
 Local-only edits (N files, plugin unchanged): <path>, <path>
 
@@ -290,10 +295,12 @@ If this is the first run after upgrading to a plugin version that ships per-file
 ```
 This is the first /sync run after an upgrade that adds per-file content tracking.
 Existing plugin-managed files have been classified by comparing local content
-against the plugin's current shipped content. Files that match exactly were
-silently marked. Files that differ are listed under "Conflicts (legacy)" — pick
-"Adopt plugin and add marker" for any file you have not intentionally edited.
-Future runs will only flag files that genuinely diverged.
+against the plugin's current shipped content. Files that match exactly are
+silently marked (no content change, listed under "Legacy marker injection").
+Files that differ are listed under "Conflicts (legacy)" — you will review a
+strategy-aware diff (plugin-owned regions updated, your non-owned content
+preserved) and accept or reject in Step 4c. Future runs will only flag files
+that genuinely diverged within owned regions.
 ```
 
 ### Step 4a — Authoritative auto-apply (no confirmation)
