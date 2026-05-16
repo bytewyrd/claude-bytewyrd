@@ -34,6 +34,14 @@ setup() {
   # Clear CLAUDE_PLUGIN_ROOT — its default would otherwise point at the real
   # plugin checkout.
   unset CLAUDE_PLUGIN_ROOT
+
+  # Plugin-root resolution is now part of preflight (sourced from
+  # scripts/_lib/plugin.bash). Provide a default fake plugin manifest under
+  # FAKE_HOME so the script can locate it via the "home" branch. Tests that
+  # specifically exercise the missing-plugin-root case clear this fixture
+  # themselves via `rm -rf "$FAKE_HOME/.claude"`.
+  mkdir -p "$FAKE_HOME/.claude"
+  printf '{"artifacts":[]}\n' > "$FAKE_HOME/.claude/bootstrap-manifest.json"
 }
 
 teardown() {
@@ -82,6 +90,22 @@ teardown() {
   assert_equal "$(echo "$output" | jq -r '.missing_recommended | type')" "array"
   assert_equal "$(echo "$output" | jq -r '.has_substantial_content | type')" "boolean"
   assert_equal "$(echo "$output" | jq -r '.docs_agent_drifted | type')" "boolean"
+  # New fields introduced by preflight consolidation:
+  assert_equal "$(echo "$output" | jq -r 'has("plugin_root")')" "true"
+  assert_equal "$(echo "$output" | jq -r 'has("sidecar_migrated")')" "true"
+  assert_equal "$(echo "$output" | jq -r 'has("sidecar_message")')" "true"
+  assert_equal "$(echo "$output" | jq -r '.sidecar_migrated | type')" "boolean"
+  assert_equal "$(echo "$output" | jq -r '.languages | type')" "array"
+  assert_equal "$(echo "$output" | jq -r '.component_roots | type')" "array"
+  assert_equal "$(echo "$output" | jq -r '.has_rust | type')" "boolean"
+  assert_equal "$(echo "$output" | jq -r '.has_js | type')" "boolean"
+  assert_equal "$(echo "$output" | jq -r '.has_go | type')" "boolean"
+  assert_equal "$(echo "$output" | jq -r '.has_python | type')" "boolean"
+  assert_equal "$(echo "$output" | jq -r '.has_svelte | type')" "boolean"
+  assert_equal "$(echo "$output" | jq -r '.has_ruby | type')" "boolean"
+  assert_equal "$(echo "$output" | jq -r '.has_rails | type')" "boolean"
+  assert_equal "$(echo "$output" | jq -r '.has_k8s_cue | type')" "boolean"
+  assert_equal "$(echo "$output" | jq -r '.has_terraform | type')" "boolean"
 }
 
 @test "project_slug equals basename of repo_root" {
@@ -221,4 +245,109 @@ EOF
   run bash "$SCRIPT"
   assert_success
   assert_equal "$(echo "$output" | jq -r .github_remote)" "git@github.com:foo/bar.git"
+}
+
+# --- Plugin root -----------------------------------------------------------
+
+@test "plugin_root present in output (home fallback fixture)" {
+  # The default setup() creates a fake plugin manifest under FAKE_HOME/.claude.
+  # The home branch of find_plugin_root should resolve to that.
+  run bash "$SCRIPT"
+  assert_success
+  assert_equal "$(echo "$output" | jq -r .plugin_root)" "$FAKE_HOME/.claude"
+}
+
+@test "plugin_root resolves from CLAUDE_PLUGIN_ROOT when set" {
+  # Build a separate plugin checkout fixture.
+  mkdir -p "$TEST_TMPDIR/checkout"
+  printf '{"artifacts":[]}\n' > "$TEST_TMPDIR/checkout/bootstrap-manifest.json"
+  run env CLAUDE_PLUGIN_ROOT="$TEST_TMPDIR/checkout" bash "$SCRIPT"
+  assert_success
+  pr="$(echo "$output" | jq -r .plugin_root)"
+  assert_equal "$pr" "$TEST_TMPDIR/checkout"
+  # Sanity: non-empty.
+  [ -n "$pr" ] || fail "plugin_root should be non-empty"
+}
+
+@test "missing plugin root → exit 1 with error envelope" {
+  # Remove the default home fixture so no manifest can be located.
+  rm -rf "$FAKE_HOME/.claude"
+  run bash "$SCRIPT"
+  assert_failure 1
+  # Error is a JSON envelope on stderr; the assertion below verifies that the
+  # output (which `run` captures from both stdout and stderr) parses as JSON
+  # with an `.error` key.
+  run bash -c "echo '$output' | jq -e .error"
+  assert_success
+}
+
+# --- Sidecar migration -----------------------------------------------------
+
+@test "sidecar_migrated true when legacy sidecar exists and new path is absent" {
+  mkdir -p .claude
+  printf '{"k":"v"}' > .claude/.bootstrap-versions.json
+  run bash "$SCRIPT"
+  assert_success
+  assert_equal "$(echo "$output" | jq -r .sidecar_migrated)" "true"
+  # Message is non-empty (human-readable migration result).
+  msg="$(echo "$output" | jq -r .sidecar_message)"
+  [ -n "$msg" ] || fail "sidecar_message should be non-empty after migration"
+  # File moved: old path removed, new path present with the same content.
+  refute [ -f .claude/.bootstrap-versions.json ]
+  assert [ -f .bytewyrd/.bootstrap-versions.json ]
+  assert_equal "$(cat .bytewyrd/.bootstrap-versions.json)" '{"k":"v"}'
+}
+
+@test "sidecar_migrated false when nothing to migrate" {
+  # No old sidecar — no-op migration.
+  run bash "$SCRIPT"
+  assert_success
+  assert_equal "$(echo "$output" | jq -r .sidecar_migrated)" "false"
+  refute [ -f .bytewyrd/.bootstrap-versions.json ]
+}
+
+@test "sidecar_migrated false when both old and new exist" {
+  mkdir -p .claude .bytewyrd
+  printf '{"old":1}' > .claude/.bootstrap-versions.json
+  printf '{"new":1}' > .bytewyrd/.bootstrap-versions.json
+  run bash "$SCRIPT"
+  assert_success
+  assert_equal "$(echo "$output" | jq -r .sidecar_migrated)" "false"
+  # Both files preserved untouched.
+  assert_equal "$(cat .claude/.bootstrap-versions.json)" '{"old":1}'
+  assert_equal "$(cat .bytewyrd/.bootstrap-versions.json)" '{"new":1}'
+}
+
+# --- Language detection ----------------------------------------------------
+
+@test "language detection: Cargo.toml sets has_rust and listed in languages" {
+  cat > Cargo.toml <<'EOF'
+[package]
+name = "my-crate"
+version = "0.1.0"
+EOF
+  run bash "$SCRIPT"
+  assert_success
+  assert_equal "$(echo "$output" | jq -r .has_rust)" "true"
+  assert_equal "$(echo "$output" | jq -c .languages)" '["rust"]'
+  # component_roots has at least one rust entry.
+  assert_equal "$(echo "$output" | jq -r '.component_roots[0].language')" "rust"
+  assert_equal "$(echo "$output" | jq -r '.component_roots[0].name')" "my-crate"
+}
+
+@test "language detection: bare repo → empty arrays and false flags" {
+  # No manifest files in the repo; only the empty git commit exists.
+  run bash "$SCRIPT"
+  assert_success
+  assert_equal "$(echo "$output" | jq -c .languages)" "[]"
+  assert_equal "$(echo "$output" | jq -c .component_roots)" "[]"
+  assert_equal "$(echo "$output" | jq -r .has_rust)" "false"
+  assert_equal "$(echo "$output" | jq -r .has_js)" "false"
+  assert_equal "$(echo "$output" | jq -r .has_go)" "false"
+  assert_equal "$(echo "$output" | jq -r .has_python)" "false"
+  assert_equal "$(echo "$output" | jq -r .has_svelte)" "false"
+  assert_equal "$(echo "$output" | jq -r .has_ruby)" "false"
+  assert_equal "$(echo "$output" | jq -r .has_rails)" "false"
+  assert_equal "$(echo "$output" | jq -r .has_k8s_cue)" "false"
+  assert_equal "$(echo "$output" | jq -r .has_terraform)" "false"
 }
