@@ -224,3 +224,110 @@ EOF
   assert_success
   assert_equal "$(echo "$output" | jq -r .classification)" "bootstrap_create"
 }
+
+# ---------- chunks output ----------
+
+@test "structured JSON — conflict_legacy emits chunks with owned path changed and preserved keys" {
+  cat > "$PLUGIN_ROOT/templates/settings.json.tpl" <<'EOF'
+{"hooks": {"Stop": [{"type":"command","command":"echo done"}]}, "enabledPlugins": {}}
+EOF
+  cat > settings.json <<'EOF'
+{"hooks": {}, "enabledPlugins": {"bytewyrd": true}}
+EOF
+  m='{"upstream_key":"s@v1","source":"templates/settings.json.tpl","target":"settings.json","extension_strategy":"structured","owned_paths":["hooks"],"templated":false}'
+  run bash "$SCRIPT" "$m" settings.json "$PLUGIN_ROOT"
+  assert_success
+  assert_equal "$(echo "$output" | jq -r .classification)" "conflict_legacy"
+  # At least the owned chunk + one preserved chunk.
+  chunks_len="$(echo "$output" | jq -r '.chunks | length')"
+  [ "$chunks_len" -ge 2 ] || fail "expected chunks length >= 2, got: $chunks_len"
+  # First chunk is the owned hooks dotpath, changed.
+  assert_equal "$(echo "$output" | jq -r '.chunks[0].id')" "hooks"
+  assert_equal "$(echo "$output" | jq -r '.chunks[0].status')" "changed"
+  assert_equal "$(echo "$output" | jq -r '.chunks[0].owned')" "true"
+  # enabledPlugins (not in owned_paths) is preserved.
+  preserved_count="$(echo "$output" | jq '[.chunks[] | select(.id == "enabledPlugins" and .status == "preserved" and .owned == false)] | length')"
+  [ "$preserved_count" -ge 1 ] || fail "expected at least one preserved enabledPlugins chunk, got: $preserved_count"
+}
+
+@test "structured .gitignore — fast_forward emits chunks with block status" {
+  # Plugin source has updated bytewyrd:base block content.
+  cat > "$PLUGIN_ROOT/templates/.gitignore.tpl" <<'EOF'
+# bytewyrd:base
+.worktrees/
+.bytewyrd/*
+EOF
+  # Compute the plugin canonical SHA so the local marker matches the recorded baseline.
+  paths='["bytewyrd:base"]'
+  # We need recorded == old plugin sha (legacy state) but here we test fast_forward,
+  # where local matches the recorded marker and the plugin has advanced.
+  # Create local file with an old version of the bytewyrd:base block.
+  cat > .gitignore <<'EOF'
+# bytewyrd:base
+.worktrees/
+
+# user content below
+*.log
+EOF
+  # Compute the canonical sha of the LOCAL file (old block content); use that as
+  # the recorded marker — this puts us in the fast_forward branch (local==recorded,
+  # plugin!=recorded).
+  local_sha="$(bash "$SCRIPT_ROOT/scripts/sync-canonical.sh" structured .gitignore --owned-paths "$paths" | jq -r .sha12)"
+  # Prepend the marker as line 1 of .gitignore.
+  tmpfile="$(mktemp)"
+  printf '# bootstrap-content-version: g@v1:%s\n\n' "$local_sha" > "$tmpfile"
+  cat .gitignore >> "$tmpfile"
+  mv "$tmpfile" .gitignore
+  m='{"upstream_key":"g@v1","source":"templates/.gitignore.tpl","target":".gitignore","extension_strategy":"structured","owned_paths":["bytewyrd:base"],"templated":false}'
+  run bash "$SCRIPT" "$m" .gitignore "$PLUGIN_ROOT"
+  assert_success
+  assert_equal "$(echo "$output" | jq -r .classification)" "fast_forward"
+  chunks_len="$(echo "$output" | jq -r '.chunks | length')"
+  [ "$chunks_len" -ge 1 ] || fail "expected chunks length >= 1, got: $chunks_len"
+  # First chunk is the owned tag block.
+  assert_equal "$(echo "$output" | jq -r '.chunks[0].id')" "bytewyrd:base"
+  assert_equal "$(echo "$output" | jq -r '.chunks[0].type')" "gitignore_block"
+  assert_equal "$(echo "$output" | jq -r '.chunks[0].owned')" "true"
+  # A preserved gitignore_other chunk exists.
+  other_count="$(echo "$output" | jq '[.chunks[] | select(.type == "gitignore_other" and .status == "preserved")] | length')"
+  [ "$other_count" -ge 1 ] || fail "expected at least one gitignore_other preserved chunk, got: $other_count"
+}
+
+@test "owned-regions — conflict emits chunks with owned and user headings" {
+  cat > "$PLUGIN_ROOT/templates/BEST.md.tpl" <<'EOF'
+# BEST
+
+## Workflow
+
+new workflow content.
+EOF
+  # Build the local file: a marker (recorded sha unrelated to current local/plugin
+  # so all three differ — triggers conflict), the heading, an old body, plus a
+  # user-owned heading the plugin doesn't know about.
+  paths='[{"type":"heading","heading":"## Workflow"}]'
+  cat > BEST.md <<'EOF'
+<!-- bootstrap-content-version: b@v1:000000000000 -->
+
+# BEST
+
+## Workflow
+
+old workflow content.
+
+## Project Notes
+
+my custom notes.
+EOF
+  m='{"upstream_key":"b@v1","source":"templates/BEST.md.tpl","target":"BEST.md","extension_strategy":"owned-regions","owned_boundaries":[{"type":"heading","heading":"## Workflow"}],"templated":false}'
+  run bash "$SCRIPT" "$m" BEST.md "$PLUGIN_ROOT"
+  assert_success
+  assert_equal "$(echo "$output" | jq -r .classification)" "conflict"
+  chunks_len="$(echo "$output" | jq -r '.chunks | length')"
+  [ "$chunks_len" -ge 2 ] || fail "expected chunks length >= 2, got: $chunks_len"
+  # Owned heading chunk: ## Workflow, owned=true, status=changed.
+  owned_count="$(echo "$output" | jq '[.chunks[] | select(.id == "## Workflow" and .owned == true and .status == "changed")] | length')"
+  [ "$owned_count" -ge 1 ] || fail "expected owned ## Workflow chunk changed, got count: $owned_count"
+  # User heading chunk: ## Project Notes, owned=false, status=preserved.
+  preserved_count="$(echo "$output" | jq '[.chunks[] | select(.id == "## Project Notes" and .owned == false and .status == "preserved")] | length')"
+  [ "$preserved_count" -ge 1 ] || fail "expected preserved ## Project Notes chunk, got count: $preserved_count"
+}

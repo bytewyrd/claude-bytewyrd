@@ -254,38 +254,53 @@ The script reads `$PLUGIN_ROOT/bootstrap-manifest.json`, classifies each artifac
 
 ### Print the summary
 
-After classifying all artifacts, print a categorized summary:
+After classifying all artifacts, print a categorized summary. Each file entry is followed by an indented list of chunks (owned paths, regions, or blocks) showing what will change and what is preserved.
+
+Sigils:
+- `+`  new file being created
+- `~`  deterministic update (no user decision required)
+- `!`  requires your input (additive-merge-with-diff, or additive-merge that escalated due to contradictions)
+
+Chunk sigils (indented under each file):
+- `✓`  owned chunk — will be updated to plugin version
+- `·`  not owned — will be preserved exactly as-is
+
+Example output:
 
 ```
 /sync — change summary:
 
-Authoritative overwrites (N files — plugin owns, applied automatically):
-  ✓ <path>
+New files (2):
+  + docs/rfc-process.md
+  + .github/PULL_REQUEST_TEMPLATE.md
+      ! additive merge — you cherry-pick which sections to accept
 
-Additions (N new files):
-  + <path>
+Updates (3 files):
+  ~ .claude/settings.json
+      ✓ .hooks           → updated  (plugin-owned; adds Stop, PreCompact, PostToolUse entries)
+      · .enabledPlugins  → preserved  (not in owned_paths)
 
-Fast-forward updates (N files, no local edits):
-  ~ <path>  (plugin: <brief description of change>)
+  ~ docs/BEST_PRACTICES.md
+      ✓ ## Workflow       → updated  (plugin-owned heading)
+      · ## Project Notes  → preserved  (user-owned section)
 
-Legacy marker injection (N files, content matches — adding version marker only):
-  + <path>  (first sync after upgrade — no content change)
+  ~ .gitignore
+      ✓ bytewyrd:base block  → updated  (added .bytewyrd/*)
+      · user content         → preserved
 
-Bootstrap creations (N files — your project owns these going forward):
-  + <path>
-
-Conflicts (N files, local edits collide with plugin update):
-  ! <path>  (<conflict scope description>)
-
-Additive merges pending (N files):
-  ~ <path>  (additive-merge)
-
-Local-only edits (N files, plugin unchanged): <path>, <path>
-
-Unchanged (N files): (collapsed)
+Review needed (1 file — additive merge requires your input):
+  ! .github/PULL_REQUEST_TEMPLATE.md
 ```
 
-If any category is empty, omit it entirely. If there are no changes at all, print "Everything is up to date." and exit without prompting.
+Rules for the summary:
+- **New files** (`+`): `add`, `bootstrap_create`, `authoritative_add`
+- **Updates** (`~`): `fast_forward`, `conflict`, `conflict_legacy`, `unchanged_legacy`, `authoritative_update`, `additive_merge_apply` (when auto-merge succeeds)
+- **Review needed** (`!`): `additive_merge_with_diff_apply`, and any `additive_merge_apply` that escalated due to contradictions
+- **Not shown**: `unchanged`, `local_only` for `bootstrap` files
+
+For each file under Updates or New files, render the `chunks` array from the classification result as indented lines. For `changed`/`unchanged` owned chunks use `✓`; for `preserved` user chunks use `·`. Include a one-line description using `local_keys`/`plugin_keys` for JSON dotpaths, or a brief note for other types.
+
+If there are no changes at all, print "Everything is up to date." and exit without prompting.
 
 Otherwise, ask one AskUserQuestion:
 
@@ -315,7 +330,7 @@ The batch script handles all of the following without user input:
 | `conflict`, `conflict_legacy` | owned-regions | Plugin-owned regions replaced; user-owned preserved; stamp |
 | `conflict`, `conflict_legacy` | structured (.gitignore) | Plugin tag-blocks replaced; all other content preserved; stamp |
 | `conflict`, `conflict_legacy` | structured (JSON) | Plugin dot-path values overwritten; all other keys preserved; stamp |
-| `additive_merge_apply` | additive-merge | Run LLM item merge; write; stamp |
+| `additive_merge_apply` | additive-merge | Run LLM item merge; write; stamp (if auto-merge produces contradictions, escalates to `!` cherry-pick flow) |
 | `bootstrap_create` | bootstrap | Render template; write; stamp |
 
 **Special case for `docs/rfc-process.md`** (authoritative): if `sync-rfc-process-check.sh` reports `.has_extensions = true`, print a one-time warning quoting the `## Project Extensions` section before the batch write. No extra prompt — the user already clicked Proceed.
@@ -402,7 +417,7 @@ Step 4a runs the batch apply for all deterministic items. The `BATCH_RESULT` JSO
 
 5. **`unchanged`** / **`local_only`** — No action. Track as `unchanged` or `local-only edit preserved`.
 
-6. **`additive_merge_apply`** (additive-merge strategy) — Run the per-section LLM-classified item merge described in the **Additive-merge algorithm** subsection below. For each owned section: plugin items are added or replaced (per the LLM classification), local-only items are preserved byte-for-byte, contradictions become per-item Step 4c prompts. Run a single auto-apply soundness-review pass (auto-apply `duplicate` and `structural` fixes only; `ordering` and `semantic` issues are logged as suggestions in the Step 8 report — not applied). Reserialize the file with the marker on line 2; the marker SHA is `plugin_sha` (the canonicalized plugin items only), not the merged-file SHA. Track as `additive-merge applied (<N> replacements, <M> appended, <K> soundness fixes)`.
+6. **`additive_merge_apply`** (additive-merge strategy) — Run the per-section LLM item merge. If all sections merge cleanly (no contradictions): write the file, stamp the marker, track as `~`. If any section produces unresolvable contradictions: do NOT write; instead surface the item as `!` and run the `additive_merge_with_diff` interactive flow (diff display + user cherry-pick). After user resolves, write and stamp.
 
 7. **`additive_merge_with_diff_apply`** (additive-merge-with-diff strategy) — Run the same per-section item merge as `additive-merge`. Pass 1 of the soundness review auto-applies all fix types (`duplicate`, `structural`, `ordering`, `semantic`). Render a unified diff of (local file) vs (merged + Pass 1 result) and present the Step 4c diff-review prompt. On `Accept all` or `Accept with exclusions`: write the file, then run Pass 2 of the soundness review (explain-and-ask — the user chooses `Fix automatically` or `I'll handle it`). On `Manual 3-way merge`: write the file with git-style conflict markers; skip Pass 2. On `Defer`: no write. The marker SHA is `plugin_sha` (not the merged-file SHA). Track per the chosen path.
 
