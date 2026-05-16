@@ -292,7 +292,18 @@ Determine the plugin root:
 echo "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}"
 ```
 
-Use the printed path as `PLUGIN_ROOT`. Read the manifest at `$PLUGIN_ROOT/.claude-plugin/bootstrap-manifest.json`. Also read the sidecar at `.claude/.bootstrap-versions.json` (treat as `{}` if absent).
+Use the printed path as `PLUGIN_ROOT`. Read the manifest at `$PLUGIN_ROOT/bootstrap-manifest.json`. Also read the sidecar at `.bytewyrd/.bootstrap-versions.json` (treat as `{}` if absent).
+
+**Sidecar migration check (one-time):** before reading the sidecar, if `.claude/.bootstrap-versions.json` exists and `.bytewyrd/.bootstrap-versions.json` does not, move the contents to the new path and delete the old file:
+
+```bash
+if [ -f .claude/.bootstrap-versions.json ] && [ ! -f .bytewyrd/.bootstrap-versions.json ]; then
+  mkdir -p .bytewyrd
+  mv .claude/.bootstrap-versions.json .bytewyrd/.bootstrap-versions.json
+fi
+```
+
+Log the migration in the Step 8 report: `Migrated .bootstrap-versions.json: .claude/ → .bytewyrd/`.
 
 **Cross-platform SHA-256:**
 
@@ -320,6 +331,17 @@ For each artifact in the manifest (skipping the `.bootstrap-versions.json` sidec
 
 4. **Classify** per the matrix:
 
+**Strategy-first dispatch:** Before applying the matrix below, dispatch to the strategy-specific classifier when `extension_strategy` is `additive-merge`, `additive-merge-with-diff`, `bootstrap`, `authoritative`, or `owned-regions`:
+
+- **`additive-merge`** and **`additive-merge-with-diff`**: compute `plugin_sha` from the canonicalized plugin items only; compare against the marker's recorded SHA. If the local file is absent → `add`. If the recorded SHA matches `plugin_sha` → `unchanged`. Otherwise → `additive_merge_apply` or `additive_merge_with_diff_apply` (the merge runs at apply time; classification only signals "merge needed").
+- **`bootstrap`**: presence-check only. File absent → `bootstrap_create`. File present → `local_only` (the project now owns the file; /sync never updates it).
+- **`authoritative`**: full-content compare after `strip_two_line_header`. File absent → `authoritative_add`. SHAs match → `unchanged`. SHAs differ → `authoritative_update`.
+- **`owned-regions`**: use the same matrix below, treating `owned_boundaries` (or `owned_sections` deprecation alias) as the per-region scope. Emit a deprecation notice in the Step 8 report if `extension_strategy: "section"` was translated.
+
+If `extension_strategy` is `region`, emit the error described in the **Manifest errors — `region` strategy** subsection below; do not classify.
+
+The matrix below applies only to `whole` and `structured` strategies:
+
 | Conditions | Classification |
 |------------|----------------|
 | Target file absent | **add** |
@@ -331,12 +353,25 @@ For each artifact in the manifest (skipping the `.bootstrap-versions.json` sidec
 | Marker present, all three differ AND `local_current != plugin_current` | **conflict** |
 | Marker present, all three differ AND `local_current == plugin_current` | **unchanged** (converged) |
 
+**Manifest errors — `region` strategy.** If the classifier encounters `extension_strategy: "region"` in any manifest, it emits the error:
+
+> `no files use 'region' strategy — did you mean 'owned-regions'?`
+
+and aborts classification for that artifact. The artifact is listed in the Step 8 report under "Manifest errors."
+
 **Canonicalization rules** (same function applied to both local and plugin content — hashes must be directly comparable):
 
-- **`whole` strategy:** full file content with the marker line(s) removed (the embedded comment line and any immediately following blank line).
-- **`region` strategy:** file content from line 1 up to and including `region_end_marker`, with the marker line(s) removed. The project-extension region after the marker is excluded entirely.
-- **`section` strategy:** extract each heading in `owned_sections` (manifest order). For each: the literal heading line + `\n` + section body (all lines from heading to next H2 or EOF, trimmed of leading/trailing blank lines) + `\n`. Concatenate all owned sections. Sections absent from the file contribute heading + `\n` with empty body.
-- **`structured` strategy (JSON):** for each path in `owned_paths`, extract the value using `jq` (sort keys) and serialize it; concatenate. For id-based array paths (`[]:<id_key>`): serialize only entries with a non-empty id, sorted by id. For set-union array paths (`[]:union`): serialize only the plugin-contributed entries.
+The helper `strip_two_line_header(content)` is used by multiple strategies: it removes every contiguous line at the top of the file that starts with `<!-- bootstrap-content-version:`, `<!-- Managed by the Bytewyrd plugin.`, or `<!-- Bootstrapped by the Bytewyrd plugin.`, plus any immediately following blank line. The result is the content the strategy actually compares.
+
+- **`whole` strategy:** full file content with `strip_two_line_header` applied.
+- **`region` strategy:** **DEPRECATED.** No artifacts currently use this strategy. If encountered in a manifest, see "Manifest errors — `region` strategy" below.
+- **`section` strategy:** **DEPRECATED.** Translated transparently to `owned-regions` when `owned_sections` is present and `extension_strategy` is `section`. A deprecation notice is emitted in the Step 8 report.
+- **`additive-merge` strategy:** plugin-side canonical only. Render the template, extract the items inside each entry in `owned_sections` from the rendered output, concatenate the items section-by-section, and hash that. Record the result as `plugin_sha` in the marker. On subsequent runs, compare to the marker's recorded SHA — not a local-vs-plugin full-body compare. (Local can drift freely; only the plugin SHA needs to match its recorded value to detect a no-op.)
+- **`additive-merge-with-diff` strategy:** same plugin-side canonical as `additive-merge`. Plugin-only hash; local content is not part of the canonical SHA.
+- **`bootstrap` strategy:** no canonical-form hash compare — bypasses the matrix entirely. Presence-check only: file absent → `bootstrap_create`; file present → `local_only`. The two-line header on a bootstrap-created file documents that the file is owned by the project going forward.
+- **`authoritative` strategy:** full-content compare after `strip_two_line_header` from both sides. The plugin source is read without the two-line header (it does not carry one in the source tree); the local file is read with `strip_two_line_header` applied. The two hashes are then directly comparable. Update on any mismatch — local edits are replaced.
+- **`owned-regions` strategy:** same boundary-based canonicalization as the legacy `section` strategy, but parameterized by `owned_boundaries` (preferred) or `owned_sections` (deprecation alias). For each boundary in manifest order: the literal heading line + `\n` + section body (all lines from heading to next sibling H2 or EOF, trimmed of leading/trailing blank lines) + `\n`. Concatenate all owned regions. Boundaries absent from the file contribute heading + `\n` with empty body.
+- **`structured` strategy (JSON):** for each path in `owned_paths`, extract the value using `jq` (sort keys) and serialize it; concatenate. For id-based array paths (`[]:<id_key>`): serialize only entries with a non-empty id, sorted by id. For set-union array paths (`[]:union`): serialize only the plugin-contributed entries. The wildcard `*` means "the entire document treated as plugin-owned" (used by the relocated `.bytewyrd/.bootstrap-versions.json` sidecar).
 - **`structured` strategy (`.gitignore`):** for each tagged block in `owned_paths`, extract the `# <tag>\n` line + lines in the block + `\n`; concatenate.
 
 ### Print the summary
@@ -377,27 +412,47 @@ silently marked. Files that differ are listed under "Conflicts (legacy)" — pic
 Future runs will only flag files that genuinely diverged.
 ```
 
-### Step 4a — Batch confirmation for additions and fast-forwards
+### Step 4a — Batch confirmation for additions, fast-forwards, bootstrap, and authoritative
 
-Ask one AskUserQuestion. The question set depends on which categories have items:
+Ask one AskUserQuestion with `multiSelect: true` and per-file checkboxes. The options are the union of every file that requires a write decision at this gate:
 
-- If `additions` or `unchanged_legacy` is non-empty: include Question 1 — "Apply N additions (+ N legacy marker insertions)?" with options:
-  - `Yes, apply all`
-  - `Review each` (drops into per-file prompts)
-  - `Skip all`
-- If `fast_forwards` is non-empty: include Question 2 — "Apply N fast-forward updates? (no local edits will be lost)" with the same three options.
+- **Additions:** `Add <path>` (existing `add` classification)
+- **Fast-forward updates:** `Update <path> (fast-forward — no local edits exist)` (existing `fast_forward` classification)
+- **Legacy marker insertions:** `Stamp marker on <path> (content matches; first sync after upgrade)` (existing `unchanged_legacy` classification)
+- **Bootstrap creations:** `Create <path> from plugin template (bootstrap — this project will own it going forward)` (new — `bootstrap_create` classification)
+- **Authoritative additions:** `Add <path> from plugin (authoritative — plugin owns this file)` (new — `authoritative_add` classification)
+- **Authoritative updates:** `Update <path> to plugin version <sha12> (authoritative — local edits will be replaced)` (new — `authoritative_update` classification)
 
-The two questions are sent in a single AskUserQuestion call. If neither category has items, skip Step 4a entirely.
+The user checks every option they want to apply and unchecks the rest. Deselected items are deferred (no write, re-surfaces next run) — they appear in the Step 8 report under "Deferred."
 
-`unchanged_legacy` entries are included in the additions question because they require a file write (marker insertion) but no content change — the user should see them but does not need per-file confirmation.
+**Migration-time check before rendering the batch prompt:** if `docs/rfc-process.md` classifies as `authoritative_update` and the local file has non-placeholder `## Project Extensions` content (i.e., anything other than `*(no project-specific extensions — the global process applies as-is)*` or empty), print this warning inline above the batch prompt:
 
-`Review each` mode: for each file in the category, ask one AskUserQuestion with "Apply update to `<path>`?" and options `Apply` / `Skip`. Print the first 40 lines of the unified diff between local and plugin-rendered content immediately before the question.
+```
+docs/rfc-process.md — your '## Project Extensions' section will be removed
+if you approve the upcoming batch item, because the file is now plugin-authoritative.
+The content was:
 
-### Step 4b — Per-conflict resolution
+  <quoted section body, indented 2 spaces, truncated to 200 chars>
 
-For each conflict in the `conflict` (and `conflict_legacy`) list, run sequentially. Before each question, print:
+If you need to keep these customizations, copy them now to another file
+(e.g., docs/CONTRIBUTING.md or a new docs/rfc-process-extensions.md)
+before deciding whether to approve the docs/rfc-process.md update in the
+batch confirmation that follows.
+```
 
-- The file path and the conflict scope (e.g., "conflict in `## Tool Usage` section of `CLAUDE.md`" for `section` strategy; "conflict in upstream region of `docs/rfc-process.md`" for `region` strategy).
+The warning re-prints on every subsequent `/sync` until either the user approves the batch item (which overwrites the file) or removes the `## Project Extensions` section manually.
+
+**Per-category escape hatch (preserves the legacy `Review each` mode):** a separate option per category is presented at the end of the multiSelect list: `Review each addition individually` / `Review each fast-forward individually`. If selected, the user enters per-file review for that category — for each file, ask one AskUserQuestion with "Apply update to `<path>`?" and options `Apply` / `Skip`. Print the first 40 lines of the unified diff between local and plugin-rendered content immediately before the question.
+
+If no items qualify for the batch prompt, skip Step 4a entirely.
+
+### Step 4b — Per-conflict and per-merge resolution
+
+For each conflict or merge-apply item, run sequentially. The exact prompt depends on the artifact's strategy.
+
+**`conflict` / `conflict_legacy` (whole, structured, owned-regions strategies).** Before each question, print:
+
+- The file path and the conflict scope (e.g., "conflict in `## Tool Usage` section of `CLAUDE.md`" for `owned-regions` strategy).
 - A compact unified diff (first 40 lines) of local content vs plugin content restricted to the affected owned region/section/path.
 - For `conflict_legacy` only: a note that this file pre-dates per-file markers, so the diff is between local content and the plugin's current content — not a true 3-way merge.
 
@@ -422,11 +477,40 @@ For `conflict_legacy` only, add a fifth option:
 - `Skip for now` → identical to `Keep local version` but recorded separately in the Step 8 report.
 - `Adopt plugin and add marker` (legacy only) → write plugin content and set the marker to the plugin's current sha.
 
+**`additive_merge_apply` (additive-merge strategy).** Run the per-section merge (see "Apply actions" below for `additive-merge`). When the merge produces a `pending_contradictions` list for a section, present a four-option item-level menu for each contradiction:
+
+- `Adopt plugin item (replace local with plugin)`
+- `Keep local item (skip plugin update for this item)`
+- `Keep both (rare — append plugin without removing local)`
+- `Skip for now (re-surface next run)`
+
+No higher-level "adopt all / keep all" prompt is asked first; contradictions are the only decision points, and they are resolved one item at a time. The merged file is written after all sections finish.
+
+**`additive_merge_with_diff_apply` (additive-merge-with-diff strategy).** Run the per-section merge, run Pass 1 of the soundness review (auto-apply all fix types), render a unified diff of (local file) vs (merged + Pass 1 result), and present a four-option diff-review prompt:
+
+- `Accept all` — write the merged result, then run Pass 2 of the soundness review (explain-and-ask). The Pass 2 prompt is described below.
+- `Accept with exclusions` — present a hunk multiSelect checkbox list (each hunk is one option). Deselected hunks revert to the local content for that range. Write the result; then run Pass 2.
+- `Manual 3-way merge` — write the file with git-style conflict markers (`<<<<<<< local`, `=======`, `>>>>>>> plugin`); skip Pass 2; print the explanation below.
+- `Defer` — no write; skip Pass 2; re-present next run.
+
+**Soundness-review Pass 2 explain-and-ask prompt** (runs only for `additive-merge-with-diff` `Accept all` and `Accept with exclusions` paths). After the write, if Pass 2 finds any soundness issues, print each issue (location, type, description, suggested fix) and ask one AskUserQuestion:
+
+- `Fix automatically` — apply all soundness fixes from Pass 2, then write again.
+- `I'll handle it` — leave the file as-is; the user resolves the issues manually.
+
+**Manual 3-way merge explanation** (printed when `Manual 3-way merge` is chosen):
+
+> Wrote `<path>` with git-style conflict markers for `<N>` hunks. Open the file, resolve each conflict by keeping the version you want (or composing a merge), remove the marker lines, and re-run `/sync`.
+
+Until the conflict markers are removed, the file classifies as `additive_merge_with_diff_apply` on subsequent runs.
+
+**Note:** `authoritative` and `bootstrap` files never enter Step 4b. Their only decision point is the Step 4a checkbox. If the checkbox is deselected, the file is deferred (recorded in Step 8 report) — no per-conflict prompt.
+
 ---
 
 ## Step 5 — Apply changes
 
-This step applies the actions determined by Steps 4a and 4b. For each artifact in the diff result, apply its action. Templates are read from `$PLUGIN_ROOT/.claude-plugin/scripts/templates/`. Non-templated artifact sources are read from the `source` field in the manifest (resolved relative to `$PLUGIN_ROOT`).
+This step applies the actions determined by Steps 4a and 4b. For each artifact in the diff result, apply its action. Templates are read from `$PLUGIN_ROOT/templates/`. Non-templated artifact sources are read from the `source` field in the manifest (resolved relative to `$PLUGIN_ROOT`).
 
 **Template rendering rule:** read the template source file as a string; for each `<placeholder>` token, substitute the corresponding value from `project_inputs`. Unrecognized placeholders are replaced with empty string. For conditional regions (`<!--lang:rust-start-->...<!--lang:rust-end-->` etc.), include the block content (without the delimiter comments) when the corresponding language is detected; otherwise strip the entire block including delimiters. All delimiter comment lines are stripped from the rendered output.
 
@@ -443,8 +527,7 @@ This step applies the actions determined by Steps 4a and 4b. For each artifact i
 
 2. **`fast_forward`** (approved in Step 4a) — Render the template or read the plugin source. Apply the extension strategy to merge against the local file:
    - `whole`: replace the full file with plugin content (marker updated).
-   - `region`: replace the upstream region (everything up to and including `region_end_marker`) with the plugin's rendered upstream region; preserve the project-extension region (everything after `region_end_marker`) byte-for-byte.
-   - `section`: for each heading in `owned_sections`, replace the section body in the local file with the plugin's rendered body for that section. Preserve all other sections (user-owned sections, sections the plugin doesn't own). If a plugin-owned section is absent from the local file, insert it after the last preceding owned section in manifest order. Reserialize: marker on line 2, then sections in their preserved relative order.
+   - `owned-regions`: for each boundary in `owned_boundaries` (or `owned_sections` deprecation alias), replace the section body in the local file with the plugin's rendered body for that section. Preserve all other sections (user-owned sections, sections the plugin doesn't own). If a plugin-owned section is absent from the local file, insert it after the last preceding owned section in manifest order. Reserialize: marker on line 2, then sections in their preserved relative order.
    - `structured` (JSON/TOML): for each path in `owned_paths`, replace the value at that path with the plugin's current value. Preserve all other paths. Update the sidecar rather than embedding a marker.
    - `structured` (.gitignore): for each tag in `owned_paths`, replace the tagged block. Preserve all untagged blocks. Update marker on line 1.
    Update the marker to the new sha. Track as `fast-forward applied`.
@@ -454,6 +537,94 @@ This step applies the actions determined by Steps 4a and 4b. For each artifact i
 4. **`unchanged_legacy`** — Silently re-write the file with the marker inserted (no content change). Track as `unchanged (legacy marker added)`.
 
 5. **`unchanged`** / **`local_only`** — No action. Track as `unchanged` or `local-only edit preserved`.
+
+6. **`additive_merge_apply`** (additive-merge strategy) — Run the per-section LLM-classified item merge described in the **Additive-merge algorithm** subsection below. For each owned section: plugin items are added or replaced (per the LLM classification), local-only items are preserved byte-for-byte, contradictions become per-item Step 4b prompts. Run a single auto-apply soundness-review pass (auto-apply `duplicate` and `structural` fixes only; `ordering` and `semantic` issues are logged as suggestions in the Step 8 report — not applied). Reserialize the file with the marker on line 2; the marker SHA is `plugin_sha` (the canonicalized plugin items only), not the merged-file SHA. Track as `additive-merge applied (<N> replacements, <M> appended, <K> soundness fixes)`.
+
+7. **`additive_merge_with_diff_apply`** (additive-merge-with-diff strategy) — Run the same per-section item merge as `additive-merge`. Pass 1 of the soundness review auto-applies all fix types (`duplicate`, `structural`, `ordering`, `semantic`). Render a unified diff of (local file) vs (merged + Pass 1 result) and present the Step 4b diff-review prompt. On `Accept all` or `Accept with exclusions`: write the file, then run Pass 2 of the soundness review (explain-and-ask — the user chooses `Fix automatically` or `I'll handle it`). On `Manual 3-way merge`: write the file with git-style conflict markers; skip Pass 2. On `Defer`: no write. The marker SHA is `plugin_sha` (not the merged-file SHA). Track per the chosen path.
+
+8. **`bootstrap_create`** (bootstrap strategy, confirmed in Step 4a) — Render the template with `project_inputs`. Write the file with the two-line header:
+
+   ```
+   <!-- bootstrap-content-version: <upstream_key>:<sha12> -->
+   <!-- Bootstrapped by the Bytewyrd plugin. This file is now owned by this project — /sync will not update it. Maintain it as part of your codebase. -->
+   ```
+
+   The blank line after the header (if the file's content does not already start with one) preserves Markdown rendering. Track as `bootstrapped`. If the user deselected the file in Step 4a → no write, defer (re-surfaces next run). Local-only files (file present, no marker) → no write, preserve.
+
+9. **`authoritative_add`** / **`authoritative_update`** (authoritative strategy, confirmed in Step 4a) — Read the plugin source. Write the file with the two-line header:
+
+   ```
+   <!-- bootstrap-content-version: <upstream_key>:<sha12> -->
+   <!-- Managed by the Bytewyrd plugin — do not customize. This file is overwritten on every /sync. -->
+   ```
+
+   Local edits in the body are replaced. Track as `authoritative-overwritten`. If the user deselected the file in Step 4a → no write, defer (re-surfaces next run). `unchanged` → no write.
+
+10. **`owned-regions`** apply — same logic as legacy `section`-strategy fast-forward, but parameterized by `owned_boundaries` (preferred) or `owned_sections` (deprecation alias). On first run with the `section` alias, emit a deprecation notice in the Step 8 report.
+
+### Additive-merge algorithm
+
+For every owned section in `owned_sections` of an `additive-merge` or `additive-merge-with-diff` artifact, the merge runs as follows.
+
+**Step A — Extract items.** Parse the section body into discrete items. For markdown bullet lists, each top-level bullet is one item (sub-bullets travel with their parent). For prose sections, each paragraph is one item.
+
+**Step B — Classify pairs in one batch LLM call per section.** The batch LLM-comparison helper is invoked once per owned section (not per pair). A single prompt lists all plugin items and all local items for the section and asks for a complete classification matrix in one JSON response. Prompt format:
+
+```
+You are classifying relationships between items in a developer documentation section.
+
+Plugin items (indexed 0..P-1):
+<plugin_items_json_array>
+
+Local items (indexed 0..L-1):
+<local_items_json_array>
+
+For every (plugin_index, local_index) pair, classify the relationship as:
+  - "same_concept": the items express the same rule or fact, possibly in different wording
+  - "different_concept": the items express genuinely different concepts
+  - "contradiction": the items express opposing rules — one negates or prohibits what the other prescribes
+
+Return JSON: {"pairs": [{"pi": <int>, "li": <int>, "rel": "<one of the three>", "conf": <float 0-1>}]}
+Include only pairs where you classified a meaningful relationship (same_concept or contradiction);
+omit pairs where rel == "different_concept" to keep the response compact.
+```
+
+**Step C — Apply the classification.**
+
+- `same_concept` pairs with `conf >= 0.5` → **replace** the local item with the plugin item's wording (plugin wins on phrasing for the matching concept).
+- `contradiction` pairs with `conf >= 0.5` → add to the section's `pending_contradictions` list (resolved one item at a time in Step 4b's `additive_merge_apply` flow).
+- Plugin items not in any `same_concept` pair → **append** to the section after the last preserved/replaced item.
+- Local items not in any `same_concept` or `contradiction` pair → **preserve byte-for-byte** in their original position.
+
+**Step D — Soundness review.** After the merge, run the soundness reviewer (described below). For `additive-merge`, auto-apply only `duplicate` and `structural` fixes; log `ordering` and `semantic` issues as suggestions in the Step 8 report. For `additive-merge-with-diff` Pass 1, auto-apply all fix types; Pass 2 explain-and-asks.
+
+**Step E — Reserialize.** Emit the merged section body with one blank line between items. Concatenate sections in their original order in the file (or, for sections newly inserted, after the last preceding owned section). Write the marker on line 2 with `plugin_sha` (canonicalized plugin items only) — not the merged-file SHA.
+
+### Soundness review
+
+The soundness reviewer runs as an LLM-assisted pass (one call per file per pass) after the merge step. It checks:
+
+1. **Ordering** — sections and items appear in logical order for the file type.
+2. **No duplicates** — no two items within the same section express the same concept.
+3. **Structural validity** — the file is well-formed (valid YAML, valid heading hierarchy, no unclosed fences).
+4. **Semantic coherence** — no two adjacent items make contradictory prescriptions.
+
+**Reviewer output shape (one entry per issue):**
+
+```json
+{
+  "location": "<line-number-or-section-heading>",
+  "type": "ordering | duplicate | structural | semantic",
+  "description": "<one-line explanation>",
+  "suggested_fix": "<concrete edit>"
+}
+```
+
+**Auto-apply matrix:**
+
+- `additive-merge` — auto-apply `duplicate` and `structural` fixes only. Log `ordering` and `semantic` as suggestions in the Step 8 report (no edit).
+- `additive-merge-with-diff` Pass 1 — auto-apply all four fix types.
+- `additive-merge-with-diff` Pass 2 — explain-and-ask: print every issue, then a single AskUserQuestion with `Fix automatically` / `I'll handle it`.
 
 **Non-manifest items** — the following are always applied regardless of the manifest diff flow (they do not participate in the 3-way diff because they are not plugin-managed artifacts with extension strategies):
 
@@ -539,24 +710,24 @@ Track in the Step 8 report as `created (full template)`.
 
 ### Template-based artifact rendering
 
-All plugin-managed file content is rendered from templates under `$PLUGIN_ROOT/.claude-plugin/scripts/templates/`. Each template file maps to a manifest entry:
+All plugin-managed file content is rendered from templates under `$PLUGIN_ROOT/templates/`. Each template file maps to a manifest entry:
 
 | Template file | Manifest `upstream_key` | Notes |
 |---|---|---|
-| `CLAUDE.md.tpl` | `bytewyrd/CLAUDE.md@v1` | Templated; placeholders: `<project_name>`, `<description>`, `<project_slug>`, `<LANGUAGE_TOOLCHAIN_SECTION>`, `<AGENT_TABLE_ROWS>`, `<TOOL_USAGE_SECTION>`; conditional regions `<!--lang:*-start/end-->` |
-| `README.md.tpl` | `bytewyrd/README.md@v1` | Templated; placeholders: `<project_name>`, `<description>` |
-| `BEST_PRACTICES.md.tpl` | `bytewyrd/docs/BEST_PRACTICES.md@v1` | Templated; conditional language regions |
-| `CONTRIBUTING.md.tpl` | `bytewyrd/docs/CONTRIBUTING.md@v1` | Non-templated (whole strategy) |
-| `ARCHITECTURE.md.tpl` | `bytewyrd/docs/ARCHITECTURE.md@v1` | Non-templated (whole strategy) |
+| `CLAUDE.md.tpl` | `bytewyrd/CLAUDE.md@v1` | Templated; additive-merge strategy; placeholders: `<project_name>`, `<description>`, `<project_slug>`, `<LANGUAGE_TOOLCHAIN_SECTION>`, `<AGENT_TABLE_ROWS>`, `<TOOL_USAGE_SECTION>`; conditional regions `<!--lang:*-start/end-->` |
+| `README.md.tpl` | `bytewyrd/README.md@v1` | Templated; bootstrap strategy; placeholders: `<project_name>`, `<description>` |
+| `BEST_PRACTICES.md.tpl` | `bytewyrd/docs/BEST_PRACTICES.md@v1` | Templated; owned-regions strategy; conditional language regions |
+| `CONTRIBUTING.md.tpl` | `bytewyrd/docs/CONTRIBUTING.md@v1` | Non-templated; bootstrap strategy |
+| `ARCHITECTURE.md.tpl` | `bytewyrd/docs/ARCHITECTURE.md@v1` | Non-templated; bootstrap strategy |
 | `settings.json.tpl` | `bytewyrd/.claude/settings.json@v1` | Templated; structured strategy; sidecar marker |
 | `settings.local.json.tpl` | `bytewyrd/.claude/settings.local.json@v1` | Non-templated; structured strategy; sidecar marker |
 | `mise.toml.tpl` | `bytewyrd/mise.toml@v1` | Templated; structured strategy |
 | `.gitignore.tpl` | `bytewyrd/.gitignore@v1` | Non-templated; structured strategy |
-| `ci.yml.tpl` | `bytewyrd/.github/workflows/ci.yml@v1` | Templated; whole strategy |
-| `PULL_REQUEST_TEMPLATE.md.tpl` | `bytewyrd/.github/PULL_REQUEST_TEMPLATE.md@v1` | Non-templated; whole strategy |
-| `.bootstrap-versions.json.tpl` | `bytewyrd/.claude/.bootstrap-versions.json@v1` | Whole strategy; generated at sync time |
+| `ci.yml.tpl` | `bytewyrd/.github/workflows/ci.yml@v1` | Templated; additive-merge-with-diff strategy |
+| `PULL_REQUEST_TEMPLATE.md.tpl` | `bytewyrd/.github/PULL_REQUEST_TEMPLATE.md@v1` | Non-templated; additive-merge-with-diff strategy |
+| `.bootstrap-versions.json.tpl` | `bytewyrd/.bytewyrd/.bootstrap-versions.json@v2` | Non-templated; structured strategy; generated at sync time |
 
-The `rfc-process.md` source (`bytewyrd/docs/rfc-process.md@v1`) is read directly from `$PLUGIN_ROOT/rfc-process.md` (non-templated, region strategy).
+The `rfc-process.md` source (`bytewyrd/docs/rfc-process.md@v1`) is read directly from `$PLUGIN_ROOT/rfc-process.md` (non-templated, authoritative strategy).
 
 **Template rendering details** (for reference when rendering templates):
 
@@ -687,7 +858,7 @@ The `description` value is sourced from `docs/project-brief.md`, ensuring local 
 mkdir -p docs/rfcs && test -f docs/rfcs/.gitkeep || touch docs/rfcs/.gitkeep
 ```
 
-The `docs/rfc-process.md` file is now managed as a manifest artifact with `extension_strategy: "region"` (upstream key `bytewyrd/docs/rfc-process.md@v1`). Its creation, update, and conflict handling are handled by the Step 4–5 diff/apply flow, just like any other manifest artifact. The bespoke sync logic that previously lived in this step has been removed — it was a single-file implementation of the same pattern the manifest generalizes.
+The `docs/rfc-process.md` file is now managed as a manifest artifact with `extension_strategy: "authoritative"` (upstream key `bytewyrd/docs/rfc-process.md@v1`). Its creation and update are handled by the Step 4–5 diff/apply flow: the file is treated as plugin-owned and overwritten on every `/sync` run when the plugin's `rfc-process.md` source changes. The Step 4a migration-time warning surfaces any existing `## Project Extensions` content so users can copy it elsewhere before the overwrite.
 
 ---
 
@@ -695,32 +866,79 @@ The `docs/rfc-process.md` file is now managed as a manifest artifact with `exten
 
 ### Step 5.5 — Rewrite sidecar if any JSON artifact's marker advanced
 
-Before printing the report, check whether any JSON-format artifact's marker was updated in Step 5 (i.e., `.claude/settings.json` or `.claude/settings.local.json` was written with a new marker). If yes, rewrite `.claude/.bootstrap-versions.json` in full with all current marker entries. If no JSON artifact's marker changed, the sidecar is not rewritten.
+Before printing the report, check whether any JSON-format artifact's marker was updated in Step 5 (i.e., `.claude/settings.json` or `.claude/settings.local.json` was written with a new marker). If yes, rewrite `.bytewyrd/.bootstrap-versions.json` in full with all current marker entries. If no JSON artifact's marker changed, the sidecar is not rewritten.
 
 ### Final report
 
-Print a summary of every artifact processed, grouped by outcome category. Use the new outcome labels:
+Print a summary of every artifact processed, grouped by outcome category. Outcome labels by strategy:
 
-| File | Outcome |
-|------|---------|
-| `CLAUDE.md` | added / fast-forward applied / conflict resolved (see note) / unchanged / local-only edit preserved / unchanged (legacy marker added) |
-| `README.md` | added / fast-forward applied / ... |
-| `docs/BEST_PRACTICES.md` | added / fast-forward applied / ... |
-| `docs/CONTRIBUTING.md` | added / fast-forward applied / ... |
-| `docs/ARCHITECTURE.md` | added / fast-forward applied / ... |
-| `docs/rfc-process.md` | added / fast-forward applied / conflict resolved / ... |
-| `.claude/settings.json` | added / fast-forward applied / ... |
-| `.claude/settings.local.json` | added / fast-forward applied / ... |
-| `.github/workflows/ci.yml` | added / fast-forward applied / ... |
-| `.github/PULL_REQUEST_TEMPLATE.md` | added / fast-forward applied / ... |
-| `mise.toml` | added / fast-forward applied / ... |
-| `.gitignore` | added / fast-forward applied / ... |
-| `.worktrees/` | created / already exists |
-| `docs/guide/` | created / already exists |
-| `docs/project-brief.md` | created (full template) / migrated / skipped (user opted not to create) / exists |
-| `docs/rfcs/.gitkeep` | created / already exists |
-| `rust-toolchain.toml` | created / already exists (Rust only) |
-| GitHub repo description | updated via `gh repo edit` / skipped (no remote or description) |
+| Strategy | Outcomes |
+|----------|----------|
+| `whole`, `structured` | added / fast-forward applied / conflict resolved (see note) / unchanged / local-only edit preserved / unchanged (legacy marker added) |
+| `additive-merge` | added / additive-merge applied (per-section summary, see below) / unchanged / deferred |
+| `additive-merge-with-diff` | added / additive-merge-with-diff applied (Pass 1 fixes: N, Pass 2 outcome: applied / user-handled) / manual-3-way-pending / deferred |
+| `bootstrap` | bootstrapped / local-only (existing) / deferred |
+| `authoritative` | authoritative-overwritten / unchanged / deferred |
+| `owned-regions` | added / fast-forward applied / conflict resolved / unchanged / local-only edit preserved / `section`-alias deprecation notice |
+
+Per-file outcomes:
+
+| File | Strategy | Typical outcomes |
+|------|----------|------------------|
+| `CLAUDE.md` | additive-merge | additive-merge applied / unchanged |
+| `README.md` | bootstrap | bootstrapped / local-only (existing) |
+| `docs/BEST_PRACTICES.md` | owned-regions | added / fast-forward applied / conflict resolved / unchanged |
+| `docs/CONTRIBUTING.md` | bootstrap | bootstrapped / local-only (existing) |
+| `docs/ARCHITECTURE.md` | bootstrap | bootstrapped / local-only (existing) |
+| `docs/rfc-process.md` | authoritative | authoritative-overwritten / unchanged |
+| `.claude/settings.json` | structured | added / fast-forward applied / conflict resolved / unchanged |
+| `.claude/settings.local.json` | structured | added / fast-forward applied / unchanged |
+| `.github/workflows/ci.yml` | additive-merge-with-diff | additive-merge-with-diff applied / manual-3-way-pending / unchanged |
+| `.github/PULL_REQUEST_TEMPLATE.md` | additive-merge-with-diff | additive-merge-with-diff applied / manual-3-way-pending / unchanged |
+| `mise.toml` | structured | added / fast-forward applied / unchanged |
+| `.gitignore` | structured | added / fast-forward applied / unchanged |
+| `.bytewyrd/.bootstrap-versions.json` | structured | added / updated / unchanged |
+| `.worktrees/` | (non-manifest) | created / already exists |
+| `docs/guide/` | (non-manifest) | created / already exists |
+| `docs/project-brief.md` | (non-manifest) | created (full template) / migrated / skipped (user opted not to create) / exists |
+| `docs/rfcs/.gitkeep` | (non-manifest) | created / already exists |
+| `rust-toolchain.toml` | (non-manifest) | created / already exists (Rust only) |
+| GitHub repo description | (non-manifest) | updated via `gh repo edit` / skipped (no remote or description) |
+
+**Per-section breakdown for `additive-merge` files** (printed when at least one replacement or soundness fix occurred):
+
+```
+CLAUDE.md — additive-merge apply:
+  ## Tool Usage      — 2 same-concept replacements, 1 new item appended, 0 soundness fixes
+  ## Security        — 0 replacements, 0 appended, 1 soundness fix (duplicate removed)
+  ## Conventions     — 1 same-concept replacement, 0 appended, 0 soundness fixes
+  Total: 3 replacements, 1 appended, 1 soundness fix — run `git diff CLAUDE.md` to inspect
+```
+
+The `run \`git diff <path>\` to inspect` line is printed for every file that had at least one replacement or soundness fix.
+
+**Deferred section.** List every file the user deferred at the Step 4a checkbox prompt or the Step 4b `Defer` option:
+
+```
+Deferred (N items, re-presented next run):
+  - <path>
+  - <path>
+```
+
+**Migration notes.** If the sidecar was relocated, print:
+
+```
+Migrated .bootstrap-versions.json: .claude/ → .bytewyrd/
+```
+
+**Manifest errors.** If any artifact's `extension_strategy` was unrecognized (e.g., `region`), print:
+
+```
+Manifest errors:
+  - <path>: <error message>
+```
+
+These artifacts are not classified or applied — they require a manifest fix.
 
 For conflicts where the user chose `Merge into local manually`:
 ```
