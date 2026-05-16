@@ -27,9 +27,9 @@ Run the consolidated pre-flight helper:
 preflight="$(bash scripts/sync-preflight.sh)"
 ```
 
-If the script exits non-zero, stop immediately — it has already printed the relevant error to stderr (plain text for the missing-`git` case, JSON envelope otherwise). The error is self-explanatory; no further wrapping needed.
+If the script exits non-zero, stop immediately — it has already printed the relevant error to stderr (plain text for the missing-`git` case, JSON envelope otherwise). The error is self-explanatory; no further wrapping needed. In particular, when `PLUGIN_ROOT` (extracted below) is empty, the script already exited non-zero and the skill should never reach this paragraph.
 
-The helper performs three hard environment checks (`git` + git-repo presence, `sha256sum`/`shasum`, `jq`, `python3`) and collects the deterministic context the rest of `/sync` needs. Extract the fields from `$preflight`:
+The helper performs the hard environment checks (`git` + git-repo presence, `sha256sum`/`shasum`, `jq`, `python3`) and consolidates **all** of /sync's deterministic context-collection into one bash call: project context, plugin-root resolution, sidecar migration, and language detection. Extract the fields from `$preflight`:
 
 ```bash
 REPO_ROOT=$(echo "$preflight" | jq -r .repo_root)
@@ -41,9 +41,25 @@ INSTALLED_PLUGINS=$(echo "$preflight" | jq .installed_plugins)
 MISSING_CRITICAL=$(echo "$preflight" | jq .missing_critical)
 MISSING_RECOMMENDED=$(echo "$preflight" | jq .missing_recommended)
 DOCS_AGENT_DRIFTED=$(echo "$preflight" | jq -r .docs_agent_drifted)
+PLUGIN_ROOT=$(echo "$preflight" | jq -r .plugin_root)
+SIDECAR_MIGRATED=$(echo "$preflight" | jq -r .sidecar_migrated)
+SIDECAR_MESSAGE=$(echo "$preflight" | jq -r .sidecar_message)
+LANGUAGES=$(echo "$preflight" | jq .languages)
+COMPONENT_ROOTS=$(echo "$preflight" | jq .component_roots)
+HAS_RUST=$(echo "$preflight" | jq -r .has_rust)
+HAS_JS=$(echo "$preflight" | jq -r .has_js)
+HAS_GO=$(echo "$preflight" | jq -r .has_go)
+HAS_PYTHON=$(echo "$preflight" | jq -r .has_python)
+HAS_SVELTE=$(echo "$preflight" | jq -r .has_svelte)
+HAS_RUBY=$(echo "$preflight" | jq -r .has_ruby)
+HAS_RAILS=$(echo "$preflight" | jq -r .has_rails)
+HAS_K8S_CUE=$(echo "$preflight" | jq -r .has_k8s_cue)
+HAS_TERRAFORM=$(echo "$preflight" | jq -r .has_terraform)
 ```
 
 The script also writes `.bytewyrd/docs-agent-version` as a side effect when the plugin's docs-agent version differs from the project's recorded version — no separate Step 1.5 logic is required in the skill.
+
+**Sidecar migration (one-time, idempotent):** preflight performs the legacy `.claude/.bootstrap-versions.json` → `.bytewyrd/.bootstrap-versions.json` move automatically. If `SIDECAR_MIGRATED == true`, log `SIDECAR_MESSAGE` in the Step 8 report under "Migration notes." The migration only fires when the old path exists and the new path does not; otherwise it's a silent no-op.
 
 **Surface the collected context to the user as appropriate:**
 
@@ -195,27 +211,7 @@ The brief file is written in Step 5 — not here — so that `/sync` writes all 
 
 ## Step 3 — Detect component structure
 
-Run the consolidated detection helper to scan the repo for language manifest files:
-
-```bash
-lang_info="$(bash scripts/sync-detect-languages.sh)"
-```
-
-The script emits a single JSON object with the deduplicated languages list, the `component_roots` array, and the `has_*` stack flags. Extract the fields:
-
-```bash
-LANGUAGES=$(echo "$lang_info" | jq .languages)
-COMPONENT_ROOTS=$(echo "$lang_info" | jq .component_roots)
-HAS_RUST=$(echo "$lang_info" | jq -r .has_rust)
-HAS_JS=$(echo "$lang_info" | jq -r .has_js)
-HAS_GO=$(echo "$lang_info" | jq -r .has_go)
-HAS_PYTHON=$(echo "$lang_info" | jq -r .has_python)
-HAS_SVELTE=$(echo "$lang_info" | jq -r .has_svelte)
-HAS_RUBY=$(echo "$lang_info" | jq -r .has_ruby)
-HAS_RAILS=$(echo "$lang_info" | jq -r .has_rails)
-HAS_K8S_CUE=$(echo "$lang_info" | jq -r .has_k8s_cue)
-HAS_TERRAFORM=$(echo "$lang_info" | jq -r .has_terraform)
-```
+Language detection ran in Step 1 (preflight). Variables `LANGUAGES`, `COMPONENT_ROOTS`, and the `HAS_*` flags are already set.
 
 `COMPONENT_ROOTS` is a list of `{ language, path, name }` entries with these rules baked into the script:
 
@@ -236,18 +232,9 @@ This step replaces the former "Print creation summary." It runs the pre-flight d
 
 ### Pre-flight diff procedure
 
-Determine the plugin root using the consolidated lookup helper:
-
-```bash
-plugin_root_info="$(bash scripts/sync-find-plugin-root.sh)"
-PLUGIN_ROOT="$(echo "$plugin_root_info" | jq -r .plugin_root)"
-```
-
-The script resolves the plugin root in this order: (1) `$CLAUDE_PLUGIN_ROOT` if its `bootstrap-manifest.json` exists, (2) `$HOME/.claude/bootstrap-manifest.json` if it exists, (3) the newest semantic-versioned directory under `$HOME/.claude/plugins/cache/bytewyrd/bytewyrd/` containing `bootstrap-manifest.json`. If none match, the script exits 1 with a JSON error envelope on stderr — stop and surface that error.
+`PLUGIN_ROOT` is already set from Step 1 (preflight).
 
 Read the manifest at `$PLUGIN_ROOT/bootstrap-manifest.json`. Also read the sidecar at `.bytewyrd/.bootstrap-versions.json` (treat as `{}` if absent).
-
-**Sidecar migration check (one-time):** before reading the sidecar, run `bash scripts/sync-sidecar-migrate.sh` and parse the JSON output. If `.migrated` is `true`, log the `.message` field in the Step 8 report under "Migration notes." The script is idempotent — it only moves the file when the old path exists and the new path does not.
 
 **SHA-256:** all canonical-form hashing is done by `scripts/sync-canonical.sh`, which uses `sha256sum` (Linux) with a `shasum -a 256` fallback (macOS) and emits the first 12 hex chars. Callers never invoke `sha256sum` directly — they always go through the helper script so the canonical form is consistent across strategies.
 
