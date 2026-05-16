@@ -42,20 +42,21 @@ plugin_root="$(printf '%s' "$preflight_json" | jq -r '.plugin_root // ""')"
 classifications_json=""
 classifications_json="$(bash "$SCRIPT_DIR/sync-classify-all.sh" "$plugin_root" 2>&1)" || exit 3
 
-# --- Phase 3: brief completeness check (in current repo root) ---
+# --- Phase 3: brief completeness check + identity extraction ---
 brief_complete=false
+brief_name=""
+brief_description=""
 if [ -f "docs/project-brief.md" ]; then
-  # Real H1 (not the "Project Brief" placeholder) AND a ## Description with content.
-  h1="$(grep -m1 '^# ' docs/project-brief.md 2>/dev/null \
-    | sed 's/^# //' | tr '[:upper:]' '[:lower:]' | xargs 2>/dev/null || echo "")"
-  if [ -n "$h1" ] && [ "$h1" != "project brief" ]; then
-    has_desc="$(awk '
+  raw_h1="$(grep -m1 '^# ' docs/project-brief.md 2>/dev/null | sed 's/^# //' || echo "")"
+  h1_lower="$(printf '%s' "$raw_h1" | tr '[:upper:]' '[:lower:]' | xargs 2>/dev/null || echo "")"
+  if [ -n "$h1_lower" ] && [ "$h1_lower" != "project brief" ]; then
+    brief_name="$raw_h1"
+    brief_description="$(awk '
       /^## Description/ { f=1; next }
-      f && /^[^#[:space:]]/ && NF > 0 { found=1; exit }
+      f && /^[^#[:space:]]/ && NF > 0 { print; exit }
       f && /^## / { exit }
-      END { print found+0 }
-    ' docs/project-brief.md 2>/dev/null || echo "0")"
-    [ "$has_desc" = "1" ] && brief_complete=true
+    ' docs/project-brief.md 2>/dev/null || echo "")"
+    [ -n "$brief_description" ] && brief_complete=true
   fi
 fi
 
@@ -79,15 +80,19 @@ summary_text="$(printf '%s' "$partial_json" \
 
 # --- Combine and emit ---
 jq -n \
-  --argjson preflight       "$preflight_json" \
-  --argjson classifications "$classifications_json" \
-  --argjson brief_complete  "$brief_complete" \
-  --argjson rfc_process     "$rfc_process_json" \
-  --arg     summary_text    "$summary_text" \
+  --argjson preflight          "$preflight_json" \
+  --argjson classifications    "$classifications_json" \
+  --argjson brief_complete     "$brief_complete" \
+  --arg     brief_name         "$brief_name" \
+  --arg     brief_description  "$brief_description" \
+  --argjson rfc_process        "$rfc_process_json" \
+  --arg     summary_text       "$summary_text" \
   '{
-    preflight:       $preflight,
-    classifications: $classifications,
-    brief_complete:  $brief_complete,
-    rfc_process:     $rfc_process,
-    summary_text:    $summary_text
+    preflight:         $preflight,
+    classifications:   $classifications,
+    brief_complete:    $brief_complete,
+    brief_name:        $brief_name,
+    brief_description: $brief_description,
+    rfc_process:       $rfc_process,
+    summary_text:      $summary_text
   }'

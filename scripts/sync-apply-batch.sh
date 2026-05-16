@@ -73,14 +73,88 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/_lib/common.bash"
 require_jq
 
-if [ "${1:-}" = "" ] || [ "${2:-}" = "" ] || [ "${3:-}" = "" ]; then
-  emit_error "usage: sync-apply-batch.sh <items-json|-> <plugin-root> <project-inputs-json>"
+if [ "${1:-}" = "" ]; then
+  emit_error "usage: sync-apply-batch.sh <session-file.json>  OR  sync-apply-batch.sh <items-json|-> <plugin-root> <project-inputs.json>"
   exit 2
 fi
 
-items_arg="$1"
-plugin_root="$2"
-project_inputs="$3"
+# Temp workspace for rendered templates, awk staging, per-item stderr, and any
+# temp files written in session mode.
+tmp_workdir="$(mktemp -d)"
+trap 'rm -rf "$tmp_workdir"' EXIT
+
+# ---------- Argument mode detection ----------
+#
+# Session-file mode (single arg): the caller passes the JSON file written by
+# sync-run.sh directly. The script extracts plugin_root, project inputs, and
+# the filtered item list internally — the agent makes one call with no manual
+# extraction.
+#
+# Traditional mode (three args): <items-json|-> <plugin-root> <project-inputs.json>
+# Kept for backward-compat with the test suite and direct CLI use.
+
+items_json=""
+plugin_root=""
+project_inputs=""
+
+if [ "${2:-}" = "" ] && [ -f "$1" ] \
+    && jq -e 'has("classifications") and has("preflight")' "$1" >/dev/null 2>&1; then
+  # --- Session-file mode ---
+  session_file="$1"
+
+  plugin_root="$(jq -r '.preflight.plugin_root' "$session_file")"
+
+  # Build project inputs and write to a temp file so sync-render-template.sh
+  # can read it by path (it does not accept JSON on stdin).
+  project_inputs="$tmp_workdir/project-inputs.json"
+  jq '{
+    project_name:    (.brief_name    | if . == "" then .preflight.project_slug else . end),
+    description:     (.brief_description // ""),
+    project_slug:    .preflight.project_slug,
+    has_github:      (.preflight.github_remote | length > 0),
+    languages:       .preflight.languages,
+    component_roots: .preflight.component_roots,
+    installed_plugins: .preflight.installed_plugins,
+    has_rust:        .preflight.has_rust,
+    has_js:          .preflight.has_js,
+    has_go:          .preflight.has_go,
+    has_python:      .preflight.has_python,
+    has_svelte:      .preflight.has_svelte,
+    has_ruby:        .preflight.has_ruby,
+    has_rails:       .preflight.has_rails,
+    has_k8s_cue:     .preflight.has_k8s_cue,
+    has_terraform:   .preflight.has_terraform
+  }' "$session_file" > "$project_inputs"
+
+  # Filter classifications: skip unchanged, local_only, and additive-merge-with-diff
+  # (those are handled interactively by the agent in Step 4c).
+  items_json="$(jq -c '[.classifications[] | select(
+    .classification != "additive_merge_with_diff_apply" and
+    .classification != "unchanged" and
+    .classification != "local_only"
+  )]' "$session_file")"
+
+else
+  # --- Traditional three-arg mode ---
+  if [ "${2:-}" = "" ] || [ "${3:-}" = "" ]; then
+    emit_error "usage: sync-apply-batch.sh <session-file.json>  OR  sync-apply-batch.sh <items-json|-> <plugin-root> <project-inputs.json>"
+    exit 2
+  fi
+  items_arg="$1"
+  plugin_root="$2"
+  project_inputs="$3"
+
+  if [ ! -f "$project_inputs" ]; then
+    emit_error "sync-apply-batch: project inputs JSON not found: $project_inputs"
+    exit 2
+  fi
+
+  if [ "$items_arg" = "-" ]; then
+    items_json="$(cat)"
+  else
+    items_json="$items_arg"
+  fi
+fi
 
 if [ ! -d "$plugin_root" ]; then
   emit_error "sync-apply-batch: plugin root not found: $plugin_root"
@@ -88,25 +162,10 @@ if [ ! -d "$plugin_root" ]; then
 fi
 plugin_root="$(cd "$plugin_root" && pwd)"
 
-if [ ! -f "$project_inputs" ]; then
-  emit_error "sync-apply-batch: project inputs JSON not found: $project_inputs"
-  exit 2
-fi
-
-if [ "$items_arg" = "-" ]; then
-  items_json="$(cat)"
-else
-  items_json="$items_arg"
-fi
-
 if ! printf '%s' "$items_json" | jq -e 'type == "array"' >/dev/null 2>&1; then
   emit_error "sync-apply-batch: items must be a JSON array"
   exit 2
 fi
-
-# Temp workspace for rendered templates, awk staging, and per-item stderr.
-tmp_workdir="$(mktemp -d)"
-trap 'rm -rf "$tmp_workdir"' EXIT
 
 # ---------- Helpers ----------
 

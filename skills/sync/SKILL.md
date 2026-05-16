@@ -9,6 +9,8 @@ description: Set up or refresh a project repository with all standard convention
 
 Sets up or refreshes a project repository with all standard conventions. Idempotent — re-running computes a three-way diff for every plugin-managed artifact and presents a categorized summary (additions, fast-forward updates, conflicts, local-only edits, unchanged) before writing anything.
 
+**Output rule:** do not narrate tool calls or internal implementation steps before executing them. The user does not know or care which scripts run internally. Only output the change summary and any required prompts.
+
 ## Interaction model
 
 /sync has three user interaction points:
@@ -286,14 +288,10 @@ Otherwise, ask one AskUserQuestion:
 All artifacts except `additive_merge_with_diff_apply` are applied in a single script call immediately after the user clicks Proceed:
 
 ```bash
-BATCH_ITEMS="$(jq -c '[.classifications[] | select(
-  .classification != "additive_merge_with_diff_apply" and
-  .classification != "unchanged" and
-  .classification != "local_only"
-)]' $TMPDIR/bytewyrd-sync-data.json)"
-PLUGIN_ROOT="$(jq -r '.preflight.plugin_root' $TMPDIR/bytewyrd-sync-data.json)"
-BATCH_RESULT="$(bash scripts/sync-apply-batch.sh "$BATCH_ITEMS" "$PLUGIN_ROOT" <project-inputs-json>)"
+BATCH_RESULT="$(bash scripts/sync-apply-batch.sh $TMPDIR/bytewyrd-sync-data.json)"
 ```
+
+`sync-apply-batch.sh` detects the session file, extracts `plugin_root`, builds the project-inputs object from `preflight` + `brief_name`/`brief_description`, and filters out `additive_merge_with_diff_apply`, `unchanged`, and `local_only` items internally.
 
 The batch script handles all of the following without user input:
 
