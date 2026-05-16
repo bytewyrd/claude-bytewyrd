@@ -336,11 +336,9 @@ For each artifact in the manifest (skipping the `.bootstrap-versions.json` sidec
 - **`additive-merge`** and **`additive-merge-with-diff`**: compute `plugin_sha` from the canonicalized plugin items only; compare against the marker's recorded SHA. If the local file is absent → `add`. If the recorded SHA matches `plugin_sha` → `unchanged`. Otherwise → `additive_merge_apply` or `additive_merge_with_diff_apply` (the merge runs at apply time; classification only signals "merge needed").
 - **`bootstrap`**: presence-check only. File absent → `bootstrap_create`. File present → `local_only` (the project now owns the file; /sync never updates it).
 - **`authoritative`**: full-content compare after `strip_two_line_header`. File absent → `authoritative_add`. SHAs match → `unchanged`. SHAs differ → `authoritative_update`.
-- **`owned-regions`**: use the same matrix below, treating `owned_boundaries` (or `owned_sections` deprecation alias) as the per-region scope. Emit a deprecation notice in the Step 8 report if `extension_strategy: "section"` was translated.
+- **`owned-regions`**: use the same matrix below, treating `owned_boundaries` as the per-region scope.
 
-If `extension_strategy` is `region`, emit the error described in the **Manifest errors — `region` strategy** subsection below; do not classify.
-
-The matrix below applies only to `whole` and `structured` strategies:
+The matrix below applies only to the `structured` strategy:
 
 | Conditions | Classification |
 |------------|----------------|
@@ -353,24 +351,15 @@ The matrix below applies only to `whole` and `structured` strategies:
 | Marker present, all three differ AND `local_current != plugin_current` | **conflict** |
 | Marker present, all three differ AND `local_current == plugin_current` | **unchanged** (converged) |
 
-**Manifest errors — `region` strategy.** If the classifier encounters `extension_strategy: "region"` in any manifest, it emits the error:
-
-> `no files use 'region' strategy — did you mean 'owned-regions'?`
-
-and aborts classification for that artifact. The artifact is listed in the Step 8 report under "Manifest errors."
-
 **Canonicalization rules** (same function applied to both local and plugin content — hashes must be directly comparable):
 
 The helper `strip_two_line_header(content)` is used by multiple strategies: it removes every contiguous line at the top of the file that starts with `<!-- bootstrap-content-version:`, `<!-- Managed by the Bytewyrd plugin.`, or `<!-- Bootstrapped by the Bytewyrd plugin.`, plus any immediately following blank line. The result is the content the strategy actually compares.
 
-- **`whole` strategy:** full file content with `strip_two_line_header` applied.
-- **`region` strategy:** **DEPRECATED.** No artifacts currently use this strategy. If encountered in a manifest, see "Manifest errors — `region` strategy" below.
-- **`section` strategy:** **DEPRECATED.** Translated transparently to `owned-regions` when `owned_sections` is present and `extension_strategy` is `section`. A deprecation notice is emitted in the Step 8 report.
 - **`additive-merge` strategy:** plugin-side canonical only. Render the template, extract the items inside each entry in `owned_sections` from the rendered output, concatenate the items section-by-section, and hash that. Record the result as `plugin_sha` in the marker. On subsequent runs, compare to the marker's recorded SHA — not a local-vs-plugin full-body compare. (Local can drift freely; only the plugin SHA needs to match its recorded value to detect a no-op.)
 - **`additive-merge-with-diff` strategy:** same plugin-side canonical as `additive-merge`. Plugin-only hash; local content is not part of the canonical SHA.
 - **`bootstrap` strategy:** no canonical-form hash compare — bypasses the matrix entirely. Presence-check only: file absent → `bootstrap_create`; file present → `local_only`. The two-line header on a bootstrap-created file documents that the file is owned by the project going forward.
 - **`authoritative` strategy:** full-content compare after `strip_two_line_header` from both sides. The plugin source is read without the two-line header (it does not carry one in the source tree); the local file is read with `strip_two_line_header` applied. The two hashes are then directly comparable. Update on any mismatch — local edits are replaced.
-- **`owned-regions` strategy:** same boundary-based canonicalization as the legacy `section` strategy, but parameterized by `owned_boundaries` (preferred) or `owned_sections` (deprecation alias). For each boundary in manifest order: the literal heading line + `\n` + section body (all lines from heading to next sibling H2 or EOF, trimmed of leading/trailing blank lines) + `\n`. Concatenate all owned regions. Boundaries absent from the file contribute heading + `\n` with empty body.
+- **`owned-regions` strategy:** for each boundary in `owned_boundaries` in manifest order: the literal heading line + `\n` + section body (all lines from heading to next sibling H2 or EOF, trimmed of leading/trailing blank lines) + `\n`. Concatenate all owned regions. Boundaries absent from the file contribute heading + `\n` with empty body.
 - **`structured` strategy (JSON):** for each path in `owned_paths`, extract the value using `jq` (sort keys) and serialize it; concatenate. For id-based array paths (`[]:<id_key>`): serialize only entries with a non-empty id, sorted by id. For set-union array paths (`[]:union`): serialize only the plugin-contributed entries. The wildcard `*` means "the entire document treated as plugin-owned" (used by the relocated `.bytewyrd/.bootstrap-versions.json` sidecar).
 - **`structured` strategy (`.gitignore`):** for each tagged block in `owned_paths`, extract the `# <tag>\n` line + lines in the block + `\n`; concatenate.
 
@@ -450,7 +439,7 @@ If no items qualify for the batch prompt, skip Step 4a entirely.
 
 For each conflict or merge-apply item, run sequentially. The exact prompt depends on the artifact's strategy.
 
-**`conflict` / `conflict_legacy` (whole, structured, owned-regions strategies).** Before each question, print:
+**`conflict` / `conflict_legacy` (structured, owned-regions strategies).** Before each question, print:
 
 - The file path and the conflict scope (e.g., "conflict in `## Tool Usage` section of `CLAUDE.md`" for `owned-regions` strategy).
 - A compact unified diff (first 40 lines) of local content vs plugin content restricted to the affected owned region/section/path.
@@ -526,8 +515,7 @@ This step applies the actions determined by Steps 4a and 4b. For each artifact i
 1. **`add`** — Render the template with `project_inputs`. Insert the marker. Write the file. Track as `added`.
 
 2. **`fast_forward`** (approved in Step 4a) — Render the template or read the plugin source. Apply the extension strategy to merge against the local file:
-   - `whole`: replace the full file with plugin content (marker updated).
-   - `owned-regions`: for each boundary in `owned_boundaries` (or `owned_sections` deprecation alias), replace the section body in the local file with the plugin's rendered body for that section. Preserve all other sections (user-owned sections, sections the plugin doesn't own). If a plugin-owned section is absent from the local file, insert it after the last preceding owned section in manifest order. Reserialize: marker on line 2, then sections in their preserved relative order.
+   - `owned-regions`: for each boundary in `owned_boundaries`, replace the section body in the local file with the plugin's rendered body for that section. Preserve all other sections (user-owned sections, sections the plugin doesn't own). If a plugin-owned section is absent from the local file, insert it after the last preceding owned section in manifest order. Reserialize: marker on line 2, then sections in their preserved relative order.
    - `structured` (JSON/TOML): for each path in `owned_paths`, replace the value at that path with the plugin's current value. Preserve all other paths. Update the sidecar rather than embedding a marker.
    - `structured` (.gitignore): for each tag in `owned_paths`, replace the tagged block. Preserve all untagged blocks. Update marker on line 1.
    Update the marker to the new sha. Track as `fast-forward applied`.
@@ -560,7 +548,7 @@ This step applies the actions determined by Steps 4a and 4b. For each artifact i
 
    Local edits in the body are replaced. Track as `authoritative-overwritten`. If the user deselected the file in Step 4a → no write, defer (re-surfaces next run). `unchanged` → no write.
 
-10. **`owned-regions`** apply — same logic as legacy `section`-strategy fast-forward, but parameterized by `owned_boundaries` (preferred) or `owned_sections` (deprecation alias). On first run with the `section` alias, emit a deprecation notice in the Step 8 report.
+10. **`owned-regions`** apply — for each boundary in `owned_boundaries`, replace the section body in the local file with the plugin's rendered body for that boundary. Preserve all other content (user-owned sections and sections the plugin doesn't own). If a plugin-owned section is absent from the local file, insert it after the last preceding owned section in manifest order. Reserialize with marker on line 2.
 
 ### Additive-merge algorithm
 
@@ -874,12 +862,12 @@ Print a summary of every artifact processed, grouped by outcome category. Outcom
 
 | Strategy | Outcomes |
 |----------|----------|
-| `whole`, `structured` | added / fast-forward applied / conflict resolved (see note) / unchanged / local-only edit preserved / unchanged (legacy marker added) |
+| `structured` | added / fast-forward applied / conflict resolved (see note) / unchanged / local-only edit preserved / unchanged (legacy marker added) |
 | `additive-merge` | added / additive-merge applied (per-section summary, see below) / unchanged / deferred |
 | `additive-merge-with-diff` | added / additive-merge-with-diff applied (Pass 1 fixes: N, Pass 2 outcome: applied / user-handled) / manual-3-way-pending / deferred |
 | `bootstrap` | bootstrapped / local-only (existing) / deferred |
 | `authoritative` | authoritative-overwritten / unchanged / deferred |
-| `owned-regions` | added / fast-forward applied / conflict resolved / unchanged / local-only edit preserved / `section`-alias deprecation notice |
+| `owned-regions` | added / fast-forward applied / conflict resolved / unchanged / local-only edit preserved |
 
 Per-file outcomes:
 
@@ -931,7 +919,7 @@ Deferred (N items, re-presented next run):
 Migrated .bootstrap-versions.json: .claude/ → .bytewyrd/
 ```
 
-**Manifest errors.** If any artifact's `extension_strategy` was unrecognized (e.g., `region`), print:
+**Manifest errors.** If any artifact's `extension_strategy` is unrecognized, print:
 
 ```
 Manifest errors:
