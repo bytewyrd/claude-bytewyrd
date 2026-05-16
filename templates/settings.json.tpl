@@ -1,14 +1,5 @@
 {
-  "extraKnownMarketplaces": {
-    "bytewyrd": {
-      "source": {
-        "source": "github",
-        "repo": "bytewyrd/claude-bytewyrd"
-      }
-    }
-  },
-  "enabledPlugins": {
-    "bytewyrd@bytewyrd": true<ENABLED_PLUGINS_ENTRIES>
+  "enabledPlugins": {<ENABLED_PLUGINS_ENTRIES>
   },
   "hooks": {
     "PreCompact": [
