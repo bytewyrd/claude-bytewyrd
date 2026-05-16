@@ -4,11 +4,9 @@
       "upstream_key": "bytewyrd/.claude/settings.json@v1",
       "source": "templates/settings.json.tpl",
       "target": ".claude/settings.json",
-      "template_sha": "c7540e89943605c6f192dec854430afbde23cb67ee74d04b592207d5d12b5c55",
+      "template_sha": "b265f554260ac234a5787d8d8238f700e4ba755b6b56e2f041f32ec96d23ffd5",
       "extension_strategy": "structured",
       "owned_paths": [
-        "extraKnownMarketplaces.bytewyrd",
-        "enabledPlugins.bytewyrd@bytewyrd",
         "hooks.PreCompact[]:_meta.bytewyrd_hook_id",
         "hooks.PostToolUse[]:_meta.bytewyrd_hook_id",
         "hooks.Stop[]:_meta.bytewyrd_hook_id",

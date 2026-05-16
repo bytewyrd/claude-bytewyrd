@@ -240,17 +240,15 @@ Read the manifest at `$PLUGIN_ROOT/bootstrap-manifest.json`. Also read the sidec
 
 **SHA-256:** all canonical-form hashing is done by `scripts/sync-canonical.sh`, which uses `sha256sum` (Linux) with a `shasum -a 256` fallback (macOS) and emits the first 12 hex chars. Callers never invoke `sha256sum` directly — they always go through the helper script so the canonical form is consistent across strategies.
 
-For each artifact in the manifest:
+Run all artifact classifications in one call:
 
-1. **Render the plugin source** if the artifact is templated. Run `bash scripts/sync-render-template.sh <template> <inputs.json>` and capture the rendered content to a temp file; this becomes the `plugin_source` for the next step. For non-templated artifacts, use the manifest `source` path directly.
+```bash
+CLASSIFICATIONS="$(bash scripts/sync-classify-all.sh "$PLUGIN_ROOT")"
+```
 
-2. **Classify** by running:
-   ```bash
-   bash scripts/sync-classify.sh '<manifest-entry-json>' <target-path> $PLUGIN_ROOT
-   ```
-   Parse the JSON output. The `.classification` field is the verdict; `.recorded_sha` and `.plugin_sha` are surfaced for the Step 4b/4c prompts when the chosen path needs them.
+The script reads `$PLUGIN_ROOT/bootstrap-manifest.json`, classifies each artifact by calling `sync-classify.sh` for each, and returns a JSON array. Each element includes the manifest entry fields (`upstream_key`, `source`, `templated`, `owned_paths`, `owned_boundaries`, `owned_sections`) merged with the classification result (`classification`, `strategy`, `target`, `recorded_sha`, `plugin_sha`). Parse `.classification` for the verdict; `.recorded_sha` and `.plugin_sha` are surfaced for Steps 4b/4c prompts.
 
-The script implements both the strategy-first dispatch (for `bootstrap`, `authoritative`, `additive-merge`, `additive-merge-with-diff`, `owned-regions`) and the seven-cell structured matrix (for `owned-regions` and `structured`). It internally calls `sync-canonical.sh` for the per-strategy hash computation and `sync-marker-read.sh` to read the local marker. See those scripts for the per-strategy canonicalization rules and marker format.
+`sync-classify.sh` implements both the strategy-first dispatch (for `bootstrap`, `authoritative`, `additive-merge`, `additive-merge-with-diff`, `owned-regions`) and the seven-cell structured matrix (for `owned-regions` and `structured`). It internally calls `sync-canonical.sh` for the per-strategy hash computation and `sync-marker-read.sh` to read the local marker. See those scripts for the per-strategy canonicalization rules and marker format.
 
 **Plugin canonical for additive-merge:** at classification time the canonical is approximated from the raw template source under each `owned_sections` heading — sufficient to detect "template changed since we last wrote this file" without requiring full project inputs at classification time. At apply time the merge re-renders the template with full inputs and writes the true canonical SHA into the marker.
 
@@ -329,9 +327,18 @@ Copy anything you want to keep to docs/CONTRIBUTING.md or a new
 docs/rfc-process-extensions.md, then press Continue.
 ```
 
-- `Continue (overwrite rfc-process.md)` — write the plugin version and stamp the marker.
+- `Continue (overwrite rfc-process.md)` — proceed to the batch write below.
 
-If `.has_extensions` is `false`, write immediately without any prompt. Track as `authoritative-overwritten` in the Step 8 report. The warning re-prints on every subsequent `/sync` until the `## Project Extensions` section is removed or the file is at the current plugin version.
+If `.has_extensions` is `false`, proceed immediately without any prompt.
+
+Extract all `authoritative_add` and `authoritative_update` items from `$CLASSIFICATIONS`:
+
+```bash
+AUTH_ITEMS="$(printf '%s' "$CLASSIFICATIONS" | jq -c '[.[] | select(.classification == "authoritative_add" or .classification == "authoritative_update")]')"
+bash scripts/sync-apply-batch.sh "$AUTH_ITEMS" "$PLUGIN_ROOT" <project-inputs-json>
+```
+
+The script applies all authoritative files atomically — copies each plugin source to the target and stamps the authoritative two-line header. Track each applied file as `authoritative-overwritten` in the Step 8 report. The rfc-process warning above re-prints on every subsequent `/sync` until the `## Project Extensions` section is removed or the file is at the current plugin version.
 
 `unchanged` authoritative artifacts → no action.
 
@@ -452,6 +459,15 @@ The script emits the rendered content on stdout. Internally it substitutes `<pla
 - JSON files: do **not** embed a marker in the file. The marker is stored in the sidecar (Step 5.5).
 
 To read an existing marker from a file (for diff classification or any other lookup), run `bash scripts/sync-marker-read.sh <file>` and parse `.sha12` (or branch on `.found == false` when no marker is present).
+
+After Step 4b confirmation, collect all approved items (the subset the user checked: `add`, `fast_forward`, `unchanged_legacy`, `bootstrap_create`). Apply them in one call:
+
+```bash
+CONFIRMED_ITEMS="$(printf '%s' "$CLASSIFICATIONS" | jq -c '[.[] | select(.classification == "add" or .classification == "fast_forward" or .classification == "unchanged_legacy" or .classification == "bootstrap_create")]')"
+bash scripts/sync-apply-batch.sh "$CONFIRMED_ITEMS" "$PLUGIN_ROOT" <project-inputs-json>
+```
+
+The script returns a JSON array of results. Items with `"result": "needs-agent"` (e.g. structured JSON fast-forwards with complex hook array merging) fall back to per-item agent apply using the existing action descriptions below.
 
 **Apply actions:**
 
@@ -695,21 +711,11 @@ The `rfc-process.md` source (`bytewyrd/docs/rfc-process.md@v1`) is read directly
 
 **`settings.json.tpl` rendering:**
 
-**Do NOT include `bytewyrd@bytewyrd` in `enabledPlugins` or `extraKnownMarketplaces`.** The plugin is installed once per machine at user scope (`~/.claude/settings.json`), not per-project. Adding it to project settings would recreate the per-project maintenance burden that the user-scope recommendation was specifically designed to avoid: every project would carry entries that need to be updated if the plugin name, marketplace, or source URL ever changes.
+**Do NOT include `bytewyrd@bytewyrd` or `extraKnownMarketplaces.bytewyrd`.** The plugin is installed at user scope (`~/.claude/settings.json`); projects do not assert plugin enablement or marketplace registration in `.claude/settings.json`. Discoverability for new team members is handled by the CONTRIBUTING.md install-hint block (Step 5). (Teams that want project-scope enforcement can manually add `"bytewyrd@bytewyrd": true` to their `.claude/settings.json`'s `enabledPlugins` block; this is documented in `docs/guide/installation.md` but is not the default.)
 
-New collaborators who don't have the plugin are covered by the CONTRIBUTING.md install hint that `/sync` adds to every consumer project. The plugin's own `SessionStart` hook (`check-requirements.sh`) handles per-session validation of companion plugins and MCP servers for users who already have it installed — it cannot warn users who don't have it, because the hook only runs when the plugin is loaded.
+**Cleanup of legacy entries (always run before writing):** Remove any pre-existing `bytewyrd@bytewyrd` entry under `enabledPlugins` and any `bytewyrd` key under `extraKnownMarketplaces`. These are forward-only migrations: pre-RFC projects had both; post-RFC projects must not. Use `jq -e 'del(.enabledPlugins["bytewyrd@bytewyrd"]) | del(.extraKnownMarketplaces.bytewyrd) | if .extraKnownMarketplaces == {} then del(.extraKnownMarketplaces) else . end'` if `jq` is available; otherwise hand-edit. The cleanup is idempotent — re-running `/sync` on a clean post-RFC project is a no-op.
 
-**Cleanup of legacy entries (always run before writing):** If the existing `.claude/settings.json` contains a `bytewyrd@bytewyrd` entry under `enabledPlugins`, or a `bytewyrd` entry under `extraKnownMarketplaces`, remove them. This is a forward-only migration — 0.1.x projects had the `enabledPlugins` entry; current projects must not. Use `jq` with bracket notation (dot notation with `@` is non-portable across jq versions):
-
-```bash
-jq 'del(.enabledPlugins["bytewyrd@bytewyrd"]) | del(.extraKnownMarketplaces["bytewyrd"])' .claude/settings.json
-```
-
-The cleanup is idempotent — re-running on a clean project is a no-op.
-
-Teams that want to mandate project-scope enablement (so Claude Code auto-installs the plugin for collaborators) can do so manually by adding both `enabledPlugins` and `extraKnownMarketplaces` entries themselves and committing them — but this is not the default, and both entries are required (see `docs/guide/installation.md`).
-
-**Include only if installed** — an uninstalled `claude-plugins-official` plugin causes Claude Code to error on startup. Check each identifier against the `INSTALLED_PLUGINS` array collected in Step 1 (sourced from `~/.claude/plugins/installed_plugins.json`). Add `"github@claude-plugins-official": true`, `"context7@claude-plugins-official": true`, `"code-review@claude-plugins-official": true` only when the identifier appears in `INSTALLED_PLUGINS`.
+**`<ENABLED_PLUGINS_ENTRIES>`** — this template variable expands to the full content of the `enabledPlugins` object (no leading `bytewyrd@bytewyrd` base entry). If no companion plugins are installed it is empty (resulting in `"enabledPlugins": {}`). Otherwise it expands to a newline-indented, comma-separated list of `"<id>": true` entries. Only include installed identifiers — an uninstalled `claude-plugins-official` plugin causes Claude Code to error on startup. Check each identifier against the `INSTALLED_PLUGINS` array collected in Step 1 (sourced from `~/.claude/plugins/installed_plugins.json`). Add `"github@claude-plugins-official": true`, `"context7@claude-plugins-official": true`, `"code-review@claude-plugins-official": true` only when the identifier appears in `INSTALLED_PLUGINS`.
 
 The `PreToolUse` hook's quality-gate command chains gate commands for all detected languages with `&&`. Skip Shell/Infra. Wrap non-root component paths in a subshell. If no languages with a standard gate are detected, omit the `PreToolUse` hook entirely.
 
