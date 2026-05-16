@@ -45,15 +45,19 @@ jq -r '
   "HAS_RAILS="          + (.preflight.has_rails | tostring),
   "HAS_K8S_CUE="        + (.preflight.has_k8s_cue | tostring),
   "HAS_TERRAFORM="      + (.preflight.has_terraform | tostring),
-  "MISSING_CRITICAL="   + (.preflight.missing_critical | tostring),
-  "MISSING_RECOMMENDED="+ (.preflight.missing_recommended | tostring),
+  "MISSING_CRITICAL="     + (.preflight.missing_critical | tostring),
+  "MISSING_RECOMMENDED="  + (.preflight.missing_recommended | tostring),
+  "BRIEF_COMPLETE="       + (.brief_complete | tostring),
+  "RFC_HAS_EXTENSIONS="   + (.rfc_process.has_extensions | tostring),
   "CLASSIFICATIONS_COUNT=" + (.classifications | length | tostring)
-' $TMPDIR/bytewyrd-sync-data.json
+' $TMPDIR/bytewyrd-sync-data.json && \
+echo "---" && \
+jq -r '.summary_text' $TMPDIR/bytewyrd-sync-data.json
 ```
 
 If `sync-run.sh` exits non-zero, stop immediately — it has already printed the relevant error to stderr. The error is self-explanatory; no further wrapping needed.
 
-**Do not re-run `sync-run.sh` in any subsequent step.** All data for Steps 2–8 comes from `$TMPDIR/bytewyrd-sync-data.json`. Use `jq <filter> $TMPDIR/bytewyrd-sync-data.json` whenever you need a field not printed above (e.g., `jq '.preflight.languages' $TMPDIR/bytewyrd-sync-data.json` or `jq '.classifications[] | select(.classification != "unchanged")' $TMPDIR/bytewyrd-sync-data.json`).
+The output above includes a `---` separator followed by the pre-built `/sync — change summary:` text. **Read and present that summary to the user verbatim — do not re-derive it from the raw classifications.** All subsequent data access uses `$TMPDIR/bytewyrd-sync-data.json`; never re-run `sync-run.sh`.
 
 The script also writes `.bytewyrd/docs-agent-version` as a side effect when the plugin's docs-agent version differs from the project's recorded version — no separate Step 1.5 logic is required in the skill.
 
@@ -93,6 +97,8 @@ Note: Exa is a separate MCP server (not a plugin) — its permissions go uncondi
 ---
 
 ## Step 2 — Gather project identity from the brief
+
+**Skip this step entirely when `BRIEF_COMPLETE=true` was printed in Step 1.** In that case set `project_name` and `description` by reading the brief directly from `docs/project-brief.md` (no prompts needed), then proceed to Step 3.
 
 Project identity (`project_name` and `description`) is sourced from `docs/project-brief.md`. The brief is the single source of truth — `/sync` does not maintain identity values independently of it.
 
@@ -256,53 +262,9 @@ Each element includes the manifest entry fields (`upstream_key`, `source`, `temp
 
 ### Print the summary
 
-After classifying all artifacts, print a categorized summary. Each file entry is followed by an indented list of chunks (owned paths, regions, or blocks) showing what will change and what is preserved.
+The change summary was pre-built by `sync-run.sh` and printed at the end of the Step 1 bash output (after the `---` separator). Present it to the user verbatim — do not re-derive it from the raw classifications.
 
-Sigils:
-- `+`  new file being created
-- `~`  deterministic update (no user decision required)
-- `!`  requires your input (additive-merge-with-diff, or additive-merge that escalated due to contradictions)
-
-Chunk sigils (indented under each file):
-- `✓`  owned chunk — will be updated to plugin version
-- `·`  not owned — will be preserved exactly as-is
-
-Example output:
-
-```
-/sync — change summary:
-
-New files (2):
-  + docs/rfc-process.md
-  + .github/PULL_REQUEST_TEMPLATE.md
-      ! additive merge — you cherry-pick which sections to accept
-
-Updates (3 files):
-  ~ .claude/settings.json
-      ✓ .hooks           → updated  (plugin-owned; adds Stop, PreCompact, PostToolUse entries)
-      · .enabledPlugins  → preserved  (not in owned_paths)
-
-  ~ docs/BEST_PRACTICES.md
-      ✓ ## Workflow       → updated  (plugin-owned heading)
-      · ## Project Notes  → preserved  (user-owned section)
-
-  ~ .gitignore
-      ✓ bytewyrd:base block  → updated  (added .bytewyrd/*)
-      · user content         → preserved
-
-Review needed (1 file — additive merge requires your input):
-  ! .github/PULL_REQUEST_TEMPLATE.md
-```
-
-Rules for the summary:
-- **New files** (`+`): `add`, `bootstrap_create`, `authoritative_add`
-- **Updates** (`~`): `fast_forward`, `conflict`, `conflict_legacy`, `unchanged_legacy`, `authoritative_update`, `additive_merge_apply` (when auto-merge succeeds)
-- **Review needed** (`!`): `additive_merge_with_diff_apply`, and any `additive_merge_apply` that escalated due to contradictions
-- **Not shown**: `unchanged`, `local_only` for `bootstrap` files
-
-For each file under Updates or New files, render the `chunks` array from the classification result as indented lines. For `changed`/`unchanged` owned chunks use `✓`; for `preserved` user chunks use `·`. Include a one-line description using `local_keys`/`plugin_keys` for JSON dotpaths, or a brief note for other types.
-
-If there are no changes at all, print "Everything is up to date." and exit without prompting.
+If the summary ends with "Everything is up to date." there are no changes — exit without prompting.
 
 Otherwise, ask one AskUserQuestion:
 
@@ -315,11 +277,12 @@ Otherwise, ask one AskUserQuestion:
 All artifacts except `additive_merge_with_diff_apply` are applied in a single script call immediately after the user clicks Proceed:
 
 ```bash
-BATCH_ITEMS="$(printf '%s' "$CLASSIFICATIONS" | jq -c '[.[] | select(
+BATCH_ITEMS="$(jq -c '[.classifications[] | select(
   .classification != "additive_merge_with_diff_apply" and
   .classification != "unchanged" and
   .classification != "local_only"
-)]')"
+)]' $TMPDIR/bytewyrd-sync-data.json)"
+PLUGIN_ROOT="$(jq -r '.preflight.plugin_root' $TMPDIR/bytewyrd-sync-data.json)"
 BATCH_RESULT="$(bash scripts/sync-apply-batch.sh "$BATCH_ITEMS" "$PLUGIN_ROOT" <project-inputs-json>)"
 ```
 
@@ -335,7 +298,7 @@ The batch script handles all of the following without user input:
 | `additive_merge_apply` | additive-merge | Run LLM item merge; write; stamp (if auto-merge produces contradictions, escalates to `!` cherry-pick flow) |
 | `bootstrap_create` | bootstrap | Render template; write; stamp |
 
-**Special case for `docs/rfc-process.md`** (authoritative): if `sync-rfc-process-check.sh` reports `.has_extensions = true`, print a one-time warning quoting the `## Project Extensions` section before the batch write. No extra prompt — the user already clicked Proceed.
+**Special case for `docs/rfc-process.md`** (authoritative): if `RFC_HAS_EXTENSIONS=true` was printed in Step 1, print a one-time warning quoting the `## Project Extensions` section (from `jq -r '.rfc_process.body' $TMPDIR/bytewyrd-sync-data.json`) before the batch write. No extra prompt — the user already clicked Proceed.
 
 ```
 docs/rfc-process.md — your '## Project Extensions' section will be removed
