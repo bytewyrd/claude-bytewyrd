@@ -87,7 +87,6 @@ RFC docs, best-practices file, agent delegation table, and CI are set up in one 
 | `/rfc-braindump` | Capture a quick RFC candidate without full authoring |
 | `/rfc-approve` | Mark an RFC Approved and commit |
 | `/rfc-implement` | Implement an Approved RFC via a `feature-engineer` agent |
-| `/rfc-update` | Update a Draft RFC with new findings |
 | `/rfc-read-feedback` | Incorporate inline `FEEDBACK:` comments from reviewers |
 | `/rfc-consensus-review` | Run independent critic agents, surface gaps |
 | `/rfc-drop` | Drop an RFC and record the reason |

@@ -25,7 +25,7 @@ You **must never** modify, create alongside, or delete:
 - `docs/BEST_PRACTICES.md` — owned by `/best-practices-extract` and `/best-practices-sync`
 - `docs/project-brief.md` — owned by `/sync` Step 2
 - `docs/rfcs/**` (the entire directory) — owned by `/rfc-*` skills
-- `docs/rfc-process.md` — owned by `/rfc-update` and `/sync`
+- `docs/rfc-process.md` — owned by `/sync`
 - `docs/rfc-braindump.md` — owned by `/rfc-braindump` and `/rfc-new`
 - `README.md` (project root) — owned by changes to user-facing behavior or install method
 - Any file outside `docs/guide/**` — the allow-list above is the complete list of writable paths; within `docs/guide/**`, the only writable locations are the four subdirectories plus `contributing.md` and `index.md` at the `docs/guide/` root. Nothing else in the repository may be touched.
