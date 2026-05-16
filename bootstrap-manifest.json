@@ -6,7 +6,9 @@
       "target": ".bytewyrd/.bootstrap-versions.json",
       "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
       "extension_strategy": "structured",
-      "owned_paths": ["*"],
+      "owned_paths": [
+        "*"
+      ],
       "templated": false
     },
     {
@@ -70,7 +72,7 @@
       "upstream_key": "bytewyrd/.gitignore@v1",
       "source": "templates/.gitignore.tpl",
       "target": ".gitignore",
-      "sha256": "3a5929ed8d1c871cf94abc210cf435089b2d199355590c78ef426605a1ea5518",
+      "sha256": "2df1ccc0325e6ef8c3cf38a405649436ce2f0e1d994680a60d3c5b9d6559a819",
       "extension_strategy": "structured",
       "owned_paths": [
         "bytewyrd:base"
@@ -132,25 +134,82 @@
       "template_sha": "143d5240f6e53e3cb61873935a182d3425cefbaae3fe8999745fe0dce7291a16",
       "extension_strategy": "owned-regions",
       "owned_boundaries": [
-        { "type": "heading", "heading": "## Pitfall" },
-        { "type": "heading", "heading": "## Workflow" },
-        { "type": "heading", "heading": "## Claude Code" },
-        { "type": "heading", "heading": "## Code Design" },
-        { "type": "heading", "heading": "## Code Style" },
-        { "type": "heading", "heading": "## Architecture" },
-        { "type": "heading", "heading": "## Testing" },
-        { "type": "heading", "heading": "## Documentation" },
-        { "type": "heading", "heading": "## Security" },
-        { "type": "heading", "heading": "## Error Handling" },
-        { "type": "heading", "heading": "## Rust" },
-        { "type": "heading", "heading": "## JavaScript / TypeScript" },
-        { "type": "heading", "heading": "## Python" },
-        { "type": "heading", "heading": "## Go" },
-        { "type": "heading", "heading": "## Svelte" },
-        { "type": "heading", "heading": "## Ruby" },
-        { "type": "heading", "heading": "## Rails" },
-        { "type": "heading", "heading": "## Kubernetes / CUE / kapply" },
-        { "type": "heading", "heading": "## Terraform / Terragrunt" }
+        {
+          "type": "heading",
+          "heading": "## Pitfall"
+        },
+        {
+          "type": "heading",
+          "heading": "## Workflow"
+        },
+        {
+          "type": "heading",
+          "heading": "## Claude Code"
+        },
+        {
+          "type": "heading",
+          "heading": "## Code Design"
+        },
+        {
+          "type": "heading",
+          "heading": "## Code Style"
+        },
+        {
+          "type": "heading",
+          "heading": "## Architecture"
+        },
+        {
+          "type": "heading",
+          "heading": "## Testing"
+        },
+        {
+          "type": "heading",
+          "heading": "## Documentation"
+        },
+        {
+          "type": "heading",
+          "heading": "## Security"
+        },
+        {
+          "type": "heading",
+          "heading": "## Error Handling"
+        },
+        {
+          "type": "heading",
+          "heading": "## Rust"
+        },
+        {
+          "type": "heading",
+          "heading": "## JavaScript / TypeScript"
+        },
+        {
+          "type": "heading",
+          "heading": "## Python"
+        },
+        {
+          "type": "heading",
+          "heading": "## Go"
+        },
+        {
+          "type": "heading",
+          "heading": "## Svelte"
+        },
+        {
+          "type": "heading",
+          "heading": "## Ruby"
+        },
+        {
+          "type": "heading",
+          "heading": "## Rails"
+        },
+        {
+          "type": "heading",
+          "heading": "## Kubernetes / CUE / kapply"
+        },
+        {
+          "type": "heading",
+          "heading": "## Terraform / Terragrunt"
+        }
       ],
       "templated": true,
       "template_inputs": [
@@ -174,7 +233,7 @@
       "upstream_key": "bytewyrd/docs/rfc-process.md@v1",
       "source": "rfc-process.md",
       "target": "docs/rfc-process.md",
-      "sha256": "8dd941ccacb352502295b58c8de67682b4e90d612d62107e128f738dec61e8e3",
+      "sha256": "e637fb5bf98b615ef76140aa185c8abdce5f7f01cdf853d170efe11fb9ee3751",
       "extension_strategy": "authoritative",
       "templated": false
     },
