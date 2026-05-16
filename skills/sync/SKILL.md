@@ -530,7 +530,7 @@ To read an existing marker from a file (for diff classification or any other loo
 
 ### Additive-merge algorithm
 
-For every owned section in `owned_sections` of an `additive-merge` or `additive-merge-with-diff` artifact, the merge runs as follows.
+For every owned section in `owned_sections` of an `additive-merge` or `additive-merge-with-diff` artifact, the merge runs as follows. Sections in the local file that are **not** listed in `owned_sections` are invisible to this algorithm — they are never read, never compared, never modified, and never flagged as conflicts. They survive untouched into the reserialized output.
 
 **Step A — Extract items.** For each owned section, run:
 
@@ -570,7 +570,7 @@ omit pairs where rel == "different_concept" to keep the response compact.
 
 **Step D — Soundness review.** After the merge, run the soundness reviewer (described below). For `additive-merge`, auto-apply only `duplicate` and `structural` fixes; log `ordering` and `semantic` issues as suggestions in the Step 8 report. For `additive-merge-with-diff` Pass 1, auto-apply all fix types; Pass 2 explain-and-asks.
 
-**Step E — Reserialize.** Emit the merged section body with one blank line between items. Concatenate sections in their original order in the file (or, for sections newly inserted, after the last preceding owned section). Write the marker on line 2 with `plugin_sha` (canonicalized plugin items only) — not the merged-file SHA.
+**Step E — Reserialize.** Emit the merged section body with one blank line between items. Concatenate **all** sections — owned and non-owned — in their original order in the file. Sections **not** listed in `owned_sections` are carried through **byte-for-byte, unmodified**, in their original position. They are never classified as conflicts, never shown in a diff prompt, and never modified. Newly inserted plugin sections (headings absent from the local file) are placed after the last preceding owned section that is present. Write the marker on line 2 with `plugin_sha` (canonicalized plugin items only) — not the merged-file SHA.
 
 ### Soundness review
 

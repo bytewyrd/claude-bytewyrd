@@ -86,8 +86,6 @@
       "template_sha": "0993a89ec9e87cfa7d01eafd93b2e307eaf16d30ab8cb085e2351e1fe0614f67",
       "extension_strategy": "additive-merge",
       "owned_sections": [
-        "## Toolchain",
-        "## File structure",
         "## Agent delegation",
         "## Tool Usage",
         "## RFC Process",
