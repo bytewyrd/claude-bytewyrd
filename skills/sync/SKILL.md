@@ -303,74 +303,33 @@ echo "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}"
 
 Use the printed path as `PLUGIN_ROOT`. Read the manifest at `$PLUGIN_ROOT/bootstrap-manifest.json`. Also read the sidecar at `.bytewyrd/.bootstrap-versions.json` (treat as `{}` if absent).
 
-**Sidecar migration check (one-time):** before reading the sidecar, if `.claude/.bootstrap-versions.json` exists and `.bytewyrd/.bootstrap-versions.json` does not, move the contents to the new path and delete the old file:
+**Sidecar migration check (one-time):** before reading the sidecar, run `bash scripts/sync-sidecar-migrate.sh` and parse the JSON output. If `.migrated` is `true`, log the `.message` field in the Step 8 report under "Migration notes." The script is idempotent — it only moves the file when the old path exists and the new path does not.
 
-```bash
-if [ -f .claude/.bootstrap-versions.json ] && [ ! -f .bytewyrd/.bootstrap-versions.json ]; then
-  mkdir -p .bytewyrd
-  mv .claude/.bootstrap-versions.json .bytewyrd/.bootstrap-versions.json
-fi
-```
-
-Log the migration in the Step 8 report: `Migrated .bootstrap-versions.json: .claude/ → .bytewyrd/`.
-
-**Cross-platform SHA-256:**
-
-```bash
-# Prefer sha256sum (Linux); fall back to shasum -a 256 (macOS).
-if command -v sha256sum >/dev/null; then
-  hash_cmd="sha256sum"
-else
-  hash_cmd="shasum -a 256"
-fi
-# Usage: echo "content" | $hash_cmd | cut -c1-12  → first 12 hex chars
-```
+**SHA-256:** all canonical-form hashing is done by `scripts/sync-canonical.sh`, which uses `sha256sum` (Linux) with a `shasum -a 256` fallback (macOS) and emits the first 12 hex chars. Callers never invoke `sha256sum` directly — they always go through the helper script so the canonical form is consistent across strategies.
 
 For each artifact in the manifest (skipping the `.bootstrap-versions.json` sidecar entry itself):
 
-1. **Compute `plugin_current_canonical_sha`** — render the template with `project_inputs` (for templated artifacts) or read the plugin source (for non-templated). Canonicalize the result per the artifact's `extension_strategy` (see Canonicalization rules below). Compute SHA-256, take first 12 hex chars.
+1. **Render the plugin source** if the artifact is templated. Run `bash scripts/sync-render-template.sh <template> <inputs.json>` and capture the rendered content to a temp file; this becomes the `plugin_source` for the next step. For non-templated artifacts, use the manifest `source` path directly.
 
-2. **If the target file is absent** → classify as **`add`**.
+2. **Classify** by running:
+   ```bash
+   bash scripts/sync-classify.sh '<manifest-entry-json>' <target-path> $PLUGIN_ROOT
+   ```
+   Parse the JSON output. The `.classification` field is the verdict; `.recorded_sha` and `.plugin_sha` are surfaced for the Step 4a/4b prompts when the chosen path needs them.
 
-3. **If the target file exists:**
-   - For Markdown/TOML/gitignore/YAML files: extract `local_ancestor_sha` from the embedded marker line (the `<!-- bootstrap-content-version: <key>:<sha-12> -->` comment on line 2, or the `# bootstrap-content-version: <key>:<sha-12>` comment on line 1 for TOML/gitignore/YAML).
-   - For JSON files (`.claude/settings.json`, `.claude/settings.local.json`): look up `local_ancestor_sha` from the sidecar by `upstream_key`.
-   - If no marker/sidecar entry exists: `local_ancestor_sha = None` (legacy file).
-   - Canonicalize the local file content → `local_current_canonical_sha` (first 12 hex chars).
+The script implements both the strategy-first dispatch (for `bootstrap`, `authoritative`, `additive-merge`, `additive-merge-with-diff`, `owned-regions`) and the seven-cell structured matrix (for `owned-regions` and `structured`). It internally calls `sync-canonical.sh` for the per-strategy hash computation and `sync-marker-read.sh` to read the local marker. See those scripts for the per-strategy canonicalization rules and marker format.
 
-4. **Classify** per the matrix:
+**Plugin canonical for additive-merge:** at classification time the canonical is approximated from the raw template source under each `owned_sections` heading — sufficient to detect "template changed since we last wrote this file" without requiring full project inputs at classification time. At apply time the merge re-renders the template with full inputs and writes the true canonical SHA into the marker.
 
-**Strategy-first dispatch:** Before applying the matrix below, dispatch to the strategy-specific classifier when `extension_strategy` is `additive-merge`, `additive-merge-with-diff`, `bootstrap`, `authoritative`, or `owned-regions`:
+**Classification outcomes by strategy** (also tabulated in the script header for cross-reference):
 
-- **`additive-merge`** and **`additive-merge-with-diff`**: compute `plugin_sha` from the canonicalized plugin items only; compare against the marker's recorded SHA. If the local file is absent → `add`. If the recorded SHA matches `plugin_sha` → `unchanged`. Otherwise → `additive_merge_apply` or `additive_merge_with_diff_apply` (the merge runs at apply time; classification only signals "merge needed").
-- **`bootstrap`**: presence-check only. File absent → `bootstrap_create`. File present → `local_only` (the project now owns the file; /sync never updates it).
-- **`authoritative`**: full-content compare after `strip_two_line_header`. File absent → `authoritative_add`. SHAs match → `unchanged`. SHAs differ → `authoritative_update`.
-- **`owned-regions`**: use the same matrix below, treating `owned_boundaries` as the per-region scope.
-
-The matrix below applies only to the `structured` strategy:
-
-| Conditions | Classification |
-|------------|----------------|
-| Target file absent | **add** |
-| No marker, `local_current == plugin_current` | **unchanged_legacy** |
-| No marker, `local_current != plugin_current` | **conflict_legacy** |
-| Marker present, `local_ancestor == plugin_current` | **unchanged** |
-| Marker present, `local_current == local_ancestor` AND `plugin_current != local_ancestor` | **fast_forward** |
-| Marker present, `local_current != local_ancestor` AND `plugin_current == local_ancestor` | **local_only** |
-| Marker present, all three differ AND `local_current != plugin_current` | **conflict** |
-| Marker present, all three differ AND `local_current == plugin_current` | **unchanged** (converged) |
-
-**Canonicalization rules** (same function applied to both local and plugin content — hashes must be directly comparable):
-
-The helper `strip_two_line_header(content)` is used by multiple strategies: it removes every contiguous line at the top of the file that starts with `<!-- bootstrap-content-version:`, `<!-- Managed by the Bytewyrd plugin.`, or `<!-- Bootstrapped by the Bytewyrd plugin.`, plus any immediately following blank line. The result is the content the strategy actually compares.
-
-- **`additive-merge` strategy:** plugin-side canonical only. Render the template, extract the items inside each entry in `owned_sections` from the rendered output, concatenate the items section-by-section, and hash that. Record the result as `plugin_sha` in the marker. On subsequent runs, compare to the marker's recorded SHA — not a local-vs-plugin full-body compare. (Local can drift freely; only the plugin SHA needs to match its recorded value to detect a no-op.)
-- **`additive-merge-with-diff` strategy:** same plugin-side canonical as `additive-merge`. Plugin-only hash; local content is not part of the canonical SHA.
-- **`bootstrap` strategy:** no canonical-form hash compare — bypasses the matrix entirely. Presence-check only: file absent → `bootstrap_create`; file present → `local_only`. The two-line header on a bootstrap-created file documents that the file is owned by the project going forward.
-- **`authoritative` strategy:** full-content compare after `strip_two_line_header` from both sides. The plugin source is read without the two-line header (it does not carry one in the source tree); the local file is read with `strip_two_line_header` applied. The two hashes are then directly comparable. Update on any mismatch — local edits are replaced.
-- **`owned-regions` strategy:** for each boundary in `owned_boundaries` in manifest order: the literal heading line + `\n` + section body (all lines from heading to next sibling H2 or EOF, trimmed of leading/trailing blank lines) + `\n`. Concatenate all owned regions. Boundaries absent from the file contribute heading + `\n` with empty body.
-- **`structured` strategy (JSON):** for each path in `owned_paths`, extract the value using `jq` (sort keys) and serialize it; concatenate. For id-based array paths (`[]:<id_key>`): serialize only entries with a non-empty id, sorted by id. For set-union array paths (`[]:union`): serialize only the plugin-contributed entries. The wildcard `*` means "the entire document treated as plugin-owned" (used by the relocated `.bytewyrd/.bootstrap-versions.json` sidecar).
-- **`structured` strategy (`.gitignore`):** for each tagged block in `owned_paths`, extract the `# <tag>\n` line + lines in the block + `\n`; concatenate.
+| Strategy | Possible classifications |
+|----------|--------------------------|
+| `bootstrap` | `bootstrap_create`, `local_only` |
+| `authoritative` | `authoritative_add`, `unchanged`, `authoritative_update` |
+| `additive-merge` | `additive_merge_apply`, `unchanged` |
+| `additive-merge-with-diff` | `additive_merge_with_diff_apply`, `unchanged` |
+| `owned-regions` / `structured` | `add`, `unchanged_legacy`, `conflict_legacy`, `unchanged`, `fast_forward`, `local_only`, `conflict` |
 
 ### Print the summary
 
@@ -423,7 +382,7 @@ Ask one AskUserQuestion with `multiSelect: true` and per-file checkboxes. The op
 
 The user checks every option they want to apply and unchecks the rest. Deselected items are deferred (no write, re-surfaces next run) — they appear in the Step 8 report under "Deferred."
 
-**Migration-time check before rendering the batch prompt:** if `docs/rfc-process.md` classifies as `authoritative_update` and the local file has non-placeholder `## Project Extensions` content (i.e., anything other than `*(no project-specific extensions — the global process applies as-is)*` or empty), print this warning inline above the batch prompt:
+**Migration-time check before rendering the batch prompt:** if `docs/rfc-process.md` classifies as `authoritative_update`, run `bash scripts/sync-rfc-process-check.sh` and parse the JSON output. If `.has_extensions` is `true`, print this warning inline above the batch prompt, substituting the `.body` field (indented 2 spaces, truncated to 200 chars) into `<quoted section body>`:
 
 ```
 docs/rfc-process.md — your '## Project Extensions' section will be removed
@@ -484,10 +443,16 @@ For `conflict_legacy` only, add a fifth option:
 
 No higher-level "adopt all / keep all" prompt is asked first; contradictions are the only decision points, and they are resolved one item at a time. The merged file is written after all sections finish.
 
-**`additive_merge_with_diff_apply` (additive-merge-with-diff strategy).** Run the per-section merge, run Pass 1 of the soundness review (auto-apply all fix types), render a unified diff of (local file) vs (merged + Pass 1 result), and present a four-option diff-review prompt:
+**`additive_merge_with_diff_apply` (additive-merge-with-diff strategy).** Run the per-section merge, run Pass 1 of the soundness review (auto-apply all fix types). Generate the unified diff between the local file and the (merged + Pass 1 result) by running:
+
+```bash
+bash scripts/sync-unified-diff.sh <local-file> <merged-content-file>
+```
+
+Parse the JSON output. Use `.diff` as the human-readable diff to print. Use `.hunks` (an array of `{id, label, diff}` records) to build the `Accept with exclusions` multiSelect checkbox list — each hunk becomes one option labeled by `.hunks[].label`. Then present the four-option diff-review prompt:
 
 - `Accept all` — write the merged result, then run Pass 2 of the soundness review (explain-and-ask). The Pass 2 prompt is described below.
-- `Accept with exclusions` — present a hunk multiSelect checkbox list (each hunk is one option). Deselected hunks revert to the local content for that range. Write the result; then run Pass 2.
+- `Accept with exclusions` — present the hunk multiSelect checkbox list. Deselected hunks revert to the local content for that range. Write the result; then run Pass 2.
 - `Manual 3-way merge` — write the file with git-style conflict markers (`<<<<<<< local`, `=======`, `>>>>>>> plugin`); skip Pass 2; print the explanation below.
 - `Defer` — no write; skip Pass 2; re-present next run.
 
@@ -510,24 +475,31 @@ Until the conflict markers are removed, the file classifies as `additive_merge_w
 
 This step applies the actions determined by Steps 4a and 4b. For each artifact in the diff result, apply its action. Templates are read from `$PLUGIN_ROOT/templates/`. Non-templated artifact sources are read from the `source` field in the manifest (resolved relative to `$PLUGIN_ROOT`).
 
-**Template rendering rule:** read the template source file as a string; for each `<placeholder>` token, substitute the corresponding value from `project_inputs`. Unrecognized placeholders are replaced with empty string. For conditional regions (`<!--lang:rust-start-->...<!--lang:rust-end-->` etc.), include the block content (without the delimiter comments) when the corresponding language is detected; otherwise strip the entire block including delimiters. All delimiter comment lines are stripped from the rendered output.
+**Template rendering rule:** for each templated artifact, run:
 
-**Marker insertion rule:** after rendering content for a new or updated file, insert the `bootstrap-content-version` marker. Compute `sha12 = first 12 hex chars of SHA-256(canonicalize(rendered_content, artifact))`. Insert per file type:
-- Markdown (`.md`): insert `<!-- bootstrap-content-version: <upstream_key>:<sha12> -->` as line 2 (after the first line of the file).
-- TOML (`.toml`): insert `# bootstrap-content-version: <upstream_key>:<sha12>` as line 1, followed by a blank line, then the file content.
-- YAML (`.yml`, `.yaml`): insert `# bootstrap-content-version: <upstream_key>:<sha12>` as line 1, followed by a blank line.
-- `.gitignore`: insert `# bootstrap-content-version: <upstream_key>:<sha12>` as line 1, followed by a blank line.
+```bash
+bash scripts/sync-render-template.sh <template-path> <inputs-json-path>
+```
+
+The script emits the rendered content on stdout. Internally it substitutes `<placeholder>` tokens from the inputs JSON (lowercased keys), and includes or strips `<!--lang:NAME-start-->...<!--lang:NAME-end-->` blocks based on the inputs `languages` array or `has_NAME` truthy keys. See the script header for the exact contract.
+
+**Marker insertion rule:** after writing content for a new or updated file, compute the canonical SHA via `sync-canonical.sh`, then stamp the marker according to file type:
+
+- Markdown (`.md`): `bash scripts/sync-write-header.sh <file> <upstream_key> <sha12> bootstrap` (or `authoritative` for plugin-owned files). The script handles both fresh-write and replace.
+- TOML / YAML / `.gitignore`: insert `# bootstrap-content-version: <upstream_key>:<sha12>` as line 1, followed by a blank line, then the file content. (No header-writer script — these inline `#` markers do not have the two-line tagline form.)
 - JSON files: do **not** embed a marker in the file. The marker is stored in the sidecar (Step 5.5).
+
+To read an existing marker from a file (for diff classification or any other lookup), run `bash scripts/sync-marker-read.sh <file>` and parse `.sha12` (or branch on `.found == false` when no marker is present).
 
 **Apply actions:**
 
-1. **`add`** — Render the template with `project_inputs`. Insert the marker. Write the file. Track as `added`.
+1. **`add`** — Render the template via `sync-render-template.sh` with `project_inputs`. Compute the canonical SHA via `sync-canonical.sh` for the artifact's strategy. Write the file, then stamp the marker per the "Marker insertion rule" above. Track as `added`.
 
-2. **`fast_forward`** (approved in Step 4a) — Render the template or read the plugin source. Apply the extension strategy to merge against the local file:
-   - `owned-regions`: for each boundary in `owned_boundaries`, replace the section body in the local file with the plugin's rendered body for that section. Preserve all other sections (user-owned sections, sections the plugin doesn't own). If a plugin-owned section is absent from the local file, insert it after the last preceding owned section in manifest order. Reserialize: marker on line 2, then sections in their preserved relative order.
-   - `structured` (JSON/TOML): for each path in `owned_paths`, replace the value at that path with the plugin's current value. Preserve all other paths. Update the sidecar rather than embedding a marker.
-   - `structured` (.gitignore): for each tag in `owned_paths`, replace the tagged block. Preserve all untagged blocks. Update marker on line 1.
-   Update the marker to the new sha. Track as `fast-forward applied`.
+2. **`fast_forward`** (approved in Step 4a) — Render the template (`sync-render-template.sh`) or read the plugin source. Apply the extension strategy:
+   - `owned-regions`: run `bash scripts/sync-owned-regions-apply.sh <local> <plugin-source> '<owned_boundaries-json>'` and write the result to the target. Then stamp the marker on line 2.
+   - `structured` (JSON/TOML): for each path in `owned_paths`, replace the value at that path with the plugin's current value (use `jq` for JSON). Preserve all other paths. JSON files: update the sidecar marker (Step 5.5). TOML files: stamp the inline `#`-comment marker on line 1.
+   - `structured` (.gitignore): for each tag in `owned_paths`, replace the tagged block. Preserve all untagged blocks. Stamp the inline `#`-comment marker on line 1.
+   Track as `fast-forward applied`.
 
 3. **`conflict`** / **`conflict_legacy`** (resolution from Step 4b) — Apply per the chosen resolution option. Track the resolution in the Step 8 report.
 
@@ -539,31 +511,43 @@ This step applies the actions determined by Steps 4a and 4b. For each artifact i
 
 7. **`additive_merge_with_diff_apply`** (additive-merge-with-diff strategy) — Run the same per-section item merge as `additive-merge`. Pass 1 of the soundness review auto-applies all fix types (`duplicate`, `structural`, `ordering`, `semantic`). Render a unified diff of (local file) vs (merged + Pass 1 result) and present the Step 4b diff-review prompt. On `Accept all` or `Accept with exclusions`: write the file, then run Pass 2 of the soundness review (explain-and-ask — the user chooses `Fix automatically` or `I'll handle it`). On `Manual 3-way merge`: write the file with git-style conflict markers; skip Pass 2. On `Defer`: no write. The marker SHA is `plugin_sha` (not the merged-file SHA). Track per the chosen path.
 
-8. **`bootstrap_create`** (bootstrap strategy, confirmed in Step 4a) — Render the template with `project_inputs`. Write the file with the two-line header:
+8. **`bootstrap_create`** (bootstrap strategy, confirmed in Step 4a) — Render the template with `project_inputs` via `sync-render-template.sh`. Write the rendered content to disk, then stamp the two-line header in place:
 
+   ```bash
+   bash scripts/sync-write-header.sh <target> <upstream_key> <sha12> bootstrap
    ```
-   <!-- bootstrap-content-version: <upstream_key>:<sha12> -->
-   <!-- Bootstrapped by the Bytewyrd plugin. This file is now owned by this project — /sync will not update it. Maintain it as part of your codebase. -->
-   ```
 
-   The blank line after the header (if the file's content does not already start with one) preserves Markdown rendering. Track as `bootstrapped`. If the user deselected the file in Step 4a → no write, defer (re-surfaces next run). Local-only files (file present, no marker) → no write, preserve.
+   `<sha12>` is the canonical SHA from `sync-canonical.sh` (here, the canonical for a freshly-written file is just the rendered content). The script handles both prepend (no existing header) and replace (existing recognized header).
 
-9. **`authoritative_add`** / **`authoritative_update`** (authoritative strategy, confirmed in Step 4a) — Read the plugin source. Write the file with the two-line header:
+   Track as `bootstrapped`. If the user deselected the file in Step 4a → no write, defer (re-surfaces next run). Local-only files (file present, no marker) → no write, preserve.
 
-   ```
-   <!-- bootstrap-content-version: <upstream_key>:<sha12> -->
-   <!-- Managed by the Bytewyrd plugin — do not customize. This file is overwritten on every /sync. -->
+9. **`authoritative_add`** / **`authoritative_update`** (authoritative strategy, confirmed in Step 4a) — Read the plugin source. Write it to the target, then stamp the two-line header:
+
+   ```bash
+   bash scripts/sync-write-header.sh <target> <upstream_key> <sha12> authoritative
    ```
 
    Local edits in the body are replaced. Track as `authoritative-overwritten`. If the user deselected the file in Step 4a → no write, defer (re-surfaces next run). `unchanged` → no write.
 
-10. **`owned-regions`** apply — for each boundary in `owned_boundaries`, replace the section body in the local file with the plugin's rendered body for that boundary. Preserve all other content (user-owned sections and sections the plugin doesn't own). If a plugin-owned section is absent from the local file, insert it after the last preceding owned section in manifest order. Reserialize with marker on line 2.
+10. **`owned-regions`** apply — run:
+
+    ```bash
+    bash scripts/sync-owned-regions-apply.sh <local-file> <plugin-source> '<owned_boundaries-json>'
+    ```
+
+    The script writes the merged content to stdout — the caller writes it back to the target and then stamps the marker on line 2. See the script for the exact merge semantics (replace owned headings in place, preserve user-owned content, insert absent plugin-owned headings after the last preceding present heading).
 
 ### Additive-merge algorithm
 
-For every owned section in `owned_sections` of an `additive-merge` or `additive-merge-with-diff` artifact, the merge runs as follows.
+For every owned section in `owned_sections` of an `additive-merge` or `additive-merge-with-diff` artifact, the merge runs as follows. Sections in the local file that are **not** listed in `owned_sections` are invisible to this algorithm — they are never read, never compared, never modified, and never flagged as conflicts. They survive untouched into the reserialized output.
 
-**Step A — Extract items.** Parse the section body into discrete items. For markdown bullet lists, each top-level bullet is one item (sub-bullets travel with their parent). For prose sections, each paragraph is one item.
+**Step A — Extract items.** For each owned section, run:
+
+```bash
+bash scripts/sync-item-parser.sh markdown --section '<heading>' < <file>
+```
+
+(For `.github/workflows/ci.yml`, use `yaml` instead of `markdown` and pass the file directly with no `--section`.) Parse the JSON output: `.items[]` is the list of discrete items, each with `index`, `text`, and `type` (one of `bullet`, `paragraph`, `codeblock`, `yaml-key`). Top-level bullets carry their sub-bullets; paragraphs are one item; code blocks are one item.
 
 **Step B — Classify pairs in one batch LLM call per section.** The batch LLM-comparison helper is invoked once per owned section (not per pair). A single prompt lists all plugin items and all local items for the section and asks for a complete classification matrix in one JSON response. Prompt format:
 
@@ -595,7 +579,7 @@ omit pairs where rel == "different_concept" to keep the response compact.
 
 **Step D — Soundness review.** After the merge, run the soundness reviewer (described below). For `additive-merge`, auto-apply only `duplicate` and `structural` fixes; log `ordering` and `semantic` issues as suggestions in the Step 8 report. For `additive-merge-with-diff` Pass 1, auto-apply all fix types; Pass 2 explain-and-asks.
 
-**Step E — Reserialize.** Emit the merged section body with one blank line between items. Concatenate sections in their original order in the file (or, for sections newly inserted, after the last preceding owned section). Write the marker on line 2 with `plugin_sha` (canonicalized plugin items only) — not the merged-file SHA.
+**Step E — Reserialize.** Emit the merged section body with one blank line between items. Concatenate **all** sections — owned and non-owned — in their original order in the file. Sections **not** listed in `owned_sections` are carried through **byte-for-byte, unmodified**, in their original position. They are never classified as conflicts, never shown in a diff prompt, and never modified. Newly inserted plugin sections (headings absent from the local file) are placed after the last preceding owned section that is present. Write the marker on line 2 with `plugin_sha` (canonicalized plugin items only) — not the merged-file SHA.
 
 ### Soundness review
 
@@ -744,7 +728,7 @@ The `rfc-process.md` source (`bytewyrd/docs/rfc-process.md@v1`) is read directly
   - Go: `| golang-pro | Go-specific code |`
   - Python: `| python-pro | Python-specific code |`
   - Shell/Infra: terraform-engineer, kubernetes-specialist, cloud-architect, sre-engineer
-  - Always: feature-engineer (new features), code-reviewer (code reviews), rfc-architect (architecture/RFCs), documentation-writer (docs), debugger (debugging)
+  - Always: feature-engineer (new features), code-reviewer (code reviews), rfc-architect (architecture/RFCs), docs-agent via `/docs-review` (`docs/guide/**` and `README.md`), documentation-writer (ad-hoc docs outside `docs/guide/**`), debugger (debugging)
 
 - `<TOOL_USAGE_SECTION>`: build from installed tools. Exa and Firefox MCP are unconditional. Context7 only if `context7@claude-plugins-official` is installed. If none installed, omit the `## Tool Usage` section entirely.
 
