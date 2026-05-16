@@ -194,7 +194,7 @@ Use `/rfc-implement`. The skill spawns a `feature-engineer` agent (`model: "opus
 
 ## Maintaining project RFC files
 
-Projects keep a `docs/rfc-process.md` that is a **self-contained copy** of this document, plus optional project-specific extensions in a `## Project Extensions` section at the bottom. This makes the full process visible to all contributors, not just those with the plugin installed.
+Projects keep a `docs/rfc-process.md` that is a **self-contained copy** of this document. This makes the full process visible to all contributors, not just those with the plugin installed.
 
 **Skills:**
 
@@ -208,7 +208,6 @@ Projects keep a `docs/rfc-process.md` that is a **self-contained copy** of this 
 | `/rfc-approve` | Approve a Draft RFC (human-invoked) |
 | `/rfc-implement` | Begin implementing an Approved RFC |
 | `/rfc-drop` | Drop an RFC with a reason |
-| `/rfc-update` | Pull upstream changes into `docs/rfc-process.md` (also handled automatically by `/sync`) |
 | `/sync` | Set up or refresh the full project Claude Code environment, including RFC process |
 
 **Project extensions may add:**

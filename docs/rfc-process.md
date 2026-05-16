@@ -1,7 +1,3 @@
-<!-- UPSTREAM: $CLAUDE_PLUGIN_ROOT/rfc-process.md -->
-<!-- LAST_SYNCED: 2026-05-12 -->
-<!-- /rfc-update or /sync replaces everything before END_UPSTREAM_CONTENT when upstream changes. -->
-
 # RFC Process
 
 This document defines the RFC (Request for Comments) process for Bytewyrd projects. Projects set up with `/sync` carry a self-contained copy of this document in `docs/rfc-process.md`. See the **Maintaining project RFC files** section at the end.
@@ -199,7 +195,7 @@ Use `/rfc-implement`. The skill spawns a `feature-engineer` agent (`model: "opus
 
 ## Maintaining project RFC files
 
-Projects keep a `docs/rfc-process.md` that is a **self-contained copy** of this document, plus optional project-specific extensions in a `## Project Extensions` section at the bottom. This makes the full process visible to all contributors, not just those with the plugin installed.
+Projects keep a `docs/rfc-process.md` that is a **self-contained copy** of this document. This makes the full process visible to all contributors, not just those with the plugin installed.
 
 **Skills:**
 
@@ -213,7 +209,6 @@ Projects keep a `docs/rfc-process.md` that is a **self-contained copy** of this 
 | `/rfc-approve` | Approve a Draft RFC (human-invoked) |
 | `/rfc-implement` | Begin implementing an Approved RFC |
 | `/rfc-drop` | Drop an RFC with a reason |
-| `/rfc-update` | Pull upstream changes into `docs/rfc-process.md` (also handled automatically by `/sync`) |
 | `/sync` | Set up or refresh the full project Claude Code environment, including RFC process |
 
 **Project extensions may add:**
@@ -222,11 +217,3 @@ Projects keep a `docs/rfc-process.md` that is a **self-contained copy** of this 
 - Module paths and file references relevant to that project's RFCs
 - Additional frontmatter fields
 - Domain-specific default agents for the project's stack
-
-<!-- END_UPSTREAM_CONTENT -->
-
----
-
-## Project Extensions
-
-*(no project-specific extensions — the global process applies as-is)*

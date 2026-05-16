@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Emit a JSON object listing every RFC file under docs/rfcs/ whose basename matches the legacy NNN- prefix.
-# Used by: rfc-update.
+# Previously used by: /rfc-update (now removed). Kept for potential reuse.
 #
 # Args: none.
 #

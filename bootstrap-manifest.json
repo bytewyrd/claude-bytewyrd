@@ -1,16 +1,19 @@
 {
   "artifacts": [
     {
-      "upstream_key": "bytewyrd/.claude/.bootstrap-versions.json@v1",
-      "source": ".claude-plugin/scripts/templates/.bootstrap-versions.json.tpl",
-      "target": ".claude/.bootstrap-versions.json",
+      "upstream_key": "bytewyrd/.bytewyrd/.bootstrap-versions.json@v2",
+      "source": "templates/.bootstrap-versions.json.tpl",
+      "target": ".bytewyrd/.bootstrap-versions.json",
       "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
-      "extension_strategy": "whole",
+      "extension_strategy": "structured",
+      "owned_paths": [
+        "*"
+      ],
       "templated": false
     },
     {
       "upstream_key": "bytewyrd/.claude/settings.json@v1",
-      "source": ".claude-plugin/scripts/templates/settings.json.tpl",
+      "source": "templates/settings.json.tpl",
       "target": ".claude/settings.json",
       "template_sha": "c7540e89943605c6f192dec854430afbde23cb67ee74d04b592207d5d12b5c55",
       "extension_strategy": "structured",
@@ -33,7 +36,7 @@
     },
     {
       "upstream_key": "bytewyrd/.claude/settings.local.json@v1",
-      "source": ".claude-plugin/scripts/templates/settings.local.json.tpl",
+      "source": "templates/settings.local.json.tpl",
       "target": ".claude/settings.local.json",
       "template_sha": "",
       "extension_strategy": "structured",
@@ -47,18 +50,18 @@
     },
     {
       "upstream_key": "bytewyrd/.github/PULL_REQUEST_TEMPLATE.md@v1",
-      "source": ".claude-plugin/scripts/templates/PULL_REQUEST_TEMPLATE.md.tpl",
+      "source": "templates/PULL_REQUEST_TEMPLATE.md.tpl",
       "target": ".github/PULL_REQUEST_TEMPLATE.md",
       "sha256": "250662b840027cd82490e597996cebf9ce77055014c0bb54dd3bbb1e6db42ac8",
-      "extension_strategy": "whole",
+      "extension_strategy": "additive-merge-with-diff",
       "templated": false
     },
     {
       "upstream_key": "bytewyrd/.github/workflows/ci.yml@v1",
-      "source": ".claude-plugin/scripts/templates/ci.yml.tpl",
+      "source": "templates/ci.yml.tpl",
       "target": ".github/workflows/ci.yml",
       "template_sha": "cdd7c920475280a2134dd186a732f229fe0230084ba0b2ee6ec45186229f93b2",
-      "extension_strategy": "whole",
+      "extension_strategy": "additive-merge-with-diff",
       "templated": true,
       "template_inputs": [
         "languages",
@@ -67,9 +70,9 @@
     },
     {
       "upstream_key": "bytewyrd/.gitignore@v1",
-      "source": ".claude-plugin/scripts/templates/.gitignore.tpl",
+      "source": "templates/.gitignore.tpl",
       "target": ".gitignore",
-      "sha256": "3a5929ed8d1c871cf94abc210cf435089b2d199355590c78ef426605a1ea5518",
+      "sha256": "2df1ccc0325e6ef8c3cf38a405649436ce2f0e1d994680a60d3c5b9d6559a819",
       "extension_strategy": "structured",
       "owned_paths": [
         "bytewyrd:base"
@@ -78,10 +81,10 @@
     },
     {
       "upstream_key": "bytewyrd/CLAUDE.md@v1",
-      "source": ".claude-plugin/scripts/templates/CLAUDE.md.tpl",
+      "source": "templates/CLAUDE.md.tpl",
       "target": "CLAUDE.md",
-      "template_sha": "5d8026aea7afb156097ce5b7909572e8c1c1917626a38cf99e9ea88d2367ea66",
-      "extension_strategy": "section",
+      "template_sha": "0993a89ec9e87cfa7d01eafd93b2e307eaf16d30ab8cb085e2351e1fe0614f67",
+      "extension_strategy": "additive-merge",
       "owned_sections": [
         "## Toolchain",
         "## File structure",
@@ -106,17 +109,10 @@
     },
     {
       "upstream_key": "bytewyrd/README.md@v1",
-      "source": ".claude-plugin/scripts/templates/README.md.tpl",
+      "source": "templates/README.md.tpl",
       "target": "README.md",
       "template_sha": "efd02c9f1d3e8860f3eaf2f94150a8abe9a7e72d1cb0b1f7b0bdb877f528f52b",
-      "extension_strategy": "section",
-      "owned_sections": [
-        "## Overview",
-        "## Installation",
-        "## Usage",
-        "## Skills",
-        "## Agents"
-      ],
+      "extension_strategy": "bootstrap",
       "templated": true,
       "template_inputs": [
         "project_name",
@@ -125,38 +121,95 @@
     },
     {
       "upstream_key": "bytewyrd/docs/ARCHITECTURE.md@v1",
-      "source": ".claude-plugin/scripts/templates/ARCHITECTURE.md.tpl",
+      "source": "templates/ARCHITECTURE.md.tpl",
       "target": "docs/ARCHITECTURE.md",
       "sha256": "6e7f1602bba0139dd87dd168eb8d09d059d0eb9d007d1e2f4a8c85eb7b5c55a8",
-      "extension_strategy": "whole",
+      "extension_strategy": "bootstrap",
       "templated": false
     },
     {
       "upstream_key": "bytewyrd/docs/BEST_PRACTICES.md@v1",
-      "source": ".claude-plugin/scripts/templates/BEST_PRACTICES.md.tpl",
+      "source": "templates/BEST_PRACTICES.md.tpl",
       "target": "docs/BEST_PRACTICES.md",
       "template_sha": "143d5240f6e53e3cb61873935a182d3425cefbaae3fe8999745fe0dce7291a16",
-      "extension_strategy": "section",
-      "owned_sections": [
-        "## Pitfall",
-        "## Workflow",
-        "## Claude Code",
-        "## Code Design",
-        "## Code Style",
-        "## Architecture",
-        "## Testing",
-        "## Documentation",
-        "## Security",
-        "## Error Handling",
-        "## Rust",
-        "## JavaScript / TypeScript",
-        "## Python",
-        "## Go",
-        "## Svelte",
-        "## Ruby",
-        "## Rails",
-        "## Kubernetes / CUE / kapply",
-        "## Terraform / Terragrunt"
+      "extension_strategy": "owned-regions",
+      "owned_boundaries": [
+        {
+          "type": "heading",
+          "heading": "## Pitfall"
+        },
+        {
+          "type": "heading",
+          "heading": "## Workflow"
+        },
+        {
+          "type": "heading",
+          "heading": "## Claude Code"
+        },
+        {
+          "type": "heading",
+          "heading": "## Code Design"
+        },
+        {
+          "type": "heading",
+          "heading": "## Code Style"
+        },
+        {
+          "type": "heading",
+          "heading": "## Architecture"
+        },
+        {
+          "type": "heading",
+          "heading": "## Testing"
+        },
+        {
+          "type": "heading",
+          "heading": "## Documentation"
+        },
+        {
+          "type": "heading",
+          "heading": "## Security"
+        },
+        {
+          "type": "heading",
+          "heading": "## Error Handling"
+        },
+        {
+          "type": "heading",
+          "heading": "## Rust"
+        },
+        {
+          "type": "heading",
+          "heading": "## JavaScript / TypeScript"
+        },
+        {
+          "type": "heading",
+          "heading": "## Python"
+        },
+        {
+          "type": "heading",
+          "heading": "## Go"
+        },
+        {
+          "type": "heading",
+          "heading": "## Svelte"
+        },
+        {
+          "type": "heading",
+          "heading": "## Ruby"
+        },
+        {
+          "type": "heading",
+          "heading": "## Rails"
+        },
+        {
+          "type": "heading",
+          "heading": "## Kubernetes / CUE / kapply"
+        },
+        {
+          "type": "heading",
+          "heading": "## Terraform / Terragrunt"
+        }
       ],
       "templated": true,
       "template_inputs": [
@@ -170,24 +223,23 @@
     },
     {
       "upstream_key": "bytewyrd/docs/CONTRIBUTING.md@v1",
-      "source": ".claude-plugin/scripts/templates/CONTRIBUTING.md.tpl",
+      "source": "templates/CONTRIBUTING.md.tpl",
       "target": "docs/CONTRIBUTING.md",
       "sha256": "76fc00220ae50d664b49ec3d2a36b87ccd841627f1febe1ecdd565766272a4e9",
-      "extension_strategy": "whole",
+      "extension_strategy": "bootstrap",
       "templated": false
     },
     {
       "upstream_key": "bytewyrd/docs/rfc-process.md@v1",
       "source": "rfc-process.md",
       "target": "docs/rfc-process.md",
-      "sha256": "cbcb23b697d1f6326294e1bcf223ef2b89012712563f7ff426c27c4927ab2986",
-      "extension_strategy": "region",
-      "region_end_marker": "<!-- END_UPSTREAM_CONTENT -->",
+      "sha256": "e637fb5bf98b615ef76140aa185c8abdce5f7f01cdf853d170efe11fb9ee3751",
+      "extension_strategy": "authoritative",
       "templated": false
     },
     {
       "upstream_key": "bytewyrd/mise.toml@v1",
-      "source": ".claude-plugin/scripts/templates/mise.toml.tpl",
+      "source": "templates/mise.toml.tpl",
       "target": "mise.toml",
       "template_sha": "8ae46e038f0fd4d80c30849b4710a60ceeb3493916b3c525d98885c60cb9f599",
       "extension_strategy": "structured",

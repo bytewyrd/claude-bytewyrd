@@ -184,6 +184,29 @@ The skill enforces a seven-phase protocol: resolve scope → coverage audit → 
 - **Use merge, not rebase, to integrate branches.** The only acceptable use of rebase is reorganizing or cleaning up commits within a branch (interactive rebase for tidying before a PR). Never rebase to integrate upstream changes.
 - **Confirm before rebasing a shared branch.** If a branch has been pushed to the remote or is not purely local, always ask the user before running any rebase. History rewrites on shared branches affect collaborators.
 
+## Maintaining the bootstrap manifest
+
+The `bootstrap-manifest.json` file records the current SHA-256 hash of every artifact source that `/sync` manages. It must stay in sync with the actual source files.
+
+**After editing any artifact source or template file** (anything under `templates/`, or a non-templated source like `rfc-process.md`), regenerate the manifest:
+
+```bash
+scripts/build-manifest.sh
+```
+
+The script walks the manifest, recomputes the `sha256` or `template_sha` for each artifact's source file, and writes back a sorted, pretty-printed manifest. It preserves all structural metadata (`upstream_key`, `extension_strategy`, `owned_sections`, `owned_paths`, `templated`, `template_inputs`) from the existing manifest — it only updates the hash fields.
+
+**Adding a new artifact:** edit the manifest by hand to add the new entry (with a placeholder `sha256: ""` or `template_sha: ""`), then run `build-manifest.sh` to compute the hash. The script never invents `upstream_key` or `extension_strategy` values — those require maintainer judgment.
+
+**The pre-commit hook** (`hooks/pre-commit/manifest-check.sh`) runs `build-manifest.sh --check` and fails the commit if the manifest is stale. This prevents shipping a plugin where the recorded hash for an artifact does not match the artifact's current content, which would cause every consumer to see phantom fast-forward updates on the next `/sync` run.
+
+To wire the hook into git (one-time setup on a fresh clone):
+
+```bash
+ln -sf ../../hooks/pre-commit/manifest-check.sh .git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit
+```
+
 ## Conventions
 
 Commit messages follow Conventional Commits with a scope: `feat(scope): message`.
