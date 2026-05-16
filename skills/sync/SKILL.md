@@ -21,47 +21,39 @@ When `docs/project-brief.md` already exists with complete identity *and* all plu
 
 ## Step 1 — Validate environment, detect plugins, classify artifacts
 
-Run the consolidated deterministic-phase script:
+Run the consolidated deterministic-phase script **exactly once** and write its output to a session file:
 
 ```bash
-sync_data="$(bash scripts/sync-run.sh)"
+bash scripts/sync-run.sh > /tmp/bytewyrd-sync-data.json && \
+jq -r '
+  "REPO_ROOT="          + .preflight.repo_root,
+  "GIT_USER="           + .preflight.git_user,
+  "PROJECT_SLUG="       + .preflight.project_slug,
+  "PLUGIN_ROOT="        + .preflight.plugin_root,
+  "PLUGIN_VERSION="     + .preflight.plugin_version,
+  "HAS_SUBSTANTIAL_CONTENT=" + (.preflight.has_substantial_content | tostring),
+  "GITHUB_DESCRIPTION=" + .preflight.github_description,
+  "DOCS_AGENT_DRIFTED=" + (.preflight.docs_agent_drifted | tostring),
+  "SIDECAR_MIGRATED="   + (.preflight.sidecar_migrated | tostring),
+  "SIDECAR_MESSAGE="    + .preflight.sidecar_message,
+  "HAS_RUST="           + (.preflight.has_rust | tostring),
+  "HAS_JS="             + (.preflight.has_js | tostring),
+  "HAS_GO="             + (.preflight.has_go | tostring),
+  "HAS_PYTHON="         + (.preflight.has_python | tostring),
+  "HAS_SVELTE="         + (.preflight.has_svelte | tostring),
+  "HAS_RUBY="           + (.preflight.has_ruby | tostring),
+  "HAS_RAILS="          + (.preflight.has_rails | tostring),
+  "HAS_K8S_CUE="        + (.preflight.has_k8s_cue | tostring),
+  "HAS_TERRAFORM="      + (.preflight.has_terraform | tostring),
+  "MISSING_CRITICAL="   + (.preflight.missing_critical | tostring),
+  "MISSING_RECOMMENDED="+ (.preflight.missing_recommended | tostring),
+  "CLASSIFICATIONS_COUNT=" + (.classifications | length | tostring)
+' /tmp/bytewyrd-sync-data.json
 ```
 
-If the script exits non-zero, stop immediately — it has already printed the relevant error to stderr (plain text for the missing-`git` case, JSON envelope otherwise). The error is self-explanatory; no further wrapping needed. In particular, when `PLUGIN_ROOT` (extracted below) is empty, the script already exited non-zero and the skill should never reach this paragraph.
+If `sync-run.sh` exits non-zero, stop immediately — it has already printed the relevant error to stderr. The error is self-explanatory; no further wrapping needed.
 
-`sync-run.sh` chains `sync-preflight.sh` and `sync-classify-all.sh` in sequence, returning one JSON object with both outputs: `{preflight: {...}, classifications: [...]}`. This replaces what used to be two separate bash calls (one in Step 1, one in Step 4).
-
-Extract the preflight fields from `$sync_data.preflight` and set `CLASSIFICATIONS` from `$sync_data.classifications`:
-
-```bash
-preflight=$(echo "$sync_data" | jq .preflight)
-CLASSIFICATIONS=$(echo "$sync_data" | jq .classifications)
-
-REPO_ROOT=$(echo "$preflight" | jq -r .repo_root)
-GIT_USER=$(echo "$preflight" | jq -r .git_user)
-PROJECT_SLUG=$(echo "$preflight" | jq -r .project_slug)
-HAS_SUBSTANTIAL_CONTENT=$(echo "$preflight" | jq -r .has_substantial_content)
-GITHUB_DESCRIPTION=$(echo "$preflight" | jq -r .github_description)
-INSTALLED_PLUGINS=$(echo "$preflight" | jq .installed_plugins)
-MISSING_CRITICAL=$(echo "$preflight" | jq .missing_critical)
-MISSING_RECOMMENDED=$(echo "$preflight" | jq .missing_recommended)
-DOCS_AGENT_DRIFTED=$(echo "$preflight" | jq -r .docs_agent_drifted)
-PLUGIN_ROOT=$(echo "$preflight" | jq -r .plugin_root)
-PLUGIN_VERSION=$(echo "$preflight" | jq -r .plugin_version)
-SIDECAR_MIGRATED=$(echo "$preflight" | jq -r .sidecar_migrated)
-SIDECAR_MESSAGE=$(echo "$preflight" | jq -r .sidecar_message)
-LANGUAGES=$(echo "$preflight" | jq .languages)
-COMPONENT_ROOTS=$(echo "$preflight" | jq .component_roots)
-HAS_RUST=$(echo "$preflight" | jq -r .has_rust)
-HAS_JS=$(echo "$preflight" | jq -r .has_js)
-HAS_GO=$(echo "$preflight" | jq -r .has_go)
-HAS_PYTHON=$(echo "$preflight" | jq -r .has_python)
-HAS_SVELTE=$(echo "$preflight" | jq -r .has_svelte)
-HAS_RUBY=$(echo "$preflight" | jq -r .has_ruby)
-HAS_RAILS=$(echo "$preflight" | jq -r .has_rails)
-HAS_K8S_CUE=$(echo "$preflight" | jq -r .has_k8s_cue)
-HAS_TERRAFORM=$(echo "$preflight" | jq -r .has_terraform)
-```
+**Do not re-run `sync-run.sh` in any subsequent step.** All data for Steps 2–8 comes from `/tmp/bytewyrd-sync-data.json`. Use `jq <filter> /tmp/bytewyrd-sync-data.json` whenever you need a field not printed above (e.g., `jq '.preflight.languages' /tmp/bytewyrd-sync-data.json` or `jq '.classifications[] | select(.classification != "unchanged")' /tmp/bytewyrd-sync-data.json`).
 
 The script also writes `.bytewyrd/docs-agent-version` as a side effect when the plugin's docs-agent version differs from the project's recorded version — no separate Step 1.5 logic is required in the skill.
 
@@ -208,7 +200,12 @@ The brief file is written in Step 5 — not here — so that `/sync` writes all 
 
 ## Step 3 — Detect component structure
 
-Language detection ran in Step 1 (preflight). Variables `LANGUAGES`, `COMPONENT_ROOTS`, and the `HAS_*` flags are already set.
+Language detection ran in Step 1. The `HAS_*` flags were printed in the Step 1 output. `LANGUAGES` and `COMPONENT_ROOTS` are available from the session file:
+
+```bash
+jq '.preflight.languages' /tmp/bytewyrd-sync-data.json
+jq '.preflight.component_roots' /tmp/bytewyrd-sync-data.json
+```
 
 `COMPONENT_ROOTS` is a list of `{ language, path, name }` entries with these rules baked into the script:
 
@@ -229,13 +226,19 @@ This step replaces the former "Print creation summary." It runs the pre-flight d
 
 ### Pre-flight diff procedure
 
-`PLUGIN_ROOT` is already set from Step 1 (preflight).
+`PLUGIN_ROOT` was printed by Step 1. If needed: `jq -r '.preflight.plugin_root' /tmp/bytewyrd-sync-data.json`.
 
 Read the manifest at `$PLUGIN_ROOT/bootstrap-manifest.json`. Also read the sidecar at `.bytewyrd/.bootstrap-versions.json` (treat as `{}` if absent).
 
 **SHA-256:** all canonical-form hashing is done by `scripts/sync-canonical.sh`, which uses `sha256sum` (Linux) with a `shasum -a 256` fallback (macOS) and emits the first 12 hex chars. Callers never invoke `sha256sum` directly — they always go through the helper script so the canonical form is consistent across strategies.
 
-`CLASSIFICATIONS` is already set from Step 1 (`$sync_data.classifications`) — no second bash call is needed here. It is a JSON array where each element includes the manifest entry fields (`upstream_key`, `source`, `templated`, `owned_paths`, `owned_boundaries`, `owned_sections`) merged with the classification result (`classification`, `strategy`, `target`, `recorded_sha`, `plugin_sha`). Parse `.classification` for the verdict; `.recorded_sha` and `.plugin_sha` are surfaced for Steps 4b/4c prompts.
+`CLASSIFICATIONS` comes from the session file written in Step 1 — no second bash call to `sync-run.sh` is needed:
+
+```bash
+jq '.classifications' /tmp/bytewyrd-sync-data.json
+```
+
+Each element includes the manifest entry fields (`upstream_key`, `source`, `templated`, `owned_paths`, `owned_boundaries`, `owned_sections`) merged with the classification result (`classification`, `strategy`, `target`, `recorded_sha`, `plugin_sha`, `chunks`). Parse `.classification` for the verdict; `.recorded_sha` and `.plugin_sha` are surfaced for Steps 4b/4c prompts; `.chunks` drives the per-file chunk detail in the summary.
 
 `sync-classify.sh` implements both the strategy-first dispatch (for `bootstrap`, `authoritative`, `additive-merge`, `additive-merge-with-diff`, `owned-regions`) and the seven-cell structured matrix (for `owned-regions` and `structured`). It internally calls `sync-canonical.sh` for the per-strategy hash computation and `sync-marker-read.sh` to read the local marker. See those scripts for the per-strategy canonicalization rules and marker format.
 
