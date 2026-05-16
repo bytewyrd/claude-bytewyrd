@@ -231,17 +231,15 @@ Read the manifest at `$PLUGIN_ROOT/bootstrap-manifest.json`. Also read the sidec
 
 **SHA-256:** all canonical-form hashing is done by `scripts/sync-canonical.sh`, which uses `sha256sum` (Linux) with a `shasum -a 256` fallback (macOS) and emits the first 12 hex chars. Callers never invoke `sha256sum` directly — they always go through the helper script so the canonical form is consistent across strategies.
 
-For each artifact in the manifest:
+Run all artifact classifications in one call:
 
-1. **Render the plugin source** if the artifact is templated. Run `bash scripts/sync-render-template.sh <template> <inputs.json>` and capture the rendered content to a temp file; this becomes the `plugin_source` for the next step. For non-templated artifacts, use the manifest `source` path directly.
+```bash
+CLASSIFICATIONS="$(bash scripts/sync-classify-all.sh "$PLUGIN_ROOT")"
+```
 
-2. **Classify** by running:
-   ```bash
-   bash scripts/sync-classify.sh '<manifest-entry-json>' <target-path> $PLUGIN_ROOT
-   ```
-   Parse the JSON output. The `.classification` field is the verdict; `.recorded_sha` and `.plugin_sha` are surfaced for the Step 4b/4c prompts when the chosen path needs them.
+The script reads `$PLUGIN_ROOT/bootstrap-manifest.json`, classifies each artifact by calling `sync-classify.sh` for each, and returns a JSON array. Each element includes the manifest entry fields (`upstream_key`, `source`, `templated`, `owned_paths`, `owned_boundaries`, `owned_sections`) merged with the classification result (`classification`, `strategy`, `target`, `recorded_sha`, `plugin_sha`). Parse `.classification` for the verdict; `.recorded_sha` and `.plugin_sha` are surfaced for Steps 4b/4c prompts.
 
-The script implements both the strategy-first dispatch (for `bootstrap`, `authoritative`, `additive-merge`, `additive-merge-with-diff`, `owned-regions`) and the seven-cell structured matrix (for `owned-regions` and `structured`). It internally calls `sync-canonical.sh` for the per-strategy hash computation and `sync-marker-read.sh` to read the local marker. See those scripts for the per-strategy canonicalization rules and marker format.
+`sync-classify.sh` implements both the strategy-first dispatch (for `bootstrap`, `authoritative`, `additive-merge`, `additive-merge-with-diff`, `owned-regions`) and the seven-cell structured matrix (for `owned-regions` and `structured`). It internally calls `sync-canonical.sh` for the per-strategy hash computation and `sync-marker-read.sh` to read the local marker. See those scripts for the per-strategy canonicalization rules and marker format.
 
 **Plugin canonical for additive-merge:** at classification time the canonical is approximated from the raw template source under each `owned_sections` heading — sufficient to detect "template changed since we last wrote this file" without requiring full project inputs at classification time. At apply time the merge re-renders the template with full inputs and writes the true canonical SHA into the marker.
 
@@ -320,9 +318,18 @@ Copy anything you want to keep to docs/CONTRIBUTING.md or a new
 docs/rfc-process-extensions.md, then press Continue.
 ```
 
-- `Continue (overwrite rfc-process.md)` — write the plugin version and stamp the marker.
+- `Continue (overwrite rfc-process.md)` — proceed to the batch write below.
 
-If `.has_extensions` is `false`, write immediately without any prompt. Track as `authoritative-overwritten` in the Step 8 report. The warning re-prints on every subsequent `/sync` until the `## Project Extensions` section is removed or the file is at the current plugin version.
+If `.has_extensions` is `false`, proceed immediately without any prompt.
+
+Extract all `authoritative_add` and `authoritative_update` items from `$CLASSIFICATIONS`:
+
+```bash
+AUTH_ITEMS="$(printf '%s' "$CLASSIFICATIONS" | jq -c '[.[] | select(.classification == "authoritative_add" or .classification == "authoritative_update")]')"
+bash scripts/sync-apply-batch.sh "$AUTH_ITEMS" "$PLUGIN_ROOT" <project-inputs-json>
+```
+
+The script applies all authoritative files atomically — copies each plugin source to the target and stamps the authoritative two-line header. Track each applied file as `authoritative-overwritten` in the Step 8 report. The rfc-process warning above re-prints on every subsequent `/sync` until the `## Project Extensions` section is removed or the file is at the current plugin version.
 
 `unchanged` authoritative artifacts → no action.
 
@@ -443,6 +450,15 @@ The script emits the rendered content on stdout. Internally it substitutes `<pla
 - JSON files: do **not** embed a marker in the file. The marker is stored in the sidecar (Step 5.5).
 
 To read an existing marker from a file (for diff classification or any other lookup), run `bash scripts/sync-marker-read.sh <file>` and parse `.sha12` (or branch on `.found == false` when no marker is present).
+
+After Step 4b confirmation, collect all approved items (the subset the user checked: `add`, `fast_forward`, `unchanged_legacy`, `bootstrap_create`). Apply them in one call:
+
+```bash
+CONFIRMED_ITEMS="$(printf '%s' "$CLASSIFICATIONS" | jq -c '[.[] | select(.classification == "add" or .classification == "fast_forward" or .classification == "unchanged_legacy" or .classification == "bootstrap_create")]')"
+bash scripts/sync-apply-batch.sh "$CONFIRMED_ITEMS" "$PLUGIN_ROOT" <project-inputs-json>
+```
+
+The script returns a JSON array of results. Items with `"result": "needs-agent"` (e.g. structured JSON fast-forwards with complex hook array merging) fall back to per-item agent apply using the existing action descriptions below.
 
 **Apply actions:**
 
