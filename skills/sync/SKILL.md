@@ -19,19 +19,24 @@ Sets up or refreshes a project repository with all standard conventions. Idempot
 
 When `docs/project-brief.md` already exists with complete identity *and* all plugin-managed files are at the current plugin version, Steps 4 and 4c are skipped — `/sync` reports everything as unchanged and exits without prompting.
 
-## Step 1 — Validate environment + detect installed plugins + detect GitHub remote
+## Step 1 — Validate environment, detect plugins, classify artifacts
 
-Run the consolidated pre-flight helper:
+Run the consolidated deterministic-phase script:
 
 ```bash
-preflight="$(bash scripts/sync-preflight.sh)"
+sync_data="$(bash scripts/sync-run.sh)"
 ```
 
 If the script exits non-zero, stop immediately — it has already printed the relevant error to stderr (plain text for the missing-`git` case, JSON envelope otherwise). The error is self-explanatory; no further wrapping needed. In particular, when `PLUGIN_ROOT` (extracted below) is empty, the script already exited non-zero and the skill should never reach this paragraph.
 
-The helper performs the hard environment checks (`git` + git-repo presence, `sha256sum`/`shasum`, `jq`, `python3`) and consolidates **all** of /sync's deterministic context-collection into one bash call: project context, plugin-root resolution, sidecar migration, and language detection. Extract the fields from `$preflight`:
+`sync-run.sh` chains `sync-preflight.sh` and `sync-classify-all.sh` in sequence, returning one JSON object with both outputs: `{preflight: {...}, classifications: [...]}`. This replaces what used to be two separate bash calls (one in Step 1, one in Step 4).
+
+Extract the preflight fields from `$sync_data.preflight` and set `CLASSIFICATIONS` from `$sync_data.classifications`:
 
 ```bash
+preflight=$(echo "$sync_data" | jq .preflight)
+CLASSIFICATIONS=$(echo "$sync_data" | jq .classifications)
+
 REPO_ROOT=$(echo "$preflight" | jq -r .repo_root)
 GIT_USER=$(echo "$preflight" | jq -r .git_user)
 PROJECT_SLUG=$(echo "$preflight" | jq -r .project_slug)
@@ -230,13 +235,7 @@ Read the manifest at `$PLUGIN_ROOT/bootstrap-manifest.json`. Also read the sidec
 
 **SHA-256:** all canonical-form hashing is done by `scripts/sync-canonical.sh`, which uses `sha256sum` (Linux) with a `shasum -a 256` fallback (macOS) and emits the first 12 hex chars. Callers never invoke `sha256sum` directly — they always go through the helper script so the canonical form is consistent across strategies.
 
-Run all artifact classifications in one call:
-
-```bash
-CLASSIFICATIONS="$(bash scripts/sync-classify-all.sh "$PLUGIN_ROOT")"
-```
-
-The script reads `$PLUGIN_ROOT/bootstrap-manifest.json`, classifies each artifact by calling `sync-classify.sh` for each, and returns a JSON array. Each element includes the manifest entry fields (`upstream_key`, `source`, `templated`, `owned_paths`, `owned_boundaries`, `owned_sections`) merged with the classification result (`classification`, `strategy`, `target`, `recorded_sha`, `plugin_sha`). Parse `.classification` for the verdict; `.recorded_sha` and `.plugin_sha` are surfaced for Steps 4b/4c prompts.
+`CLASSIFICATIONS` is already set from Step 1 (`$sync_data.classifications`) — no second bash call is needed here. It is a JSON array where each element includes the manifest entry fields (`upstream_key`, `source`, `templated`, `owned_paths`, `owned_boundaries`, `owned_sections`) merged with the classification result (`classification`, `strategy`, `target`, `recorded_sha`, `plugin_sha`). Parse `.classification` for the verdict; `.recorded_sha` and `.plugin_sha` are surfaced for Steps 4b/4c prompts.
 
 `sync-classify.sh` implements both the strategy-first dispatch (for `bootstrap`, `authoritative`, `additive-merge`, `additive-merge-with-diff`, `owned-regions`) and the seven-cell structured matrix (for `owned-regions` and `structured`). It internally calls `sync-canonical.sh` for the per-strategy hash computation and `sync-marker-read.sh` to read the local marker. See those scripts for the per-strategy canonicalization rules and marker format.
 
