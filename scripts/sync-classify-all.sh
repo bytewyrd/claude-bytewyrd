@@ -25,6 +25,10 @@
 #   $2  Optional. Repo root (the project where target files live). Defaults to
 #       the caller's pwd. The script `cd`s here before the loop so relative
 #       target paths in the manifest resolve correctly.
+#   $3  Optional. Path to an enriched project_inputs.json (produced by
+#       sync-compute-template-vars.sh). When provided, forwarded to
+#       sync-classify.sh so templated structured artifacts (e.g.
+#       settings.json.tpl) can be rendered before their SHA is computed.
 #
 # Output:
 #   stdout: a single JSON array. Each element has the shape described above
@@ -50,6 +54,7 @@ fi
 
 plugin_root="$1"
 repo_root="${2:-$PWD}"
+project_inputs_arg="${3:-}"
 
 if [ ! -d "$plugin_root" ]; then
   emit_error "sync-classify-all: plugin root not found: $plugin_root"
@@ -102,7 +107,7 @@ while IFS= read -r entry; do
   classify_err=""
   classify_rc=0
   : > "$tmp_err"
-  classify_out="$(bash "$SCRIPT_DIR/sync-classify.sh" "$entry" "$target" "$plugin_root" 2>"$tmp_err")"
+  classify_out="$(bash "$SCRIPT_DIR/sync-classify.sh" "$entry" "$target" "$plugin_root" "$project_inputs_arg" 2>"$tmp_err")"
   classify_rc=$?
   classify_err="$(cat "$tmp_err" 2>/dev/null || true)"
 

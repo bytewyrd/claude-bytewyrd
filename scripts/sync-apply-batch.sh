@@ -126,6 +126,12 @@ if [ "${2:-}" = "" ] && [ -f "$1" ] \
     has_terraform:   .preflight.has_terraform
   }' "$session_file" > "$project_inputs"
 
+  # Enrich with derived scalar template variables (enabled_plugins_entries,
+  # pre_tool_use_hook) so sync-render-template.sh can substitute them.
+  if enriched="$(bash "$SCRIPT_DIR/sync-compute-template-vars.sh" "$project_inputs" 2>/dev/null)"; then
+    printf '%s' "$enriched" > "$project_inputs"
+  fi
+
   # Filter classifications: skip unchanged, local_only, and additive-merge-with-diff
   # (those are handled interactively by the agent in Step 4c).
   items_json="$(jq -c '[.classifications[] | select(
@@ -148,6 +154,14 @@ else
     emit_error "sync-apply-batch: project inputs JSON not found: $project_inputs"
     exit 2
   fi
+
+  # Work with an enriched copy so the caller's file is not modified.
+  _inputs_copy="$tmp_workdir/project-inputs.json"
+  cp "$project_inputs" "$_inputs_copy"
+  if enriched="$(bash "$SCRIPT_DIR/sync-compute-template-vars.sh" "$_inputs_copy" 2>/dev/null)"; then
+    printf '%s' "$enriched" > "$_inputs_copy"
+  fi
+  project_inputs="$_inputs_copy"
 
   if [ "$items_arg" = "-" ]; then
     items_json="$(cat)"
