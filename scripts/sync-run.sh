@@ -39,8 +39,35 @@ preflight_json="$(bash "$SCRIPT_DIR/sync-preflight.sh")" || exit $?
 plugin_root="$(printf '%s' "$preflight_json" | jq -r '.plugin_root // ""')"
 
 # --- Phase 2: classify-all ---
+# Build a minimal project_inputs.json for template rendering during classify.
+# Templated structured artifacts (settings.json.tpl) need enabled_plugins_entries
+# and pre_tool_use_hook as scalar keys so jq can parse the rendered output.
+classify_inputs="$(mktemp)"
+trap 'rm -f "$classify_inputs"' EXIT
+printf '%s' "$preflight_json" | jq '{
+  project_name:     (.project_slug // ""),
+  description:      "",
+  project_slug:     (.project_slug // ""),
+  has_github:       (.github_remote | length > 0),
+  languages:        (.languages // []),
+  component_roots:  (.component_roots // []),
+  installed_plugins: (.installed_plugins // []),
+  has_rust:         (.has_rust // false),
+  has_js:           (.has_js // false),
+  has_go:           (.has_go // false),
+  has_python:       (.has_python // false),
+  has_svelte:       (.has_svelte // false),
+  has_ruby:         (.has_ruby // false),
+  has_rails:        (.has_rails // false),
+  has_k8s_cue:      (.has_k8s_cue // false),
+  has_terraform:    (.has_terraform // false)
+}' > "$classify_inputs"
+if enriched="$(bash "$SCRIPT_DIR/sync-compute-template-vars.sh" "$classify_inputs" 2>/dev/null)"; then
+  printf '%s' "$enriched" > "$classify_inputs"
+fi
+
 classifications_json=""
-classifications_json="$(bash "$SCRIPT_DIR/sync-classify-all.sh" "$plugin_root" 2>&1)" || exit 3
+classifications_json="$(bash "$SCRIPT_DIR/sync-classify-all.sh" "$plugin_root" "" "$classify_inputs" 2>&1)" || exit 3
 
 # --- Phase 3: brief completeness check + identity extraction ---
 brief_complete=false

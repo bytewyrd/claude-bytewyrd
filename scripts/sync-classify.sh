@@ -88,13 +88,14 @@ is_gitignore_target() {
 }
 
 if [ "${1:-}" = "" ] || [ "${2:-}" = "" ] || [ "${3:-}" = "" ]; then
-  emit_error "usage: sync-classify.sh <manifest-entry-json|-> <target-path> <plugin-root>"
+  emit_error "usage: sync-classify.sh <manifest-entry-json|-> <target-path> <plugin-root> [<project-inputs.json>]"
   exit 2
 fi
 
 manifest_arg="$1"
 target="$2"
 plugin_root="$3"
+project_inputs_arg="${4:-}"
 
 # Resolve manifest entry — either argv or stdin.
 if [ "$manifest_arg" = "-" ]; then
@@ -240,28 +241,45 @@ case "$strategy" in
       emit_error "sync-classify: plugin source not found for $strategy artifact: $plugin_source"
       exit 2
     fi
-    plugin_sha="$(canonical_sha "$strategy" "$plugin_source")"
+
+    # For templated structured artifacts, render the template before computing
+    # the plugin SHA. The raw .tpl contains unresolved placeholders and is not
+    # valid JSON — jq on it returns null, making every file classify as conflict.
+    templated="$(echo "$manifest_json" | jq -r '.templated // false')"
+    plugin_source_for_sha="$plugin_source"
+    tmp_rendered=""
+    if [ "$strategy" = "structured" ] && [ "$templated" = "true" ] \
+        && [ -n "$project_inputs_arg" ] && [ -f "$project_inputs_arg" ]; then
+      tmp_rendered="$(mktemp)"
+      if bash "$script_dir/sync-render-template.sh" "$plugin_source" "$project_inputs_arg" \
+          > "$tmp_rendered" 2>/dev/null; then
+        plugin_source_for_sha="$tmp_rendered"
+      fi
+    fi
+
+    plugin_sha="$(canonical_sha "$strategy" "$plugin_source_for_sha")"
 
     # Compute the per-chunk array for display. Chunks are only meaningful when
     # both target and plugin source exist; for the `add` case (no target file)
     # we pass `[]` since the entire plugin file is new content.
     chunks="[]"
-    if [ -f "$target" ] && [ -f "$plugin_source" ]; then
+    if [ -f "$target" ] && [ -f "$plugin_source_for_sha" ]; then
       case "$strategy" in
         owned-regions|section)
           boundaries="$(echo "$manifest_json" | jq -c '.owned_boundaries // []')"
-          chunks="$(owned_regions_chunks "$boundaries" "$target" "$plugin_source")"
+          chunks="$(owned_regions_chunks "$boundaries" "$target" "$plugin_source_for_sha")"
           ;;
         structured)
           paths="$(echo "$manifest_json" | jq -c '.owned_paths // []')"
           if is_gitignore_target "$target"; then
-            chunks="$(gitignore_chunks "$paths" "$target" "$plugin_source")"
+            chunks="$(gitignore_chunks "$paths" "$target" "$plugin_source_for_sha")"
           else
-            chunks="$(json_dotpath_chunks "$paths" "$target" "$plugin_source")"
+            chunks="$(json_dotpath_chunks "$paths" "$target" "$plugin_source_for_sha")"
           fi
           ;;
       esac
     fi
+    [ -n "$tmp_rendered" ] && rm -f "$tmp_rendered"
 
     if [ ! -f "$target" ]; then
       emit "add" "null" "$plugin_sha" "[]"
