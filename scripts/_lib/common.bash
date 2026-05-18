@@ -36,6 +36,38 @@ emit_unauth() {
   jq -n --arg name "$1" --arg hint "$2" '{result: "unauthenticated", name: $name, hint: $hint}'
 }
 
+# hash_string <string> — output full sha256 hex of the string (cross-platform)
+hash_string() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    printf '%s' "$1" | sha256sum | cut -d' ' -f1
+  else
+    printf '%s' "$1" | shasum -a 256 | cut -d' ' -f1
+  fi
+}
+
+# compute_upstream_key <manifest-entry-json>
+# Output: bytewyrd/<target>@<8-char fingerprint>
+#
+# The fingerprint is sha256[:8] of the canonical JSON of extension_strategy +
+# strategy config (owned_paths, owned_sections, owned_boundaries). Template
+# content is deliberately excluded: content changes are tracked by the sha12
+# in the marker; the key only needs to capture ownership semantics. When
+# strategy or config changes the fingerprint changes, invalidating existing
+# consumer markers and forcing a legacy re-classification on the next /sync.
+compute_upstream_key() {
+  local entry="$1"
+  local target fingerprint_input fingerprint
+  target="$(printf '%s' "$entry" | jq -r '.target')"
+  fingerprint_input="$(printf '%s' "$entry" | jq -Sc '{
+    extension_strategy,
+    owned_boundaries: (.owned_boundaries // []),
+    owned_paths:      (.owned_paths      // [] | sort),
+    owned_sections:   (.owned_sections   // [] | sort)
+  }')"
+  fingerprint="$(hash_string "$fingerprint_input" | cut -c1-8)"
+  printf 'bytewyrd/%s@%s' "$target" "$fingerprint"
+}
+
 # plugin_enabled <plugin-id>
 # Returns 0 if enabled, 1 if explicitly disabled or not found.
 # Precedence: project-false > project-true > user-true.

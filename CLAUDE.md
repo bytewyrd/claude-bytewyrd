@@ -194,9 +194,9 @@ The `bootstrap-manifest.json` file records the current SHA-256 hash of every art
 scripts/build-manifest.sh
 ```
 
-The script walks the manifest, recomputes the `sha256` or `template_sha` for each artifact's source file, and writes back a sorted, pretty-printed manifest. It preserves all structural metadata (`upstream_key`, `extension_strategy`, `owned_sections`, `owned_paths`, `templated`, `template_inputs`) from the existing manifest — it only updates the hash fields.
+The script walks the manifest, recomputes the `sha256` or `template_sha` for each artifact's source file, and also recomputes `upstream_key` (fingerprinted from `extension_strategy` + strategy config — see Architecture Decision table). It preserves all other structural metadata (`extension_strategy`, `owned_sections`, `owned_paths`, `templated`, `template_inputs`) — it never modifies those fields.
 
-**Adding a new artifact:** edit the manifest by hand to add the new entry (with a placeholder `sha256: ""` or `template_sha: ""`), then run `build-manifest.sh` to compute the hash. The script never invents `upstream_key` or `extension_strategy` values — those require maintainer judgment.
+**Adding a new artifact:** edit the manifest by hand to add the new entry (with a placeholder `sha256: ""` or `template_sha: ""`), then run `build-manifest.sh` to compute the hash and `upstream_key`. The script computes `upstream_key` automatically — `extension_strategy` still requires maintainer judgment, `upstream_key` does not.
 
 **The pre-commit hook** (`hooks/pre-commit/manifest-check.sh`) runs `build-manifest.sh --check` and fails the commit if the manifest is stale. This prevents shipping a plugin where the recorded hash for an artifact does not match the artifact's current content, which would cause every consumer to see phantom fast-forward updates on the next `/sync` run.
 

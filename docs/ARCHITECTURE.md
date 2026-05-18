@@ -79,6 +79,7 @@ Agents → spawned as subtask processes. Receive a goal and a tool allow-list fr
 | Plugin-local vs exported skills | Plugin-local in `.claude/skills/`, exported in `skills/` | Keeps maintenance tools out of consumer installs; plugin.json is the explicit export declaration |
 | Best-practices flow | Record → global file → manual sync to `/sync` content | Puts human review between personal capture and distribution; prevents one user's project-specific notes from polluting the sync content of every future project |
 | RFC process distribution | Canonical template at plugin root; `/sync` creates/updates `docs/rfc-process.md` with upstream sync markers | Eliminates separate `/rfc-install` step; RFC setup is idempotent and automatic on every `/sync` run |
+| Sync marker `upstream_key` | `bytewyrd/<target>@<sha256[:8] of strategy+config>` — computed by `build-manifest.sh`, never manually set | Encodes ownership semantics in the key so changing `extension_strategy` or strategy config (owned_paths/sections/boundaries) automatically invalidates consumer markers and forces a legacy re-classification on the next `/sync`. Template content is deliberately excluded: content changes are tracked by the sha12 in the marker; the key only needs to change when the canonicalization method changes, making old sha12 values incompatible. |
 | Plugin installation scope | User scope only (`~/.claude/settings.json`); `/sync` does not write `enabledPlugins` or `extraKnownMarketplaces` to project settings | See note below |
 
 ### Plugin installation scope — extended note

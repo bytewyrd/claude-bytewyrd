@@ -30,6 +30,27 @@ teardown_common() {
   temp_del "$TEST_TMPDIR"
 }
 
+# compute_upstream_key <manifest-entry-json>
+# Mirrors _lib/common.bash:compute_upstream_key so tests can build matching
+# markers without hard-coding fingerprints.
+compute_upstream_key() {
+  local entry="$1"
+  local target fingerprint_input fingerprint
+  target="$(printf '%s' "$entry" | jq -r '.target')"
+  fingerprint_input="$(printf '%s' "$entry" | jq -Sc '{
+    extension_strategy,
+    owned_boundaries: (.owned_boundaries // []),
+    owned_paths:      (.owned_paths      // [] | sort),
+    owned_sections:   (.owned_sections   // [] | sort)
+  }')"
+  if command -v sha256sum >/dev/null 2>&1; then
+    fingerprint="$(printf '%s' "$fingerprint_input" | sha256sum | cut -c1-8)"
+  else
+    fingerprint="$(printf '%s' "$fingerprint_input" | shasum -a 256 | cut -c1-8)"
+  fi
+  printf 'bytewyrd/%s@%s' "$target" "$fingerprint"
+}
+
 # Create a minimal docs/rfcs/<name>.md fixture in the current directory.
 # Usage: create_rfc_fixture <stem> [status] [drop_reason]
 # drop_reason is a raw drop_reason text (any YAML-significant characters are
