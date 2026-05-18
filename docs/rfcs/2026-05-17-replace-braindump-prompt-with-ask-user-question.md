@@ -9,7 +9,7 @@ drop_reason: ~
 
 ## Summary
 
-When `/rfc-new` is invoked without an argument, it currently prints braindump entries as a numbered text list and asks the user to type a number — an interaction that is both error-prone and slower than clicking. This RFC replaces that numbered-list prompt with an `AskUserQuestion` call so each braindump entry surfaces as a native clickable option in the Claude Code UI, with the entry title as the label and the full entry text as the description. The change is scoped strictly to the no-argument path of Step 1 in `skills/rfc-new/SKILL.md`; explicit-argument invocations bypass Step 1 entirely and are unaffected. Because `AskUserQuestion` is limited to 4 options per question and 4 questions per call (Exa: `https://platform.claude.com/docs/en/agent-sdk/user-input?21f59b6b_page=1`), the implementation paginates across multiple questions when the braindump has more than 3 entries, with a "Create new RFC from scratch" escape hatch occupying the fourth slot on the first question.
+When `/rfc-new` is invoked without an argument, it currently prints braindump entries as a numbered text list and asks the user to type a number — an interaction that is both error-prone and slower than clicking. This RFC replaces that numbered-list prompt with an `AskUserQuestion` call so each braindump entry surfaces as a native clickable option in the Claude Code UI, with the entry title as the label and the full entry text as the description. The change is scoped strictly to the no-argument path of Step 1 in `skills/rfc-new/SKILL.md`; explicit-argument invocations bypass Step 1 entirely and are unaffected. Because `AskUserQuestion` is limited to 4 options per question and 4 questions per call (Exa: `https://code.claude.com/docs/en/agent-sdk/user-input`), the implementation paginates across multiple questions when the braindump has more than 3 entries, with a "Create new RFC from scratch" escape hatch occupying the fourth slot on the first question.
 
 ## Should we do this?
 
@@ -46,7 +46,7 @@ The downstream Step 6 removes the selected entry from the braindump file only wh
 
 ## Analysis / Options
 
-The only meaningful design question is how to handle pagination when the braindump has more than 3 entries. The `AskUserQuestion` constraint is hard: exactly 2–4 options per question, 1–4 questions per call (Exa: `https://platform.claude.com/docs/en/agent-sdk/user-input?21f59b6b_page=1`). With 1 slot reserved for the "Create new RFC from scratch" escape hatch on the first question, the first question holds at most 3 braindump entries. Subsequent questions (up to 3 more in the same call) can each hold 4 braindump entries. A single `AskUserQuestion` call therefore covers at most 3 + (3 × 4) = 15 entries. The current braindump has 9 entries (verified: `docs/rfc-braindump.md`), which fits within one call.
+The only meaningful design question is how to handle pagination when the braindump has more than 3 entries. The `AskUserQuestion` constraint is hard: exactly 2–4 options per question, 1–4 questions per call (Exa: `https://code.claude.com/docs/en/agent-sdk/user-input`). With 1 slot reserved for the "Create new RFC from scratch" escape hatch on the first question, the first question holds at most 3 braindump entries. Subsequent questions (up to 3 more in the same call) can each hold 4 braindump entries. A single `AskUserQuestion` call therefore covers at most 3 + (3 × 4) = 15 entries. The current braindump has 9 entries (verified: `docs/rfc-braindump.md`), which fits within one call.
 
 Two pagination strategies are worth comparing.
 
@@ -82,9 +82,9 @@ This avoids the 15-entry ceiling per invocation but introduces a "show more" aff
 
 2. **The escape hatch is only on Q1.** If the user's desired new RFC idea is not in the braindump, they must use the option on Q1. This is always visible since Q1 is the first and (for small braindumps) only question. It becomes slightly less obvious when the braindump is large enough to span multiple questions, since Q2–Q4 have no escape hatch. The description of the Q1 escape hatch option explicitly says "not listed above or below" to signal its role across all pages.
 
-3. **`AskUserQuestion` is not available in subagents.** The skill runs in the main conversation context, not a subagent, so this limitation does not apply here (Exa: `https://platform.claude.com/docs/en/agent-sdk/user-input?21f59b6b_page=1`). Recorded for clarity.
+3. **`AskUserQuestion` is not available in subagents.** The skill runs in the main conversation context, not a subagent, so this limitation does not apply here (Exa: `https://code.claude.com/docs/en/agent-sdk/user-input`). Recorded for clarity.
 
-4. **Users can always type free-text responses.** The `AskUserQuestion` UI always provides an "Other" free-text slot alongside the structured options (Exa: `https://platform.claude.com/docs/en/agent-sdk/user-input?21f59b6b_page=1`). If the user types a braindump entry number (old habit), the skill must interpret that as free-text and use it as the RFC description — not silently match it to an entry. The implementation spec covers this edge case explicitly.
+4. **`AskUserQuestion` does not provide an automatic free-text input slot.** The SDK docs state that free-text capability must be explicitly implemented by the application — it is not a built-in affordance (Exa: `https://code.claude.com/docs/en/agent-sdk/user-input`). This RFC does not require a separate free-text slot because the "Create new RFC from scratch" escape hatch on Q1 already covers the "describe a new idea not in the braindump" path: the user selects the escape hatch and then answers a plain-text follow-up question. The concern about a user typing a legacy braindump number no longer applies — there is no text input field, and the numbered-list prompt is gone entirely, so users have no visual cue prompting them to type a number.
 
 ## Implementation spec
 
@@ -177,21 +177,45 @@ If `$entries_count` is greater than 15, append this note before issuing the
 Issue the `AskUserQuestion` call with all applicable questions (1 to 4) in a single
 invocation.
 
+**AskUserQuestion response schema:**
+
+When `AskUserQuestion` returns, the response is an `answers` object keyed by the `question`
+field text of each question, with each value being the `label` of the selected option
+(Exa: `https://code.claude.com/docs/en/agent-sdk/user-input`). The user answers each question
+independently; since `multiSelect: false` is used, each value is a single label string. For
+example, if Q1 is `"Which braindump entry should become an RFC?"` and the user selects the
+escape hatch:
+
+```json
+{
+  "answers": {
+    "Which braindump entry should become an RFC?": "Create new RFC from scratch",
+    "Which braindump entry? (continued, 4–7)": "<label of whichever Q2 option user picked>"
+  }
+}
+```
+
+The user picks one option per question. To map the returned label back to a braindump entry:
+
+1. Before issuing the call, build a label-to-entry lookup table from the in-memory JSON:
+   `label_to_entry = { truncated_label_text: entry_object }` for every braindump option
+   across all questions.
+2. When the answer comes back, iterate over `answers` values. The first value that is a key
+   in `label_to_entry` is the selected braindump entry. The first value that equals the escape
+   hatch label is the escape hatch selection.
+3. Only one question's answer will be actionable per invocation (the user selects an entry
+   from exactly one question); the other answers can be ignored.
+
 **Interpreting the user's response:**
 
-- If the user selected the **escape hatch option** ("Create new RFC from scratch"):
+- If any returned label matches the **escape hatch option** (`"Create new RFC from scratch"`):
   ask a follow-up plain-text question "What is this RFC about?" and use the response as
   the description. Track `selected_from_braindump = false`.
 
-- If the user selected a **braindump entry option** (any option that is not the escape
-  hatch): use the full `.body` text of the corresponding entry as the description. Track
-  `selected_from_braindump = true` and record `selected_entry_body` as the full `.body`
+- If any returned label matches a **braindump entry option** (found in `label_to_entry`):
+  use the full `.body` text of the matched entry as the description. Track
+  `selected_from_braindump = true` and record `selected_entry_body` as that full `.body`
   text (used in Step 6 to remove the entry from the file).
-
-- If the user typed a **free-text "Other" response** (the always-present custom input
-  slot): use that text as the description. Track `selected_from_braindump = false`.
-  Do not attempt to match the typed text to a braindump entry — a user who types `3`
-  intends to describe an RFC idea whose text is `"3"`, not to select entry number 3.
 ```
 
 Verification:
@@ -212,9 +236,10 @@ Expected output: at least `1` (the new Step 1 body references `AskUserQuestion`)
 grep -c 'selected_from_braindump' skills/rfc-new/SKILL.md
 ```
 
-Expected output: at least `3` — one in the explicit-argument fast path, one in Case A,
-one in Case B, and one in the free-text path (the variable is referenced in Step 6 to
-gate the braindump removal).
+Expected output: at least `5` — one in the explicit-argument fast path (Step 1, argument
+provided branch), one in Case A (`selected_from_braindump = false`), one in Case B escape-hatch
+path, one in Case B free-text path, and at least one in Step 6 (the gate condition). Four
+assignments + one reference in Step 6 = minimum 5 occurrences.
 
 ```bash
 grep -c 'escape hatch' skills/rfc-new/SKILL.md
@@ -303,7 +328,7 @@ to confirm their understanding of the braindump's current state before finishing
 
 1. **Braindump grows beyond 15 entries before `/rfc-new` is next updated.** The 15-entry ceiling is documented and the skill emits a user-visible note when it applies. The user can still access tail entries via `/rfc-new <description>` with the text pasted from the braindump file. No data is lost — the braindump file is unchanged; only the UI view is capped.
 
-2. **Free-text "Other" input interpreted as description, not entry number.** A user who habitually typed numbers under the old flow might type `3` expecting to select entry 3. Under the new flow, `3` is treated as a new RFC description (a draft RFC titled from the text "3"). The implementation spec makes this explicit: free-text responses are never matched against entry indices. The risk is mitigated by the fact that the numbered-list prompt is gone — there are no numbers visible in the UI to mistype. A user who types a number in the free-text box will see the resulting RFC description "3" in the scope-check step (Step 2) and can cancel before any file is written.
+2. **Legacy habit of typing a number no longer applies.** The new flow presents clickable options only — there is no text field where a user would type `3` and expect entry 3. A user who tries to type in the `AskUserQuestion` UI receives no input box; they must select one of the structured options. This risk was relevant when a free-text fallback was considered part of the design; it does not apply in the current spec since all user interaction flows through option selection or the escape-hatch follow-up question.
 
 3. **Label truncation may cut mid-word.** The spec says truncate at the last word boundary before 60 characters. Entries whose first sentence is a single unbroken token longer than 60 characters (e.g., a long URL or a camelCase identifier) would be truncated at the 60-character hard limit with no word-boundary fallback. In practice, all current braindump entries begin with a `**Title.**` bold span followed by prose; the first word boundary appears well within 60 characters.
 
