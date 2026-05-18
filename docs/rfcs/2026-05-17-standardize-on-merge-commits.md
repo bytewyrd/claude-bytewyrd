@@ -160,7 +160,34 @@ Use the `Edit` tool with:
 
   For accumulated session learnings, see [docs/BEST_PRACTICES.md](docs/BEST_PRACTICES.md).
   ```
-- `new_string`: identical to Step 2's `new_string` (the canonical block is project-independent).
+- `new_string`:
+  ```
+  ## Conventions
+
+  Commit messages follow Conventional Commits with a scope: `feat(scope): message`.
+
+  For accumulated session learnings, see [docs/BEST_PRACTICES.md](docs/BEST_PRACTICES.md).
+
+  ## Git Integration Policy
+
+  **Default: merge commits, always.** Both directions:
+
+  - **PR → main**: `git merge --no-ff` (or the GitHub UI's "Create a merge commit" button). Never "Squash and merge" or "Rebase and merge".
+  - **main → feature branch**: `git merge origin/main` to integrate upstream changes. Never `git rebase origin/main` once the feature branch has been pushed.
+
+  **Why:** merge commits preserve the conflict-resolution history, the per-commit attribution of work-in-progress, and the integrity of every checkout already on the branch. Rebasing a shared branch rewrites history that other clones (and other agents' worktrees) depend on; a forced push to fix it is the kind of operation that loses work.
+
+  **Rebase is acceptable in two narrow cases:**
+
+  1. Interactive cleanup of local-only commits before the first push — squashing "oops typo" commits into one, reordering, fixing commit messages. Once the branch has been pushed, this carve-out no longer applies.
+  2. Branch-update workflows on a branch that has only one developer (and zero agents) actively working on it. If there is any doubt about whether someone else has the branch checked out, default to merge and ask.
+
+  **For anything else, always merge.** When in doubt, merge.
+
+  The repository-side enforcement layer is `/github-verify`, which sets the GitHub repo's allowed merge strategies to "merge commit only" so that the GitHub UI offers no other option. `/sync` re-checks this on every run and warns if the settings have drifted.
+  ```
+
+The block is project-independent — the same canonical text from Step 1 — so it is identical byte-for-byte to Step 2's `new_string`. The duplication is intentional: each step in this implementation spec must be self-contained so an implementer can follow it linearly without backtracking.
 
 Expected outcome: the template now ends one section later.
 
