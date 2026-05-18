@@ -1,6 +1,6 @@
-# bootstrap-content-version: bytewyrd/.gitignore@v1:63144237f45f
-
+# bootstrap-content-version: bytewyrd/.gitignore@657bbdc9:94a674dc0ce6
 # bytewyrd:base
 .worktrees/
 .claude/settings.local.json
-.bytewyrd/
+.bytewyrd/*
+!.bytewyrd/.bootstrap-versions.json

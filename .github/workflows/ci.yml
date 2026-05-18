@@ -1,4 +1,4 @@
-# bootstrap-content-version: bytewyrd/.github/workflows/ci.yml@v1:4e9f1a3b2c8d
+# bootstrap-content-version: bytewyrd/.github/workflows/ci.yml@bc393baf:e3b0c44298fc
 
 name: CI
 on:

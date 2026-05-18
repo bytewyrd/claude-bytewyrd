@@ -1,3 +1,6 @@
+<!-- bootstrap-content-version: bytewyrd/docs/BEST_PRACTICES.md@896a1c6d:672c262f5f23 -->
+<!-- Bootstrapped by the Bytewyrd plugin. This file is now owned by this project — /sync will not update it. Maintain it as part of your codebase. -->
+
 # Best Practices
 
 <!-- bootstrap-content-version: 2026-05-12-586cc3f -->
@@ -39,7 +42,7 @@ can be opted into the global pool via the per-entry prompt in that same flow.
 - _Workflow_: Before pushing any change, run the full quality gate locally (fmt check, linter, tests) — not just the step you touched. The pre-push hook enforces this, but run it yourself first so failures are found before the hook fires.
 - _Workflow_: Keep PRs small and focused on a single concern. Large PRs are harder to review, harder to revert, and hide bugs in unrelated diffs.
 - _Workflow_: Commit messages should describe the WHY, not the WHAT. The diff already shows what changed; the message should explain why the change was necessary.
-- _Workflow_: README.md is a user-facing landing page — not a developer guide. It answers: what is this, why should I care, how does it work, how do I get started. Build commands, test commands, and setup steps belong in CONTRIBUTING.md.
+- _Workflow_: README.md is a user-facing landing page — not a developer guide. It answers: what is this, why should I care, how does it work, how do I get started. Build commands, test steps, and setup instructions belong in CONTRIBUTING.md.
 
 ## Claude Code
 
@@ -49,11 +52,7 @@ can be opted into the global pool via the per-entry prompt in that same flow.
 
 ## Architecture
 
-- _Architecture_: Use structured tracing from day one (`tracing` in Rust, OpenTelemetry-compatible libraries elsewhere) — adding spans retroactively is far more painful than instrumenting as you write. Initialize binaries with a runtime env-filter; put spans on functions that perform I/O or cross subsystem boundaries (`#[instrument]` in Rust, `trace.startActiveSpan` in JS/TS); and never use `println!` / `console.log` for diagnostics in production code.
-- _Architecture_: Design at the boundary level first — define what crosses a boundary (data formats, error contracts, interfaces) before writing implementation. Changing a boundary is expensive; changing internals is cheap.
-- _Architecture_: Separate domain logic from infrastructure from day one. Business rules must not import database drivers, HTTP clients, or framework types. This boundary makes unit testing cheap and technology migrations possible.
-- _Architecture_: Prefer boring technology that the whole team can reason about over sophisticated patterns that only their author understands. Complexity is a liability unless it solves an equally complex problem.
-- _Architecture_: Keep coupling explicit and directional — draw the dependency graph and verify it is a DAG. Circular dependencies are a sign that boundaries are wrong, not that more interfaces are needed.
+- _Architecture_: Use structured tracing from day one (`tracing` in Rust, OpenTelemetry-compatible libraries elsewhere) — adding spans retroactively is far more painful than instrumenting as you write. Initialize binaries with a runtime env-filter, put spans on functions that perform I/O or cross subsystem boundaries, and never use `println!` / `console.log` for diagnostics in production code.
 - _Architecture_: Single Responsibility — a module/struct/class has one reason to change. Two reasons (e.g., "user persistence" and "user authorization") means two collaborators should split the work, not one monolith.
 - _Architecture_: Open/Closed — extend behavior through new types or strategies, not by editing branches in the existing path. Adding a new payment provider should add a file, not add a `case` to a switch in five files.
 - _Architecture_: Liskov Substitution — a subtype must accept everything its supertype accepts and produce nothing its supertype wouldn't. Violating this turns "polymorphism" into "if statement spread across types."
@@ -123,6 +122,12 @@ can be opted into the global pool via the per-entry prompt in that same flow.
 - _Error Handling_: Errors carry context. The error returned three layers up should tell the operator what the system was trying to do, what failed, and what input was involved — not just the leaf cause. `anyhow::Context`, error wrapping, `Error.cause`, all serve the same goal.
 - _Error Handling_: Errors should be observable before they are user-visible. Structured logs and metrics catch the error trend (rising 500s, retry exhaustion) before the user reports the symptom.
 - _Error Handling_: Retries belong at the edge of an idempotent operation. Wrapping a non-idempotent call in retry logic doubles the transactions and corrupts state. If the operation isn't idempotent, make it idempotent (request IDs, conditional updates) before retrying.
+
+
+
+
+
+
 
 ## Project-Specific
 
