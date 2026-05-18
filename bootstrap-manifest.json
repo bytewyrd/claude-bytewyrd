@@ -4,7 +4,7 @@
       "upstream_key": "bytewyrd/.claude/settings.json@632b4c58",
       "source": "templates/settings.json.tpl",
       "target": ".claude/settings.json",
-      "template_sha": "b265f554260ac234a5787d8d8238f700e4ba755b6b56e2f041f32ec96d23ffd5",
+      "template_sha": "9eae2efbae44c42b2f7df3c8b242010c2e64b0aebd96d03decf6a700e1451ec7",
       "extension_strategy": "structured",
       "owned_paths": [
         "hooks"
@@ -53,7 +53,7 @@
       "upstream_key": "bytewyrd/CLAUDE.md@6cbeb80b",
       "source": "templates/CLAUDE.md.tpl",
       "target": "CLAUDE.md",
-      "template_sha": "0993a89ec9e87cfa7d01eafd93b2e307eaf16d30ab8cb085e2351e1fe0614f67",
+      "template_sha": "5d8026aea7afb156097ce5b7909572e8c1c1917626a38cf99e9ea88d2367ea66",
       "extension_strategy": "additive-merge",
       "owned_sections": [
         "## Agent delegation",
