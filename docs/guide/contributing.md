@@ -100,9 +100,35 @@ After a session where you learned something non-obvious about working on the plu
 
 The global pool flows into future projects via `/sync` after promotion through the plugin-local `best-practices-sync` skill.
 
+## Hooks in the plugin checkout
+
+The plugin's own checkout defines additional hooks in `.claude/settings.json` that run only in sessions inside this repository. They are not distributed to consumer projects via `/sync`.
+
+**SessionStart — bootstrap version check**
+
+Compares the `bootstrap-content-version` tag in `docs/BEST_PRACTICES.md` against the version recorded in `skills/sync/SKILL.md`. If the plugin's sync content is newer, prints a notice at session start suggesting you run `/sync` to refresh `docs/BEST_PRACTICES.md`. This is how existing projects learn that the plugin shipped new best-practice bootstrap content.
+
+**SessionStart — precompact sentinel reset**
+
+Removes `.bytewyrd/precompact-extraction-done` if it exists, re-arming the `PreCompact` gate for the new session. Invisible under normal operation — without this reset, a sentinel left over from a previous session would allow the first compaction of a new session to bypass the extraction check.
+
+**PreCompact — compaction gate**
+
+Blocks context compaction until `/best-practices-extract` runs this session. If the sentinel `.bytewyrd/precompact-extraction-done` is absent when compaction is triggered, the hook blocks and prints a message directing you to run `/best-practices-extract` first. Once extraction completes (the skill creates the sentinel), the next compaction attempt proceeds. To bypass: `touch .bytewyrd/precompact-extraction-done`, then re-run `/compact`.
+
+**Stop — session-end checklist**
+
+Fires when Claude Code stops. Prints a cleanup checklist covering `docs/BEST_PRACTICES.md` extraction, `ARCHITECTURE.md`, `CONTRIBUTING.md`, `README.md`, and `docs/project-brief.md`. On plugin-checkout sessions where `~/.claude/BEST_PRACTICES.md` has content, also prints a reminder to run `/best-practices-sync` to promote pending global entries into the plugin's sync content.
+
+**PostToolUse — post-commit documentation reminder**
+
+Fires after any `git commit` shell command or GitHub MCP file-push operation. Prints a prompt asking whether the commit touches component structure, dev workflow, user-facing behavior, or product scope — and which documentation file should be updated if so. It is a prompt, not a block; work continues regardless.
+
+---
+
 ## Related
 
 - [`docs/CONTRIBUTING.md`](../CONTRIBUTING.md) — narrow dev workflow ops.
 - [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md) — system design and decisions.
 - [`docs/rfc-process.md`](../rfc-process.md) — full RFC workflow.
-- [Add a new skill](how-to/add-a-skill.md), [Add a new agent](how-to/add-an-agent.md) — task-oriented recipes.
+- [Add a new skill](contributing/add-a-skill.md), [Add a new agent](contributing/add-an-agent.md) — task-oriented recipes.
