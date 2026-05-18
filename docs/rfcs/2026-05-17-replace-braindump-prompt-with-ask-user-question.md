@@ -68,7 +68,7 @@ When the braindump has 3 or fewer entries, only Q1 is emitted; the escape hatch 
 
 **Why this is preferred:** The user sees all relevant entries in a single interaction. Requiring the user to answer "show more" before seeing later entries (the alternative below) adds friction for what is structurally a single decision.
 
-**Why the escape hatch lives only in Q1:** Placing it in every question would consume a slot on each page and reduce per-page entry density. Placing it only in Q1 keeps later questions dense and relies on the user understanding that Q1 is the "also, skip to new" page — which is semantically correct since Q1 appears first.
+**Why the escape hatch lives only in Q1 (with one exception):** Placing it in every question would consume a slot on each page and reduce per-page entry density. Placing it only in Q1 keeps later questions dense and relies on the user understanding that Q1 is the "also, skip to new" page — which is semantically correct since Q1 appears first. The one exception is when the braindump has exactly 4, 8, or 12 entries: the trailing question (Q2, Q3, or Q4 respectively) would otherwise hold a single entry, which violates `AskUserQuestion`'s 2-option minimum. In each of those three cases the escape hatch is added as the 2nd option on the trailing question so the question is well-formed. The Implementation spec defines this as the "trailing-1-entry rule".
 
 ### Option B — Multi-call pagination ("show more")
 
@@ -80,7 +80,7 @@ This avoids the 15-entry ceiling per invocation but introduces a "show more" aff
 
 1. **15-entry ceiling per invocation.** A braindump with more than 15 entries will have the tail silently truncated in the UI, with a note appended. In practice the braindump is regularly pruned by promoting entries; a 15-entry hard cap has never been hit in the project's history. If the braindump grows beyond 15, the user can still access entries 16+ by running `bash scripts/rfc-braindump-list.sh | jq '.entries[] | select(.n > 15)'` or by opening the file directly.
 
-2. **The escape hatch is only on Q1.** If the user's desired new RFC idea is not in the braindump, they must use the option on Q1. This is always visible since Q1 is the first and (for small braindumps) only question. It becomes slightly less obvious when the braindump is large enough to span multiple questions, since Q2–Q4 have no escape hatch. The description of the Q1 escape hatch option explicitly says "not listed above or below" to signal its role across all pages.
+2. **The escape hatch is on Q1 (and on the trailing question for entries_count ∈ {4, 8, 12}).** If the user's desired new RFC idea is not in the braindump, they must use the escape hatch option. It is always visible on Q1, which is the first and (for small braindumps) only question. For most multi-question braindumps the escape hatch lives only on Q1 — Q2–Q4 have no escape hatch — which is slightly less discoverable on later pages. The exception is the trailing-1-entry rule (see Implementation spec, Step 1): when the braindump has exactly 4, 8, or 12 entries the trailing question also gets the escape hatch as its second option. The description of the escape hatch states "None of the braindump entries below (or on other pages) match — describe a new RFC idea instead." which signals its role across all pages.
 
 3. **`AskUserQuestion` is not available in subagents.** The skill runs in the main conversation context, not a subagent, so this limitation does not apply here (Exa: `https://code.claude.com/docs/en/agent-sdk/user-input`). Recorded for clarity.
 
@@ -146,9 +146,20 @@ printf '%s' "$result" | jq -r '.entries[:15][] | "\(.n)\t\(.body)"'
 ```
 
 Build an `AskUserQuestion` call using the following slot layout. Each braindump entry
-becomes one option: the first sentence of `.body` (up to 60 characters, truncated at
-the last word boundary before the limit and appended with `…` if truncated) is the
-`label`; the full `.body` text is the `description`. The escape hatch option is always:
+becomes one option. The option's `label` is derived from `.body` as follows:
+
+1. Take the first 60 characters of `.body` verbatim (including any leading
+   `**Title.**` bold markdown; the UI renders the label as plain text, but markdown
+   characters are harmless and the label remains readable).
+2. If `.body` is 60 characters or shorter, use it whole as the label (no truncation,
+   no ellipsis).
+3. If `.body` is longer than 60 characters, find the last whitespace character at or
+   before position 60, truncate there, then append `…`. If there is no whitespace in
+   the first 60 characters (e.g., the body starts with a 60+ character URL or
+   identifier), hard-truncate at position 60 and append `…`.
+
+The option's `description` is the full `.body` text, unchanged. The escape hatch option
+is always:
 
 ```
 label: "Create new RFC from scratch"
@@ -165,8 +176,47 @@ Slot layout:
 - **Question 3** — entries 8–11, if present (up to 4 options, no escape hatch).
 - **Question 4** — entries 12–15, if present (up to 4 options, no escape hatch).
 
+**Trailing-1-entry rule (mandatory):** `AskUserQuestion` requires at least 2 options per
+question. When the braindump has exactly 4, 8, or 12 entries, the trailing question
+would otherwise carry a single entry — entry 4 on Q2, entry 8 on Q3, or entry 12 on Q4
+— which violates the minimum. In each of those three cases, append the escape hatch as
+the 2nd option of the trailing question so the question has exactly 2 options. The
+escape hatch is functionally identical on every page it appears on: selecting it
+anywhere produces the free-text fallback. No other entries_count value triggers this
+rule (5–7 entries fill Q2 with 2–4 options, 9–11 fill Q3, 13–15 fill Q4 — all already
+meet the minimum).
+
+After the trailing-1-entry rule the per-question option counts for every
+entries_count from 1 to 15 are:
+
+| entries_count | Q1 | Q2 | Q3 | Q4 |
+|---------------|----|----|----|----|
+| 1             | 2 (1 entry + escape) | — | — | — |
+| 2             | 3 (2 entries + escape) | — | — | — |
+| 3             | 4 (3 entries + escape) | — | — | — |
+| 4             | 4 | 2 (entry 4 + escape) | — | — |
+| 5             | 4 | 2 | — | — |
+| 6             | 4 | 3 | — | — |
+| 7             | 4 | 4 | — | — |
+| 8             | 4 | 4 | 2 (entry 8 + escape) | — |
+| 9             | 4 | 4 | 2 | — |
+| 10            | 4 | 4 | 3 | — |
+| 11            | 4 | 4 | 4 | — |
+| 12            | 4 | 4 | 4 | 2 (entry 12 + escape) |
+| 13            | 4 | 4 | 4 | 2 |
+| 14            | 4 | 4 | 4 | 3 |
+| 15            | 4 | 4 | 4 | 4 |
+
 Use `multiSelect: false` for every question — the user selects exactly one entry to
 promote. Set `header` for each question to `"Braindump"` (max 12 characters).
+
+Set the `question` field of each question to the following exact strings (these are
+keys in the response payload, so they must be stable):
+
+- **Q1:** `"Which braindump entry should become an RFC?"`
+- **Q2:** `"Which braindump entry should become an RFC? (continued, entries 4–7)"`
+- **Q3:** `"Which braindump entry should become an RFC? (continued, entries 8–11)"`
+- **Q4:** `"Which braindump entry should become an RFC? (continued, entries 12–15)"`
 
 If `$entries_count` is greater than 15, append this note before issuing the
 `AskUserQuestion` call (as plain text in the conversation, not inside the tool call):
@@ -183,14 +233,14 @@ When `AskUserQuestion` returns, the response is an `answers` object keyed by the
 field text of each question, with each value being the `label` of the selected option
 (Exa: `https://code.claude.com/docs/en/agent-sdk/user-input`). The user answers each question
 independently; since `multiSelect: false` is used, each value is a single label string. For
-example, if Q1 is `"Which braindump entry should become an RFC?"` and the user selects the
-escape hatch:
+example, with a 5-entry braindump (Q1 + Q2 emitted) where the user selects the escape
+hatch on Q1 and any option on Q2:
 
 ```json
 {
   "answers": {
     "Which braindump entry should become an RFC?": "Create new RFC from scratch",
-    "Which braindump entry? (continued, 4–7)": "<label of whichever Q2 option user picked>"
+    "Which braindump entry should become an RFC? (continued, entries 4–7)": "<label of whichever Q2 option user picked>"
   }
 }
 ```
@@ -344,13 +394,10 @@ printf '%s' "$result" | jq -e '
 
 # --- 4. Slot-layout math is consistent for any entries_count -------------------------
 
-# Compute how many AskUserQuestion questions the implementation should emit.
-# - 0 entries: 0 questions (Case A, free-text path).
-# - 1-3 entries: 1 question (entries fill slots 1..N, escape hatch fills slot N+1 or 4).
-# - 4-7: 2 questions.
-# - 8-11: 3 questions.
-# - 12-15: 4 questions.
-# - >15: 4 questions on entries 1..15 plus a user-visible truncation note.
+# Compute how many AskUserQuestion questions the implementation should emit and the
+# trailing question's option count. AskUserQuestion requires 2-4 options per question;
+# the "trailing-1-entry rule" appends the escape hatch to the trailing question when
+# entries_count is 4, 8, or 12 so the trailing question has exactly 2 options.
 
 shown="$entries_count"
 [ "$shown" -gt 15 ] && shown=15
@@ -365,7 +412,32 @@ fi
 [ "$expected_questions" -ge 0 ] && [ "$expected_questions" -le 4 ] \
   || { echo "FAIL: expected_questions=$expected_questions out of range"; exit 1; }
 
-echo "OK: entries_count=$entries_count, shown=$shown, expected_questions=$expected_questions"
+# Compute the trailing question's option count.
+# - 0 entries: no trailing question.
+# - 1-3 entries: Q1 = N entries + escape hatch.
+# - 4 entries:  Q2 = 1 entry  + escape hatch = 2 (trailing-1-entry rule).
+# - 5-7:        Q2 = (N-3) entries.
+# - 8:          Q3 = 1 entry  + escape hatch = 2 (trailing-1-entry rule).
+# - 9-11:       Q3 = (N-7) entries.
+# - 12:         Q4 = 1 entry  + escape hatch = 2 (trailing-1-entry rule).
+# - 13-15:      Q4 = (N-11) entries.
+if   [ "$shown" -eq 0 ]; then trailing_options=0
+elif [ "$shown" -le 3 ]; then trailing_options=$((shown + 1))
+elif [ "$shown" -eq 4 ]; then trailing_options=2
+elif [ "$shown" -le 7 ]; then trailing_options=$((shown - 3))
+elif [ "$shown" -eq 8 ]; then trailing_options=2
+elif [ "$shown" -le 11 ]; then trailing_options=$((shown - 7))
+elif [ "$shown" -eq 12 ]; then trailing_options=2
+else                          trailing_options=$((shown - 11))
+fi
+
+# Trailing question must have between 2 and 4 options (or 0 if no questions).
+if [ "$expected_questions" -gt 0 ]; then
+  [ "$trailing_options" -ge 2 ] && [ "$trailing_options" -le 4 ] \
+    || { echo "FAIL: trailing_options=$trailing_options violates AskUserQuestion 2-4 minimum/maximum"; exit 1; }
+fi
+
+echo "OK: entries_count=$entries_count, shown=$shown, expected_questions=$expected_questions, trailing_options=$trailing_options"
 
 # --- 5. SKILL.md no longer references the legacy numbered-list prompt ----------------
 
