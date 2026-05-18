@@ -251,7 +251,7 @@ Rejected because `wt remove <branch>` removes a *specific* branch — it does no
 
 - **Shell-integration is per-machine and not auto-applied.** `wt config shell install` writes to the developer's shell-rc file; the plugin cannot run that command on the developer's behalf. Without shell integration, `wt switch` prints the target path but cannot `cd` into it (the developer must paste). **Mitigation:** the Step 8 report's follow-up note (Decision 4) explicitly names `wt config shell install` as a one-time setup. The check-requirements probe could test for shell integration (e.g., by checking the developer's shell-rc), but is out of scope.
 
-- **Cannot run `wt` inside the Claude Code sandbox without an excludedCommands entry.** Worktrunk's hook approval prompt requires TTY (Exa: `docs/content/hook.md` shows interactive `[y/N]` prompt). Inside the Claude Code sandbox, TTY may not be available; even without the approval prompt, `wt`'s shell-integration directives (the side channel that triggers `cd`) require shell-wrapper cooperation that may not flow through the sandbox. **Mitigation:** users invoke `wt` directly from their terminal, not from inside a Claude Code skill or agent. The skills this RFC modifies (`git-branch-cleanup`) call `wt list --format=json` (non-interactive, no TTY required) and `wt remove --yes --no-delete-branch` (with the explicit `--yes` flag to bypass approval). Interactive operations stay in the developer's terminal. (The plugin does not currently spawn `wt switch -c` from any skill; that pattern is documented for the human to run.)
+- **Cannot run `wt` inside the Claude Code sandbox without an excludedCommands entry.** Worktrunk's hook approval prompt requires TTY (Exa: `docs/content/hook.md` shows interactive `[y/N]` prompt). Inside the Claude Code sandbox, TTY may not be available; even without the approval prompt, `wt`'s shell-integration directives (the side channel that triggers `cd`) require shell-wrapper cooperation that may not flow through the sandbox. **Mitigation:** users invoke `wt` directly from their terminal, not from inside a Claude Code skill or agent. The skills this RFC modifies (`git-branch-cleanup`) call `wt list --format=json` (non-interactive, no TTY required) and `wt remove --yes "$branch"` (with the explicit `--yes` flag to bypass the hook-approval prompt; `wt remove` deletes the local branch only when it confirms the branch is integrated into main, per its six-check default). Interactive operations stay in the developer's terminal. (The plugin does not currently spawn `wt switch -c` from any skill; that pattern is documented for the human to run.)
 
 - **The worktrunk Claude Code plugin (`worktrunk@worktrunk`) is *not* a dependency of this RFC.** Some readers will assume this RFC requires the Claude Code plugin; it does not. The integration is at the CLI level only. **Mitigation:** Decision 1 and the README addition make this distinction explicit.
 
@@ -422,12 +422,13 @@ On `main` with new work, create an isolated worktree + branch:
 # Primary (when worktrunk is installed):
 wt switch -c <branch-name>
 
-# Fallback (raw git):
-git worktree add -b <branch-name> .worktrees/<branch-name>
-cd .worktrees/<branch-name>
+# Fallback (raw git — sanitize branch name: replace / with -):
+SANITIZED=$(echo "<branch-name>" | tr '/' '-')
+git worktree add -b "<branch-name>" .worktrees/"$SANITIZED"
+cd .worktrees/"$SANITIZED"
 ```
 
-`wt switch -c` creates the branch from the default branch (`main`/`master`) and switches to the new worktree. The worktree path comes from `~/.config/worktrunk/config.toml`'s `worktree-path` template; the Bytewyrd convention is `{{ repo_path }}/.worktrees/{{ branch | sanitize }}` so both forms produce the same on-disk layout. With `wt`, project-level hooks in `.config/wt.toml` (pre-start install, pre-merge lint/test) run automatically.
+`wt switch -c` creates the branch from the default branch (`main`/`master`) and switches to the new worktree. The worktree path comes from `~/.config/worktrunk/config.toml`'s `worktree-path` template; the Bytewyrd convention is `{{ repo_path }}/.worktrees/{{ branch | sanitize }}` — where `sanitize` replaces `/` with `-` — so both forms produce the same on-disk layout. With `wt`, project-level hooks in `.config/wt.toml` (pre-start install, pre-merge lint/test) run automatically.
 
 Each parallel agent needs its own worktree. Sub-agents share the parent worktree.
 
@@ -499,12 +500,13 @@ All work happens on feature branches. The recommended tool is [worktrunk](https:
 # Primary (when worktrunk is installed):
 wt switch -c <branch-name>
 
-# Fallback (raw git):
-git worktree add -b <branch-name> .worktrees/<branch-name>
-cd .worktrees/<branch-name>
+# Fallback (raw git — sanitize branch name: replace / with -):
+SANITIZED=$(echo "<branch-name>" | tr '/' '-')
+git worktree add -b "<branch-name>" .worktrees/"$SANITIZED"
+cd .worktrees/"$SANITIZED"
 ```
 
-Both forms produce the same on-disk layout (`.worktrees/<sanitized-branch-name>`). With `wt`, project-level hooks in `.config/wt.toml` (pre-start install, pre-merge lint/test) run automatically; the file ships with commented-out examples and is empty by default.
+Both forms produce the same on-disk layout (`.worktrees/<sanitized-branch-name>`, where `/` in the branch name is replaced with `-`). With `wt`, project-level hooks in `.config/wt.toml` (pre-start install, pre-merge lint/test) run automatically; the file ships with commented-out examples and is empty by default.
 
 See `CLAUDE.md` for agent delegation guidance.
 ````
@@ -688,9 +690,9 @@ With (verbatim):
 2. Run `git fetch --all` before creating branches or worktrees.
 3. On `main` with new work, create an isolated worktree + branch:
    - Primary: `wt switch -c <branch-name>`
-   - Fallback (raw git): `git worktree add -b <branch-name> .worktrees/<branch-name> && cd .worktrees/<branch-name>`
+   - Fallback (raw git — sanitize branch name: replace `/` with `-`): `SANITIZED=$(echo "<branch-name>" | tr '/' '-') && git worktree add -b "<branch-name>" .worktrees/"$SANITIZED" && cd .worktrees/"$SANITIZED"`
 
-Both forms produce the same `.worktrees/<sanitized-branch>` layout. When `wt` is present, project hooks in `.config/wt.toml` (pre-start, pre-merge) run automatically.
+Both forms produce the same `.worktrees/<sanitized-branch>` layout (where `/` in the branch name is replaced with `-`). When `wt` is present, project hooks in `.config/wt.toml` (pre-start, pre-merge) run automatically.
 ```
 
 Edit `.claude-plugin/CLAUDE.md`. Replace line 86 (verbatim: `git worktree list`) with:
@@ -709,8 +711,8 @@ Replace line 126 (verbatim: `2. Use the `/worktrunk` skill to create an isolated
 
 ```
 2. Create an isolated worktree + branch:
-   - Primary: `wt switch -c <branch-name>` — uses the user's `~/.config/worktrunk/config.toml` `worktree-path` template (Bytewyrd convention: `{{ repo_path }}/.worktrees/{{ branch | sanitize }}`)
-   - Fallback (raw git): `git worktree add -b <branch-name> .worktrees/<branch-name> && cd .worktrees/<branch-name>`
+   - Primary: `wt switch -c <branch-name>` — uses the user's `~/.config/worktrunk/config.toml` `worktree-path` template (Bytewyrd convention: `{{ repo_path }}/.worktrees/{{ branch | sanitize }}`, where `sanitize` replaces `/` with `-`)
+   - Fallback (raw git — sanitize branch name: replace `/` with `-`): `SANITIZED=$(echo "<branch-name>" | tr '/' '-') && git worktree add -b "<branch-name>" .worktrees/"$SANITIZED" && cd .worktrees/"$SANITIZED"`
    - The `/worktrunk` skill (from the `worktrunk@worktrunk` Claude Code plugin) provides configuration guidance for hooks and templates — install it via `claude plugin install worktrunk@worktrunk` if you want in-session help, but the CLI `wt` is what the workflow depends on.
 ```
 
