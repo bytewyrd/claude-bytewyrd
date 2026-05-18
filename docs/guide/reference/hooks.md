@@ -1,6 +1,6 @@
 # Hooks reference
 
-The plugin ships two hooks that fire automatically during Claude Code sessions. Both are defined in `hooks/hooks.json` and execute shell commands — no network calls, no Claude invocations.
+The plugin ships hooks that fire automatically during Claude Code sessions. Plugin-distributed hooks (applied to every consumer project via `/sync`) are defined in `hooks/hooks.json`. Additional hooks in `.claude/settings.json` are project-local — they apply only in the plugin's own checkout and are not distributed to consumers. All hooks execute shell commands — no network calls, no Claude invocations.
 
 ## SubagentStop — feature-engineer reminder
 
