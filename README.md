@@ -12,15 +12,15 @@
 
 ---
 
-A Claude Code plugin that wires up a complete, opinionated development workflow — slash-command skills, 50+ specialist agents, an RFC-driven design process, and cross-session best-practices tracking — into any project with a single command. Built by Bytewyrd for its own projects; the conventions are generic enough that any team can adopt them.
+A Claude Code plugin that wires up a complete, opinionated development workflow — slash-command skills, 48 specialist agents, an RFC-driven design process, and cross-session best-practices tracking — into any project with a single command. Built by Bytewyrd for its own projects; the conventions are generic enough that any team can adopt them.
 
 Install once. Run `/sync`. Everything else follows.
 
 ## What you get
 
-**13 slash-command skills** covering the full development lifecycle — from project bootstrap to design review to deliberate refactoring.
+**15 slash-command skills** covering the full development lifecycle — from project bootstrap to design review to deliberate refactoring.
 
-**50+ specialist agents** — each with a focused role, curated tool list, and right-sized model. Backend, frontend, DevOps, database, security, and architecture. Claude delegates to the right one automatically.
+**48 specialist agents** — each with a focused role, curated tool list, and right-sized model. Backend, frontend, DevOps, database, security, and architecture. Claude delegates to the right one automatically.
 
 **RFC-driven design.** `/rfc-new` researches and drafts. `/rfc-consensus-review` runs independent critic agents. `/rfc-approve` locks the design. `/rfc-implement` builds it. Architecture decisions leave a paper trail.
 
@@ -90,15 +90,17 @@ RFC docs, best-practices file, agent delegation table, and CI are set up in one 
 | `/rfc-update` | Update a Draft RFC with new findings |
 | `/rfc-read-feedback` | Incorporate inline `FEEDBACK:` comments from reviewers |
 | `/rfc-consensus-review` | Run independent critic agents, surface gaps |
+| `/rfc-summary` | List active RFCs (Draft and Approved) at a glance |
 | `/rfc-drop` | Drop an RFC and record the reason |
 | `/best-practices-record` | Capture a session learning |
 | `/best-practices-extract` | Extract all non-obvious learnings from a session |
 | `/refactor` | Deliberate phased refactor (Opus, with approval gate) |
+| `/docs-review` | Audit `docs/guide/**` and `README.md` for drift |
 | `/git-branch-cleanup` | Prune stale branches and associated worktrees |
 
 ## Agents
 
-50+ specialist agents across every engineering domain. Claude picks the right one automatically based on the task; you can also request one by name.
+48 specialist agents across every engineering domain. Claude picks the right one automatically based on the task; you can also request one by name.
 
 <details>
 <summary>Full agent list</summary>
@@ -132,7 +134,7 @@ RFC docs, best-practices file, agent delegation table, and CI are set up in one 
 | `llm-architect` | LLM system design, fine-tuning, serving |
 | `mcp-developer` | Model Context Protocol servers and clients |
 | `prompt-engineer` | Prompt architecture, evaluation, optimization |
-| + 25 more | See [`agents/`](agents/) |
+| + 21 more | See [`agents/`](agents/) |
 
 </details>
 
