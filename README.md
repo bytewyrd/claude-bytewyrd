@@ -4,12 +4,11 @@
     &nbsp;claude-bytewyrd
   </h1>
   <p>Opinionated Claude Code workflow — RFC-driven development, specialist agents, and best-practices capture, ready to install in any project</p>
-  <br/>
-  <code>claude plugin marketplace add bytewyrd/claude-bytewyrd</code>
-  &nbsp;&nbsp;then&nbsp;&nbsp;
-  <code>claude plugin install bytewyrd@bytewyrd</code>
-  &nbsp;&nbsp;then&nbsp;&nbsp;
-  <code>/bytewyrd:sync</code>
+  <code>
+claude plugin marketplace add bytewyrd/claude-bytewyrd
+claude plugin install bytewyrd@bytewyrd
+/bytewyrd:sync
+  </code>
 </div>
 
 ---
