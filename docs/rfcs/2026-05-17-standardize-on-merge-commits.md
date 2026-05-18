@@ -203,17 +203,16 @@ Use the `Edit` tool with:
         ],
   ```
 
-Then refresh the manifest's `template_sha` field by running:
+Then refresh the manifest's `template_sha` field by running this after all template edits in Steps 3 and 6 are complete (the script hashes all template sources in a single pass):
 
 ```bash
 bash /home/divoxx/code/bytewyrd/claude-bytewyrd/.claude-plugin/scripts/build-manifest.sh
 ```
 
-Expected stdout (the script prints the manifest entries it updates):
+Expected stdout (verified: build-manifest.sh L54-55 — the script prints one line after writing):
 
 ```
-.claude-plugin/scripts/templates/CLAUDE.md.tpl: template_sha updated
-.claude-plugin/scripts/templates/CONTRIBUTING.md.tpl: sha256 updated
+Regenerated .claude-plugin/bootstrap-manifest.json
 ```
 
 Verify by:
@@ -222,7 +221,9 @@ Verify by:
 bash /home/divoxx/code/bytewyrd/claude-bytewyrd/.claude-plugin/scripts/build-manifest.sh --check
 ```
 
-Expected stdout: `manifest is up to date` (zero exit code). If the script exits non-zero, the manifest is stale and the pre-commit hook (verified: .claude-plugin/hooks/pre-commit/manifest-check.sh) will reject the commit.
+Expected stdout: empty (zero exit code). If the script exits non-zero, the manifest is stale and the pre-commit hook (verified: .claude-plugin/hooks/pre-commit/manifest-check.sh) will reject the commit.
+
+Note: run this script only after Steps 3 and 6 are both complete. Running it between those steps will update `CLAUDE.md.tpl`'s `template_sha` correctly but leave `CONTRIBUTING.md.tpl`'s `sha256` stale until Step 6 is done, causing the pre-commit hook to reject the commit if a commit is attempted between steps.
 
 #### Step 5 — Replace the squash-merge line in `CONTRIBUTING.md`
 
@@ -332,13 +333,31 @@ Then update the audit log footer to record this revision. Use the `Edit` tool wi
 Use the `Edit` tool with:
 
 - `file_path`: `/home/divoxx/code/bytewyrd/claude-bytewyrd/agents/rfc-architect.md`
-- `old_string`: (the closing paragraph of the "Project context: the Bytewyrd RFC process" section — locate the line `You do not spawn other subagents yourself` and the sentence that follows it).
-- `new_string`: append, immediately after that paragraph, a new paragraph:
+- `old_string`:
   ```
+  You do not spawn other subagents yourself — Claude Code's subagent execution model does not allow it. The skill body that invoked you handles all cross-agent orchestration. Your job is to draft, revise, and self-review the RFC.
+  ```
+- `new_string`:
+  ```
+  You do not spawn other subagents yourself — Claude Code's subagent execution model does not allow it. The skill body that invoked you handles all cross-agent orchestration. Your job is to draft, revise, and self-review the RFC.
+
   **Git Integration Policy.** When `/rfc-read-feedback` requires pulling `main` into the Draft RFC's branch — for example, if a feedback comment fixes a section that depends on a now-merged change — always use `git merge origin/main`, never `git rebase origin/main`, once the RFC's branch has been pushed. The branch is shared with the human reviewer and the consensus-review agents; rebasing rewrites history those clones depend on. Rebase is acceptable only for interactive cleanup of local-only commits before the first push. See the project's `CLAUDE.md` §"Git Integration Policy" for the full rule.
   ```
 
-Then update the audit log footer at the bottom of the file with a new dated line that records the addition (mirroring the format of the existing log line — read the file to copy the existing format exactly, then append a new line dated `2026-05-17` describing the Git Integration Policy paragraph addition).
+Then update the audit log footer. Use the `Edit` tool with:
+
+- `file_path`: `/home/divoxx/code/bytewyrd/claude-bytewyrd/agents/rfc-architect.md`
+- `old_string`:
+  ```
+  <!-- Audit log -->
+  <!-- 2026-05-12: criteria v1, audited by claude-agent-author; pinned model: opus (H3 — Tier 1 agent on the /rfc-new and /rfc-consensus-review hot path); removed aspirational tools: field that included LS and NotebookRead (not Claude Code primitives in v1) so the agent now inherits the full toolset per H1; added a "Project context: the Bytewyrd RFC process" section that names docs/rfc-process.md and the three skills (/rfc-new, /rfc-consensus-review, /rfc-read-feedback) the agent participates in (H7), and explicitly states that the agent does not spawn other subagents — the invoking skill body handles orchestration (H4 clarification); preserved the entire Evidence-Based Research Discipline, Claim Inventory, Verification Protocol, and Citation Format / [UNVERIFIED] Marker sections from the prior local customization (RFC H content) verbatim; retained color: blue (S2) and Anthropic-style description with two <example> blocks (H2). -->
+  ```
+- `new_string`:
+  ```
+  <!-- Audit log -->
+  <!-- 2026-05-12: criteria v1, audited by claude-agent-author; pinned model: opus (H3 — Tier 1 agent on the /rfc-new and /rfc-consensus-review hot path); removed aspirational tools: field that included LS and NotebookRead (not Claude Code primitives in v1) so the agent now inherits the full toolset per H1; added a "Project context: the Bytewyrd RFC process" section that names docs/rfc-process.md and the three skills (/rfc-new, /rfc-consensus-review, /rfc-read-feedback) the agent participates in (H7), and explicitly states that the agent does not spawn other subagents — the invoking skill body handles orchestration (H4 clarification); preserved the entire Evidence-Based Research Discipline, Claim Inventory, Verification Protocol, and Citation Format / [UNVERIFIED] Marker sections from the prior local customization (RFC H content) verbatim; retained color: blue (S2) and Anthropic-style description with two <example> blocks (H2). -->
+  <!-- 2026-05-17: appended Git Integration Policy paragraph to the "Project context: the Bytewyrd RFC process" section per RFC 2026-05-17-standardize-on-merge-commits; criteria unchanged at v1. -->
+  ```
 
 #### Step 9 — Add a `merge-policy` probe to `scripts/tool-probe.sh`
 
@@ -559,7 +578,6 @@ Stop with exit 0.
 ## Constraints
 
 - **Single-prompt UX.** The skill asks exactly one question (Step 3) and then either applies or skips. No multi-step confirmation tree.
-- **Read-only when invoked from `/sync`.** When the skill is called by `/sync` (programmatic invocation, not a user `/github-verify`), Steps 3 and 4 are replaced with a warning print: "GitHub merge settings on `<owner>/<repo>` drift from policy (current: merge=X, squash=Y, rebase=Z). Run `/github-verify` to fix." Skipping the AskUserQuestion is mandatory in the programmatic path because `/sync` already has its own interaction model.
 - **No commits.** This skill does not modify any file in the repo. It only calls GitHub APIs via `gh`.
 ```
 
