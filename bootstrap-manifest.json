@@ -99,7 +99,7 @@
       "upstream_key": "bytewyrd/docs/BEST_PRACTICES.md@896a1c6d",
       "source": "templates/BEST_PRACTICES.md.tpl",
       "target": "docs/BEST_PRACTICES.md",
-      "template_sha": "143d5240f6e53e3cb61873935a182d3425cefbaae3fe8999745fe0dce7291a16",
+      "template_sha": "0972c875ad31a23a41aedbafa65b9d81ac2d45e10bc8c67331e7e7ea27f22d32",
       "extension_strategy": "owned-regions",
       "owned_boundaries": [
         {
