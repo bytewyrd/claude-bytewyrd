@@ -201,7 +201,7 @@
       "upstream_key": "bytewyrd/docs/rfc-process.md@af9bca80",
       "source": "rfc-process.md",
       "target": "docs/rfc-process.md",
-      "sha256": "e637fb5bf98b615ef76140aa185c8abdce5f7f01cdf853d170efe11fb9ee3751",
+      "sha256": "c5856491597885bb4f0fec4d84dc41f2f1ef0965c60e53623e600af6f8805044",
       "extension_strategy": "authoritative",
       "templated": false
     },
