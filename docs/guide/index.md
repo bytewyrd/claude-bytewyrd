@@ -29,6 +29,7 @@ The full surface of the plugin. Skills and agents, the data behind them.
 
 - [Skills reference](reference/skills.md) — every slash command, sourced from each skill's frontmatter.
 - [Agents reference](reference/agents.md) — every specialist agent, sourced from each agent's frontmatter.
+- [Hooks reference](reference/hooks.md) — the two built-in hooks and their behaviors, including warning suppression.
 
 ### Contributing to the plugin
 
