@@ -144,7 +144,9 @@ awk -v enabled_json="$enabled_json" '
       if (is_enabled(block_name)) print
     }
   }
-' "$template" > "$tmp1"
+' "$template" \
+  | awk '/^$/{blank++;if(blank>1)next;print;next}{blank=0;print}' \
+  > "$tmp1"
 
 # -------- Pass 2: substitute placeholders --------
 # Read all top-level scalar keys from the inputs JSON. For each `<key>` in the
