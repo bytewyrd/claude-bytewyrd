@@ -23,6 +23,8 @@ When `docs/project-brief.md` already exists with complete identity *and* all plu
 
 ## Step 1 — Validate environment, detect plugins, classify artifacts
 
+Log: `Running /sync analysis…`
+
 Run the consolidated deterministic-phase script **exactly once** and write its output to a session file:
 
 ```bash
