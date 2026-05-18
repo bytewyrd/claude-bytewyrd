@@ -236,11 +236,13 @@ Then refresh the manifest's `template_sha` field by running this after all templ
 bash /home/divoxx/code/bytewyrd/claude-bytewyrd/.claude-plugin/scripts/build-manifest.sh
 ```
 
-Expected stdout (verified: build-manifest.sh L54-55 — the script prints one line after writing):
+Expected stdout (verified: build-manifest.sh L54-55 — the script prints one line after writing). The script uses `$MANIFEST` which is the absolute path computed from `$(git rev-parse --show-toplevel)`, so the printed path is absolute, not relative:
 
 ```
-Regenerated .claude-plugin/bootstrap-manifest.json
+Regenerated /home/divoxx/code/bytewyrd/claude-bytewyrd/.claude-plugin/bootstrap-manifest.json
 ```
+
+(The leading path component varies per developer machine; the relative tail `.claude-plugin/bootstrap-manifest.json` is the load-bearing piece. If the printed line ends with that tail, the script succeeded.)
 
 Verify by:
 
@@ -590,17 +592,26 @@ If the exit code is non-zero, print the actual stderr verbatim plus:
 
 Stop with exit 1.
 
-On success, re-probe to confirm:
+On success, re-probe to confirm the change actually took effect (catches the case where one of the booleans did not flip — e.g., a partial API failure that returned 0 but did not persist):
 
 \`\`\`bash
 result_after="$(bash scripts/tool-probe.sh merge-policy)"
+merge_after="$(printf '%s' "$result_after" | jq -r .mergeCommitAllowed)"
+squash_after="$(printf '%s' "$result_after" | jq -r .squashMergeAllowed)"
+rebase_after="$(printf '%s' "$result_after" | jq -r .rebaseMergeAllowed)"
 \`\`\`
 
-Extract the new values and print a confirmation line:
+If `merge_after=true` AND `squash_after=false` AND `rebase_after=false`, print:
 
 > "Updated `<owner>/<repo>`: merge=true, squash=false, rebase=false. The GitHub UI will now only offer 'Create a merge commit'."
 
 Stop with exit 0.
+
+If any value diverges from the expected post-update state (e.g., `squash_after=true` because the API call partially succeeded or settings drifted between calls), print:
+
+> "Applied `gh repo edit` but post-update probe shows drift: merge=`<merge_after>`, squash=`<squash_after>`, rebase=`<rebase_after>`. Expected merge=true, squash=false, rebase=false. Inspect manually: https://github.com/`<owner>/<repo>`/settings"
+
+Stop with exit 1.
 
 ## Constraints
 
