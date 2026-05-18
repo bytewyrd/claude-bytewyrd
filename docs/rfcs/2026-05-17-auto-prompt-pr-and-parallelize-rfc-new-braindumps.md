@@ -15,7 +15,7 @@ Extend `/rfc-new` so that — whenever GitHub is reachable (`github@claude-plugi
 
 ## Should we do this?
 
-**Yes.** The current `/rfc-new` Step 9 ("Present to human") closes the skill with a printed instruction list that includes `/rfc-read-feedback`, `/rfc-approve`, and an implicit assumption that the human will switch to a terminal to `git push -u origin <branch>` and run `gh pr create` themselves (verified: `skills/rfc-new/SKILL.md:L141`). The project's recorded memory `feedback_rfc_new_pr_required.md` (verified: `/home/divoxx/.claude/projects/-home-divoxx-code-bytewyrd-claude-bytewyrd/memory/feedback_rfc_new_pr_required.md:L10`) makes the rule explicit: "Never commit RFC files directly to the main branch. Each /rfc-new invocation must create its own branch and open a PR for review before the RFC lands on main." A skill that closes by *asking* about the PR — rather than *suggesting* the user run the commands — collapses two manual steps and one context switch into one click, and removes the failure mode the memory was created to prevent. The braindump entry "Enforce branch+PR discipline in `/rfc-new`" frames the same need in user-facing terms (verified: `docs/rfc-braindump.md:L9` — "Branch creation and PR opening must be non-optional steps in the skill flow"). Cost: one new helper script, one `Steps` change to the existing `/rfc-new` skill, plus the documentation entries in CHANGELOG. No new external dependencies — `gh` and the GitHub MCP probe via the existing `scripts/tool-probe.sh` (verified: `scripts/tool-probe.sh:L44-L82`).
+**Yes.** The current `/rfc-new` Step 9 ("Present to human") closes the skill with a printed instruction list that includes `/rfc-read-feedback`, `/rfc-approve`, and an implicit assumption that the human will switch to a terminal to `git push -u origin <branch>` and run `gh pr create` themselves (verified: `skills/rfc-new/SKILL.md:L141`). The project's recorded memory `feedback_rfc_new_pr_required.md` (verified: `/home/divoxx/.claude/projects/-home-divoxx-code-bytewyrd-claude-bytewyrd/memory/feedback_rfc_new_pr_required.md:L10`) makes the rule explicit: "Never commit RFC files directly to the main branch. Each /rfc-new invocation must create its own branch and open a PR for review before the RFC lands on main." A skill that closes by *asking* about the PR — rather than *suggesting* the user run the commands — collapses two manual steps and one context switch into one click, and addresses one of the two failure modes the memory was created to prevent: the after-the-fact manual PR step. (The other failure mode — bulk-promoting multiple braindump entries into a single commit on main, instead of one PR per RFC — is addressed by the deferred future RFC for `/rfc-new-braindumps`; see "Out of scope — future RFC" below.) The braindump entry "Enforce branch+PR discipline in `/rfc-new`" frames the same need in user-facing terms (verified: `docs/rfc-braindump.md:L9` — "Branch creation and PR opening must be non-optional steps in the skill flow"). Cost: one new helper script, one bats test file for that script, one `Steps` change to the existing `/rfc-new` skill, plus the documentation entries in CHANGELOG. No new external dependencies — `gh` and the GitHub MCP probe via the existing `scripts/tool-probe.sh` (verified: `scripts/tool-probe.sh:L44-L82`).
 
 ## Current state
 
@@ -114,8 +114,8 @@ The braindump entry "Enforce branch+PR discipline in `/rfc-new`" (verified: `doc
 
 | Action | Path | Responsibility |
 |--------|------|----------------|
-| Create | `scripts/rfc-open-pr.sh` | New helper script. Takes required `--branch <name>` and `--rfc-id <id>`, plus optional `--base <ref>` (defaults to `main`). Probes `tool-probe.sh github-mcp` and `tool-probe.sh gh`. If either is available, pushes the branch with `git push -u origin <branch>` (skipping if the branch already tracks a remote). Emits one JSON object on stdout describing the next step: `{"mode":"mcp","pushed":<bool>,"owner":"...","repo":"...","head":"...","base":"...","title":"...","body":"..."}` when MCP is the chosen path (the caller must issue the actual MCP tool call), or `{"mode":"cli","pushed":<bool>,"url":"<pr-url>"}` when `gh` was used (the script already created the PR). Exits 0 on success, 1 on "neither tool available" (with a `hint` field naming both remediation paths), 2 on usage error. |
-| Create | `tests/scripts/rfc-open-pr.bats` | bats-core test file. Covers: (a) MCP-available path emits `mode:"mcp"` and skips PR creation locally; (b) MCP-unavailable + gh-available path emits `mode:"cli"` and calls `gh pr create` via a mock; (c) both unavailable returns exit 1 with `hint` populated; (d) push is skipped when the branch is already pushed and tracking is configured; (e) usage errors (missing required flags) return exit 2 with `error` populated. |
+| Create | `scripts/rfc-open-pr.sh` | New helper script. Takes required `--branch <name>` and `--rfc-id <id>`, plus optional `--base <ref>` (defaults to `main`). Probes `tool-probe.sh github-mcp` and `tool-probe.sh gh`. If either is available, pushes the branch with `git push -u origin <branch>` (skipping if the branch already tracks a remote). Emits one JSON object on stdout describing the next step: `{"mode":"mcp","pushed":<bool>,"owner":"...","repo":"...","head":"...","base":"...","title":"...","body":"..."}` when MCP is the chosen path (the caller must issue the actual MCP tool call), or `{"mode":"cli","pushed":<bool>,"url":"<pr-url>"}` when `gh` was used (the script already created the PR). Exits 0 on success, 1 on "neither tool available" (with a `hint` field naming both remediation paths), 2 on usage error (missing or malformed flag), 3 on runtime failure (push failed, gh pr create failed, origin URL unparseable) with `error` and `hint` populated. |
+| Create | `tests/scripts/rfc-open-pr.bats` | bats-core test file. Covers: (a) MCP-available path emits `mode:"mcp"` and skips PR creation locally; (b) MCP-unavailable + gh-available path emits `mode:"cli"` and calls `gh pr create` via a mock; (c) both unavailable returns exit 1 with `hint` populated; (d) push is skipped when the branch is already pushed and tracking is configured; (e) usage errors (missing required flags) return exit 2 with `error` populated; (f) runtime failure (unparseable origin URL) returns exit 3 with `error` and `hint` populated. |
 | Modify | `skills/rfc-new/SKILL.md` | Step 9 ("Present to human") is rewritten: after the existing summary lines, the skill issues an `AskUserQuestion` titled "Open a PR for this RFC?" with two options. "Open PR" invokes `bash scripts/rfc-open-pr.sh --branch "$(git branch --show-current)" --base main --rfc-id "<rfc-id>"` and parses the JSON; "Not yet" prints the existing manual-handoff text. The probe for GitHub availability runs *before* the prompt so the prompt is only shown when at least one of MCP or `gh` is available — if neither is, the skill falls through to the manual-handoff text directly (no point asking a question whose only answer is "Not yet"). |
 | Modify | `CHANGELOG.md` | An entry under the `[Unreleased]` heading naming the auto-prompt extension and the new helper script. |
 
@@ -158,6 +158,8 @@ Create the file with this exact content:
 #     unavailable (exit 1):
 #       {"error":"neither GitHub MCP nor gh CLI is available",
 #        "hint":"<remediation>"}
+#     runtime error (exit 3):
+#       {"error":"<message>","hint":"<remediation>"}
 #     usage error (exit 2):
 #       {"error":"<message>"}
 #   stderr: empty under normal operation.
@@ -166,6 +168,7 @@ Create the file with this exact content:
 #   0  PR created (CLI) or PR parameters emitted (MCP).
 #   1  Neither tool available.
 #   2  Usage error (missing or malformed flag).
+#   3  Runtime failure (push failed, gh pr create failed, origin URL unparseable).
 
 set -uo pipefail
 # shellcheck source=_lib/common.bash
@@ -209,14 +212,22 @@ fi
 # Derive owner/repo from the origin remote URL.
 remote_url="$(git remote get-url origin 2>/dev/null || true)"
 if [ -z "$remote_url" ]; then
-  emit_error "rfc-open-pr: no origin remote configured"; exit 2
+  jq -n --arg msg "rfc-open-pr: no origin remote configured" \
+        --arg hint "Configure a GitHub remote: git remote add origin git@github.com:<owner>/<repo>.git" \
+        '{error: $msg, hint: $hint}'
+  exit 3
 fi
 # Match git@github.com:owner/repo.git or https://github.com/owner/repo[.git].
 owner_repo="$(printf '%s' "$remote_url" \
   | sed -E 's#^(git@github\.com:|https://github\.com/)##; s#\.git$##')"
 case "$owner_repo" in
   */*) ;;
-  *)   emit_error "rfc-open-pr: cannot parse owner/repo from origin URL '$remote_url'"; exit 2 ;;
+  *)
+    jq -n --arg msg "rfc-open-pr: cannot parse owner/repo from origin URL '$remote_url'" \
+          --arg hint "Only git@github.com:owner/repo.git and https://github.com/owner/repo[.git] are supported. Push and open the PR manually." \
+          '{error: $msg, hint: $hint}'
+    exit 3
+    ;;
 esac
 OWNER="${owner_repo%%/*}"
 REPO="${owner_repo##*/}"
@@ -225,9 +236,12 @@ REPO="${owner_repo##*/}"
 pushed=false
 upstream="$(git rev-parse --abbrev-ref --symbolic-full-name "$BRANCH@{upstream}" 2>/dev/null || true)"
 if [ -z "$upstream" ]; then
-  git push -u origin "$BRANCH" >/dev/null 2>&1 || {
-    emit_error "rfc-open-pr: git push -u origin $BRANCH failed"; exit 2
-  }
+  if ! git push -u origin "$BRANCH" >/dev/null 2>&1; then
+    jq -n --arg msg "rfc-open-pr: git push -u origin $BRANCH failed" \
+          --arg hint "Check network connectivity and remote permissions, then push manually: git push -u origin $BRANCH" \
+          '{error: $msg, hint: $hint}'
+    exit 3
+  fi
   pushed=true
 fi
 
@@ -255,14 +269,28 @@ if [ "$mcp_status" -eq 0 ]; then
   exit 0
 fi
 
-# Fall back to gh CLI. Capture the URL gh prints on stdout.
-url="$(gh pr create \
+# Fall back to gh CLI. Capture the URL gh prints to stdout (only stdout — stderr
+# is reserved for prompts and warnings that can interleave with the URL).
+# Then filter for the first https://github.com/... line to be robust against
+# gh emitting extra stdout lines in unusual environments.
+gh_stdout="$(gh pr create \
     --base "$BASE" \
     --head "$BRANCH" \
     --title "$PR_TITLE" \
-    --body  "$PR_BODY" 2>&1 | tail -n1)"
+    --body  "$PR_BODY" 2>/dev/null)"
+gh_exit=$?
+if [ "$gh_exit" -ne 0 ]; then
+  jq -n --arg msg "rfc-open-pr: gh pr create exited with status $gh_exit" \
+        --arg hint "Re-run with 'gh pr create' manually to surface the diagnostic; check authentication with 'gh auth status'." \
+        '{error: $msg, hint: $hint}'
+  exit 3
+fi
+url="$(printf '%s\n' "$gh_stdout" | grep -E '^https://github\.com/[^/]+/[^/]+/pull/[0-9]+' | head -n1)"
 if [ -z "$url" ]; then
-  emit_error "rfc-open-pr: gh pr create produced no URL"; exit 2
+  jq -n --arg msg "rfc-open-pr: gh pr create succeeded but no PR URL was captured" \
+        --arg hint "Run 'gh pr view --json url -q .url' to retrieve the URL, or open the PR in the browser." \
+        '{error: $msg, hint: $hint}'
+  exit 3
 fi
 jq -n \
   --arg mode "cli" \
@@ -405,6 +433,32 @@ EOF
   # The key assertion: git push was not attempted (would have produced "should-not-be-called" on stderr).
   [[ "$stderr" != *"should-not-be-called"* ]]
 }
+
+@test "runtime failure: unparseable origin URL returns exit 3 with hint" {
+  # Override the git stub so `git remote get-url origin` returns an unsupported
+  # URL format (e.g. an ssh:// URL the script does not handle). The script
+  # must exit 3 with both `error` and `hint` populated.
+  cat > "$BATS_TEST_TMPDIR/mock-bin/git" <<'EOF'
+#!/usr/bin/env bash
+case "$1" in
+  remote)        printf 'ssh://git@github.com/bytewyrd/claude-bytewyrd.git\n' ;;
+  rev-parse)     printf 'origin/rfc/foo\n'; exit 0 ;;
+  push)          exit 0 ;;
+  *)             exit 0 ;;
+esac
+EOF
+  chmod +x "$BATS_TEST_TMPDIR/mock-bin/git"
+  run bash "$RFC_OPEN_PR" --branch rfc/foo --rfc-id 2026-05-17-foo
+  # The test is environment-sensitive: if neither MCP nor gh is available, the
+  # script exits 1 before reaching the origin-URL parse. Assert that *if* the
+  # script reaches the parse step, it exits 3 — otherwise accept exit 1.
+  [ "$status" -eq 3 ] || [ "$status" -eq 1 ]
+  if [ "$status" -eq 3 ]; then
+    [[ "$output" == *'"error"'* ]]
+    [[ "$output" == *'"hint"'* ]]
+    [[ "$output" == *"cannot parse owner/repo"* ]]
+  fi
+}
 ```
 
 Verification:
@@ -413,7 +467,7 @@ Verification:
 bats tests/scripts/rfc-open-pr.bats
 ```
 
-Expected output: at least four test cases passing (`usage error when --branch missing`, `usage error when --rfc-id missing`, `mcp-mode emits descriptor with parsed owner/repo`, `push is skipped when branch already has upstream`) and one `skip`ped (`neither available returns exit 1 with hint`, which is environment-dependent). If `bats` is not on `PATH`, install via the project's existing `tests/` submodule setup (verified pattern: `docs/rfcs/2026-05-14-skill-helper-scripts.md:L114` — "Uses bats-core v1.13.0 + bats-assert + bats-file v0.4.0 via git submodules under `tests/`").
+Expected output: at least five test cases passing (`usage error when --branch missing`, `usage error when --rfc-id missing`, `mcp-mode emits descriptor with parsed owner/repo`, `push is skipped when branch already has upstream`, `runtime failure: unparseable origin URL returns exit 3 with hint`) and one `skip`ped (`neither available returns exit 1 with hint`, which is environment-dependent). If `bats` is not on `PATH`, install via the project's existing `tests/` submodule setup (verified pattern: `docs/rfcs/2026-05-14-skill-helper-scripts.md:L114` — "Uses bats-core v1.13.0 + bats-assert + bats-file v0.4.0 via git submodules under `tests/`").
 
 #### Step 3 — Extend `skills/rfc-new/SKILL.md` Step 9 with the auto-prompt
 
@@ -480,7 +534,7 @@ Verification:
 grep -n '^### 9\.' skills/rfc-new/SKILL.md
 ```
 
-Expected output: a single line — `141:### 9. Present to human and (optionally) open a PR` (line number may drift by a few if other edits land first).
+Expected output: a single line — `140:### 9. Present to human and (optionally) open a PR` (line number may drift by a few if other edits land first; the current Step 9 header in `skills/rfc-new/SKILL.md` is at line 140 — verified at this RFC's draft time).
 
 ```bash
 grep -c 'rfc-open-pr' skills/rfc-new/SKILL.md
