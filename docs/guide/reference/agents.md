@@ -12,7 +12,7 @@ Agents that participate directly in the bytewyrd plugin's RFC and docs workflow.
 
 | Agent | Model | Role |
 |-------|-------|------|
-| `rfc-architect` | opus | RFC authoring, research, design review. Spawned by `/rfc-new`, `/rfc-read-feedback`, `/rfc-update`. |
+| `rfc-architect` | opus | RFC authoring, research, design review. Spawned by `/rfc-new`, `/rfc-read-feedback`. |
 | `feature-engineer` | opus | RFC-driven feature implementation with SOLID and TDD. Spawned by `/rfc-implement`. |
 | `code-reviewer` | opus | Rigorous PR review — correctness, security, performance, conventions. Default for PRs and spawned by `/rfc-consensus-review`. |
 | `refactoring-specialist` | opus | Deliberate, behavior-preserving refactoring with characterization tests and an approval gate. Spawned by `/refactor`. |

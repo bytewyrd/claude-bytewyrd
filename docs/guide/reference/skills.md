@@ -19,7 +19,6 @@ Skills can be invoked as `/skill-name` (or `/bytewyrd:skill-name` when there's a
 | `/rfc-new` | Create a new RFC. Generates a date-based identifier, creates the file from template, spawns `rfc-architect` to fill it in, runs review agents, runs consensus review, fixes critical findings, and presents the finished Draft to the human. |
 | `/rfc-read-feedback` | Address inline `FEEDBACK:` comments that humans have added to an RFC file. Spawns `rfc-architect` to incorporate each comment, removes the markers, and runs the self-review checklist. |
 | `/rfc-summary` | List active RFCs at a glance — every RFC currently in Draft or Approved status, grouped by status with identifier, title, author, and creation date. Filters out Done and Dropped. Read-only, runs inline (no agent spawn). |
-| `/rfc-update` | Sync `docs/rfc-process.md` with upstream. Replaces the core content of the process doc while preserving Project Extensions. |
 | `/sync` | Set up or refresh a project repository with all standard conventions — idempotent, safe to re-run whenever the plugin updates. |
 
 ## How skills are discovered
