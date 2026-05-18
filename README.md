@@ -20,7 +20,7 @@ Install once. Run `/sync`. Everything else follows.
 
 ## What you get
 
-**15 slash-command skills** covering the full development lifecycle — from project bootstrap to design review to deliberate refactoring.
+**14 slash-command skills** covering the full development lifecycle — from project bootstrap to design review to deliberate refactoring.
 
 **48 specialist agents** — each with a focused role, curated tool list, and right-sized model. Backend, frontend, DevOps, database, security, and architecture. Claude delegates to the right one automatically.
 
@@ -96,12 +96,10 @@ RFC docs, best-practices file, agent delegation table, and CI are set up in one 
 | `/rfc-consensus-review` | Run independent critic agents, surface gaps |
 | `/rfc-summary` | List active RFCs (Draft and Approved) at a glance |
 | `/rfc-drop` | Drop an RFC and record the reason |
-| `/rfc-summary` | List all Draft and Approved RFCs at a glance |
 | `/best-practices-record` | Capture a session learning |
 | `/best-practices-extract` | Extract all non-obvious learnings from a session |
-| `/docs-review` | Audit `docs/guide/**` for drift and coverage gaps |
-| `/refactor` | Deliberate phased refactor (Opus, with approval gate) |
 | `/docs-review` | Audit `docs/guide/**` and `README.md` for drift |
+| `/refactor` | Deliberate phased refactor (Opus, with approval gate) |
 | `/git-branch-cleanup` | Prune stale branches and associated worktrees |
 
 ## Agents
