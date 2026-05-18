@@ -43,10 +43,13 @@ Open Claude Code in your project directory. In the session, run:
 `/sync` is idempotent — safe to re-run any time the plugin updates. On the first run, it asks for the project name and a one-line description (used in `docs/project-brief.md`), then creates or updates:
 
 - `CLAUDE.md` — operating rules for Claude in this project.
+- `README.md` — bootstrap landing page (written once, then project-owned).
 - `docs/ARCHITECTURE.md`, `docs/CONTRIBUTING.md`, `docs/BEST_PRACTICES.md` — internal docs scaffolds.
 - `docs/rfc-process.md` — the full RFC workflow, including any project-specific extensions.
 - `docs/rfcs/` — directory for future RFCs.
-- `.claude/settings.json` — permission allow-lists for the standard MCP servers.
+- `.claude/settings.json` — permissions, hooks, and MCP-server allow-lists.
+- `.github/PULL_REQUEST_TEMPLATE.md` and `.github/workflows/ci.yml` — PR template and starter CI workflow.
+- `.gitignore` and `mise.toml` — sensible defaults; merged additively if you already maintain them.
 
 If anything is missing or out of date, `/sync` shows a categorized summary (additions, fast-forward updates, conflicts) and asks you to approve before writing.
 
