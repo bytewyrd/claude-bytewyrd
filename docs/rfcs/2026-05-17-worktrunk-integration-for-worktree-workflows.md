@@ -9,13 +9,13 @@ drop_reason: ~
 
 ## Summary
 
-Replace every `git worktree add | list | remove` invocation the Bytewyrd plugin currently documents or runs with the `wt` CLI shipped by `worktrunk` (verified: shell — `wt --version` returns `wt 0.49.0` on the author's machine; Context7/Exa: `worktrunk.dev` docs synced into `/home/divoxx/.claude/plugins/marketplaces/worktrunk/docs/content/`), and add a project-level `.config/wt.toml` so worktree lifecycle hooks (commit-message generation, dependency install, lint/test gates) live in the same place every contributor's `wt switch` and `wt merge` runs already consult. Concretely: `CLAUDE.md` Session-start and Step-2 workflow, `skills/git-branch-cleanup/SKILL.md` worktree-removal logic, and `.claude-plugin/scripts/templates/CONTRIBUTING.md.tpl` all switch from raw `git worktree …` to `wt switch -c`, `wt list`, and `wt remove`; `scripts/check-requirements.sh` gains a soft probe for the `wt` binary that warns once per session when it is missing; `/sync` Step 5 creates `.config/wt.toml` from a new template under `.claude-plugin/scripts/templates/wt.toml.tpl` and registers it as a manifest artifact so re-runs are diff-checked like every other plugin-managed file. The `wt` dependency is *soft* — when the binary is absent every documented workflow includes a one-line `git worktree …` equivalent that produces the same end state, so the plugin remains usable on machines where worktrunk has not been installed yet.
+Replace every `git worktree add | list | remove` invocation the Bytewyrd plugin currently documents or runs with the `wt` CLI shipped by `worktrunk` (verified: shell — `wt --version` returns `wt 0.49.0` on the author's machine; Context7/Exa: `worktrunk.dev` docs synced into `/home/divoxx/.claude/plugins/marketplaces/worktrunk/docs/content/`), and add a project-level `.config/wt.toml` so worktree lifecycle hooks (commit-message generation, dependency install, lint/test gates) live in the same place every contributor's `wt switch` and `wt merge` runs already consult. Concretely: `CLAUDE.md` Session-start and Step-2 workflow, `skills/git-branch-cleanup/SKILL.md` worktree-removal logic, and `.claude-plugin/scripts/templates/CONTRIBUTING.md.tpl` all switch from raw `git worktree …` to `wt switch -c`, `wt list`, and `wt remove`; `scripts/check-requirements.sh` gains a hard probe for the `wt` binary that exits with status 2 when it is missing; `/sync` Step 5 creates `.config/wt.toml` from a new template under `.claude-plugin/scripts/templates/wt.toml.tpl` and registers it as a manifest artifact so re-runs are diff-checked like every other plugin-managed file. The `wt` dependency is *hard* — every documented workflow is a single `wt`-form command. The one exception is merging the default branch into a feature branch (e.g., `git merge origin/main` to pull new commits from `main` into the in-progress worktree), which remains raw git because `wt merge` operates only on the rebase / squash / fast-forward merge-into-default-branch direction and has no equivalent for the opposite direction.
 
 ## Should we do this?
 
 **Yes.** The plugin currently documents one workflow (`git worktree add .worktrees/<branch> -b <branch>` in `CLAUDE.md:L120` and `.claude-plugin/scripts/templates/CONTRIBUTING.md.tpl:L31` — verified) and silently expects another (the user already runs `wt switch -c` because the author's `~/.config/worktrunk/config.toml` is configured with `worktree-path = "{{ repo_path }}/.worktrees/{{ branch | sanitize }}"` — verified). That drift has two costs: contributors who follow the documented commands literally end up with worktrees at the same path `wt` would produce (the manual `.worktrees/<branch>` convention happens to match the user's worktrunk template), but they get none of the lifecycle benefits — no pre-start install step, no pre-merge lint/test gate, no LLM-generated commit messages, no `wt list` overview when juggling parallel agents. The plugin's `.claude-plugin/CLAUDE.md:L126` already says "Use the `/worktrunk` skill to create an isolated worktree + branch" (verified) — so the official prescription has moved on, but the *project* `CLAUDE.md` (the file every consumer reads) still says the opposite. This RFC closes that gap.
 
-The cost is one new manifest artifact (`wt.toml`), one new soft-dependency probe in `scripts/check-requirements.sh`, four small skill / template edits (`CLAUDE.md.tpl`, `CONTRIBUTING.md.tpl`, `git-branch-cleanup/SKILL.md`, `BEST_PRACTICES.md.tpl`), and updates to the plugin's own `CLAUDE.md` so the dogfood matches the prescription. The benefit accrues to every project on every `wt switch`: dependency install on worktree creation, commit-message generation on `wt merge`, optional lint/test gates before merge, and `wt list` as a single command that replaces the `git worktree list + git branch --show-current + git log --oneline -5` triple the Session-start checklist currently runs (`.claude-plugin/CLAUDE.md:L86,L95` — verified). The graceful-fallback design (every command in every skill body has a `git worktree …` fallback documented in-line) means the plugin loses nothing when `wt` is absent and gains everything when it is present.
+The cost is one new manifest artifact (`wt.toml`), one new hard-dependency probe in `scripts/check-requirements.sh`, four small skill / template edits (`CLAUDE.md.tpl`, `CONTRIBUTING.md.tpl`, `git-branch-cleanup/SKILL.md`, `BEST_PRACTICES.md.tpl`), and updates to the plugin's own `CLAUDE.md` so the dogfood matches the prescription. The benefit accrues to every project on every `wt switch`: dependency install on worktree creation, commit-message generation on `wt merge`, optional lint/test gates before merge, and `wt list` as a single command that replaces the `git worktree list + git branch --show-current + git log --oneline -5` triple the Session-start checklist currently runs (`.claude-plugin/CLAUDE.md:L86,L95` — verified). The hard-dependency posture means every documented workflow is a single `wt`-form command — no dual-path branches in skill bodies, no decision-matrix fallback columns, no parallel documentation forms in prose. The plugin makes `wt` part of the baseline toolchain the same way it already requires `git`.
 
 The alternative — keep the status quo, where the project's `CLAUDE.md` documents `git worktree add` but the official prescription is `/worktrunk` — guarantees that drift between documentation and practice continues, that new contributors take the longer path, and that the project-level hooks (`pre-start`, `pre-merge`) are never authored because no skill creates the file that holds them.
 
@@ -71,53 +71,56 @@ The relevant capabilities from `worktrunk.dev` docs (all from the marketplace mi
 
 ## Analysis / Options
 
-Five coupled decisions: (1) hard vs. soft dependency on `wt`; (2) which commands switch from raw git to `wt` and which stay raw; (3) the shape and contents of the new project `.config/wt.toml`; (4) how `/sync` and the requirement-check hook surface the dependency; (5) what `git-branch-cleanup` does when `wt` is available vs. absent.
+Five coupled decisions: (1) hard vs. soft dependency on `wt`; (2) which commands switch from raw git to `wt` and which stay raw; (3) the shape and contents of the new project `.config/wt.toml`; (4) how `/sync` and the requirement-check hook surface the dependency; (5) the shape of `git-branch-cleanup`'s execution path under the hard-dependency posture.
 
 ### Decision 1 — Hard or soft dependency on `wt`?
 
-**Option A — Soft dependency: every workflow has a `git worktree …` fallback documented inline; `scripts/check-requirements.sh` warns once per session when `wt` is missing; skills detect the binary at call time and choose between `wt`-style and `git`-style commands. Recommended.**
+**Option A — Hard dependency: `wt` must be on PATH; `scripts/check-requirements.sh` exits with status 2 when missing; every skill body and every documented workflow uses `wt` directly with no `git worktree …` fallback. Recommended.**
 
-The plugin remains usable on a machine without `wt` (CI containers, fresh dev environments, contributors who have not yet installed worktrunk). Every command in every skill body lists both forms: the primary (`wt switch -c <branch>`) and the fallback (`git worktree add -b <branch> .worktrees/<branch>`). The fallback paths produce the same on-disk layout (the directory `.worktrees/<branch-sanitized>` is what both forms create, because the user-config worktree-path template targets that exact directory — verified). The check-requirements hook warns once per session if `wt` is missing, with a one-line install hint, and the warning is suppressible via `BYTEWYRD_SKIP_WARN=worktrunk` (matching the existing pattern for `gh-cli`, `exa`, etc.). Skills that want to *use* worktrunk (e.g., a future `wt merge` skill) detect `command -v wt` at call time and skip cleanly when missing.
+The plugin treats `wt` as part of its baseline toolchain — the same posture it already takes for `git`. Every skill body uses `wt` directly. Every prose-level workflow in `CLAUDE.md` and `CONTRIBUTING.md` documents a single `wt`-form command. There are no dual-path branches in skill bodies and no fallback columns in the decision matrix. The check-requirements hook exits with status 2 when `wt` is missing, with a clear install hint pointing at https://worktrunk.dev and a reminder to run `wt config shell install` once after install. The hard-dependency posture buys two structural simplifications worth more than the soft-dep posture's flexibility: skill bodies are half the length they would otherwise be (only one execution path), and documentation reads in a single voice (no "primary / fallback" branching that readers have to mentally collapse). The one operation that does *not* go through `wt` is merging the default branch into a feature branch (`git merge origin/main` to pick up new commits from `main` into the in-progress worktree) — `wt merge` is the *feature-branch → default-branch* direction only (rebase, squash, fast-forward into main), so the opposite direction stays raw git. This is the only exception; every other documented operation is `wt`-only.
 
-**Option B — Hard dependency: `wt` must be on PATH; `scripts/check-requirements.sh` `exit 2` when missing; skills assume `wt` and crash when it is absent.**
+**Option B — Soft dependency: every workflow has a `git worktree …` fallback documented inline; `scripts/check-requirements.sh` warns once per session when `wt` is missing; skills detect the binary at call time and choose between `wt`-style and `git`-style commands.**
 
-Rejected. The plugin currently treats `gh`, `exa`, and `firefox-devtools` as soft dependencies (verified — they emit warnings, not failures). Promoting `wt` to a hard dependency is inconsistent with that posture: `wt` is an *enhancement* of an already-supported workflow (git worktrees existed before worktrunk and work without it), not a non-replaceable component like `git` itself. A hard dependency would break every fresh clone on a machine without worktrunk installed — exactly the wrong default for a plugin that aims to be a friction-reducer.
+Rejected. The structural cost is real and recurring: every skill body needs a `command -v wt` probe and two parallel execution paths; every documentation block needs a "primary / fallback" framing; the decision matrix needs a fallback column; readers must mentally collapse two forms every time they read the workflow. Soft-dep is appropriate for *features* the plugin layers on top of an already-functional baseline (e.g., `gh` for GitHub-specific operations, Exa for web search) — operations that can be performed differently or skipped entirely. Worktree creation is not in that category: it is the entry point to every feature-branch session, and the plugin already prescribes a specific convention (`.worktrees/<branch>`) that worktrunk encodes natively. Promoting `wt` to a hard dependency aligns the prescription with the toolchain. Contributors on machines without `wt` install it from https://worktrunk.dev the same way they install `git` — the install path is documented, one-line, and a one-time cost.
 
 **Option C — Auto-install: the requirement-check hook installs `wt` via `cargo install worktrunk` or `brew install worktrunk` when missing.**
 
 Rejected. The plugin does not auto-install any other tool (verified — `check-requirements.sh` only emits install hints, never runs the installer). Auto-installing toolchain binaries from a `SessionStart` hook is an anti-pattern: it requires elevated trust, takes minutes (cargo compiles), and breaks reproducibility (a session that "just works" on one machine but quietly built `wt` from source on first run is harder to debug). The install-hint approach (Option A) keeps the user in control.
 
-**Recommendation: Option A.** Soft dependency with documented fallbacks, a one-session-per-warning probe, and a `BYTEWYRD_SKIP_WARN=worktrunk` opt-out.
+**Recommendation: Option A.** Hard dependency. `scripts/check-requirements.sh` exits with status 2 when `wt` is missing. Skill bodies use `wt` directly with no fallback. The single exception is the `git merge origin/main` step (pulling main into a feature branch), which stays raw git because `wt merge` does not support that direction.
 
 ### Decision 2 — Which commands switch from raw git to `wt`, and which stay raw?
 
-The plugin executes / documents seven distinct worktree-related operations today. Each is decided independently:
+The plugin executes / documents eight distinct worktree-related operations today. Each is decided independently:
 
-**(a) Listing worktrees** — `git worktree list` (today, in CLAUDE.md Session-start and in `git-branch-cleanup`). **Switch to `wt list`** when `wt` is present; `wt list` returns a richer table (status, ahead/behind, CI) than `git worktree list` (path only). Fallback: `git worktree list`.
+**(a) Listing worktrees** — `git worktree list` (today, in CLAUDE.md Session-start and in `git-branch-cleanup`). **Switch to `wt list`**; `wt list` returns a richer table (status, ahead/behind, CI) than `git worktree list` (path only).
 
-**(b) Creating a worktree + branch** — `git worktree add .worktrees/<branch> -b <branch>` (today, in CLAUDE.md Step 2 and CONTRIBUTING.md.tpl). **Switch to `wt switch -c <branch>`** when `wt` is present. The path is computed from the user's `worktree-path` template — the developer no longer types it. Fallback: `git worktree add -b <branch> .worktrees/<sanitized-branch>` plus an explicit `cd .worktrees/<sanitized-branch>`.
+**(b) Creating a worktree + branch** — `git worktree add .worktrees/<branch> -b <branch>` (today, in CLAUDE.md Step 2 and CONTRIBUTING.md.tpl). **Switch to `wt switch -c <branch>`**. The path is computed from the user's `worktree-path` template — the developer no longer types it.
 
 **(c) Creating a worktree and launching Claude with a task** — not currently scripted; new capability. `wt switch -c <branch> -x claude -- '<task>'` is the worktrunk pattern (Exa: `docs/content/switch.md`). The plugin's `/rfc-implement` skill could, in a future iteration, use this to dispatch a `feature-engineer` agent in a fresh worktree — out of scope for this RFC (just documented).
 
-**(d) Removing a worktree** — `git worktree remove --force <path>` (today, in `git-branch-cleanup`). **Switch to `wt remove <branch>`** when `wt` is present. `wt remove` runs `pre-remove` and `post-remove` hooks (Exa: `docs/content/remove.md` "Hooks" section) and conditionally deletes the branch if it is merged. Fallback: `git worktree remove --force <path> && git branch -d <branch>`.
+**(d) Removing a worktree** — `git worktree remove --force <path>` (today, in `git-branch-cleanup`). **Switch to `wt remove <branch>`**. `wt remove` runs `pre-remove` and `post-remove` hooks (Exa: `docs/content/remove.md` "Hooks" section) and conditionally deletes the branch if it is merged.
 
-**(e) Determining whether a branch is merged into main** — `git log --oneline main..origin/branch-name | wc -l` (today, in `git-branch-cleanup:L46-L48`). `wt remove` does this check internally with six fallbacks (same-commit, ancestor, no-added-changes, trees-match, merge-adds-nothing, patch-id-match — Exa: `docs/content/remove.md` "Branch cleanup" section), which is strictly more thorough than the single-check `git log` form. **Switch to delegating the merge-detection to `wt remove`** when `wt` is present (i.e., the skill calls `wt remove` and trusts it to skip the branch deletion when not merged). Fallback: existing `git log --oneline ...` logic.
+**(e) Determining whether a branch is merged into main** — `git log --oneline main..origin/branch-name | wc -l` (today, in `git-branch-cleanup:L46-L48`). `wt remove` does this check internally with six heuristics (same-commit, ancestor, no-added-changes, trees-match, merge-adds-nothing, patch-id-match — Exa: `docs/content/remove.md` "Branch cleanup" section), which is strictly more thorough than the single-check `git log` form. **Switch to delegating the merge-detection to `wt remove`** (i.e., the skill calls `wt remove` and trusts it to skip the branch deletion when not merged).
 
-**(f) Removing a branch on the remote after merge** — `git push origin --delete <branch>` (today, in `git-branch-cleanup`). `wt remove` does not push branch deletes to the remote (it operates on local state). **Keep raw `git push origin --delete`** regardless of `wt` presence — the operation has no worktrunk equivalent.
+**(f) Removing a branch on the remote after merge** — `git push origin --delete <branch>` (today, in `git-branch-cleanup`). `wt remove` does not push branch deletes to the remote (it operates on local state). **Keep raw `git push origin --delete`** — the operation has no worktrunk equivalent.
 
-**(g) Fetching from remote before any branch / worktree work** — `git fetch --all` (today, in `BEST_PRACTICES.md.tpl:L36`). `wt` does not provide a `git fetch` wrapper. **Keep `git fetch --all`** regardless of `wt` presence.
+**(g) Fetching from remote before any branch / worktree work** — `git fetch --all` (today, in `BEST_PRACTICES.md.tpl:L36`). `wt` does not provide a `git fetch` wrapper. **Keep `git fetch --all`** — the operation has no worktrunk equivalent.
+
+**(h) Pulling main into a feature branch (sync-with-main mid-development)** — `git merge origin/main` from inside the feature worktree. `wt merge` operates only in the feature-branch → default-branch direction (rebase, squash, fast-forward into main, with hooks + worktree removal — Exa: `docs/content/merge.md`); it has no inverse for pulling default into feature. **Keep raw `git merge origin/main`** when the developer wants to pick up new commits from `main` into the in-progress feature worktree. Following the global guidance in `~/.claude/CLAUDE.md` ("Git: merge over rebase, no squash, confirm shared-branch rebase"), the preferred form is `git fetch && git merge origin/main` — not `git rebase`. This is the only documented operation that stays raw git despite having a `wt`-named neighbor.
 
 The decision matrix:
 
-| Operation | When `wt` present | When `wt` absent | Note |
-|-----------|-------------------|------------------|------|
-| (a) List worktrees | `wt list` | `git worktree list` | `wt list` returns richer status |
-| (b) Create worktree + branch | `wt switch -c <branch>` | `git worktree add -b <branch> .worktrees/<sanitize(branch)>` + `cd` | Path template lives in user config |
-| (c) Create + launch agent | `wt switch -c <branch> -x claude -- '<task>'` | (manual sequence) | Documented but not currently scripted |
-| (d) Remove worktree | `wt remove <branch>` | `git worktree remove --force <path>` + `git branch -d <branch>` | `wt remove` runs hooks + cleans branch |
-| (e) Merge-detection | (delegated to `wt remove`) | `git log --oneline main..origin/branch \| wc -l` | `wt remove`'s six fallbacks are strictly more thorough |
-| (f) Delete remote branch | `git push origin --delete <branch>` | (same) | No worktrunk equivalent |
-| (g) Fetch from remote | `git fetch --all` | (same) | No worktrunk equivalent |
+| Operation | Command | Note |
+|-----------|---------|------|
+| (a) List worktrees | `wt list` | Returns richer status (ahead/behind, CI) than `git worktree list` |
+| (b) Create worktree + branch | `wt switch -c <branch>` | Path template lives in user config — developer does not type the path |
+| (c) Create + launch agent | `wt switch -c <branch> -x claude -- '<task>'` | Documented but not currently scripted by any skill |
+| (d) Remove worktree | `wt remove <branch>` | Runs `pre-remove`/`post-remove` hooks; deletes the local branch when integrated |
+| (e) Merge-detection | (delegated to `wt remove`) | Six heuristics; strictly more thorough than `git log --oneline main..origin/branch` |
+| (f) Delete remote branch | `git push origin --delete <branch>` | No worktrunk equivalent |
+| (g) Fetch from remote | `git fetch --all` | No worktrunk equivalent |
+| (h) Pull main into feature branch | `git merge origin/main` | `wt merge` is feature→main direction only; no inverse exists |
 
 ### Decision 3 — What does the new project `.config/wt.toml` contain?
 
@@ -149,6 +152,8 @@ Ship a file that documents the available hook types as commented-out examples (s
 # [list]
 # url = "http://localhost:{{ branch | hash_port }}"
 ```
+
+The `{{ branch | hash_port }}` expression in the commented `[list]` example is worktrunk's own template syntax (Exa: `docs/content/list.md` describes `hash_port` as a worktrunk template filter) — it is shown inert inside a TOML comment as a copy-paste hint for the developer who later uncomments the block. `/sync` does not expand template expressions inside TOML comments — its template renderer substitutes only `<placeholder>` (angle-bracket) tokens, not `{{ }}` (verified: `skills/sync/SKILL.md:L431` documents the rule as "for each `<placeholder>` token, substitute the corresponding value from `project_inputs`"). The manifest entry's `templated: false` is additional reinforcement: non-templated artifacts are read directly from the source file with no rendering pass at all. Either guard alone is sufficient; both together close the question definitively.
 
 The rendered file (what a consumer project sees after `/sync`) prepends the marker:
 
@@ -185,36 +190,40 @@ Rejected.
 
 ### Decision 4 — How do `/sync` and the requirement-check hook surface the dependency?
 
-**Option A — `/sync` creates `.config/wt.toml` unconditionally (regardless of whether `wt` is installed on the syncing machine); `check-requirements.sh` adds a soft probe for `wt` that warns once per session when missing. Recommended.**
+**Option A — `/sync` creates `.config/wt.toml` unconditionally; `check-requirements.sh` adds a hard probe for `wt` that exits with status 2 when missing. Recommended.**
 
-The file lives in the repo (under git), so a developer on machine A can sync the project, push, and a teammate on machine B with `wt` installed will inherit the project hooks immediately. The file's presence is independent of any one developer's local toolchain. The requirement-check hook, by contrast, is per-developer-per-session: it tells the *current developer* "you don't have `wt` — install it from https://worktrunk.dev" without forcing the file to be regenerated.
+Given the hard-dependency posture from Decision 1, `.config/wt.toml` is required infrastructure — the canonical location worktrunk reads for project-level hooks (Exa: `docs/content/config.md` confirms `.config/wt.toml` is the only project-config path worktrunk reads). Every consumer project of the plugin runs `wt switch -c`, `wt remove`, and (eventually) `wt merge`, and each of those invocations consults `.config/wt.toml` for project-level pre-start / pre-merge / pre-remove hooks. The file is the team-shared point of attachment for those hooks; without it, every contributor would need to author project-level hooks ad-hoc or coordinate via prose.
 
-Concrete `check-requirements.sh` addition (matching the existing pattern at L141-L161 for MCP servers and `gh`):
+The file's *body* is empty by default (commented-out examples only — see Decision 3), so on a fresh consumer project running `/sync` produces a `.config/wt.toml` with the marker on line 1, the explanatory header, and zero active hooks. That is not a contradiction with the "required infrastructure" framing: the *file* is required (it is the named hook-attachment point worktrunk reads, and the marker on line 1 is how `/sync` tracks the artifact across re-runs), but the *contents* are project-owned — the empty-body default just means most consumer projects start with no hooks and add them as they accrete patterns. The same shape applies to the existing `mise.toml` artifact (verified: bootstrap-manifest.json:L193-L196 with `owned_paths: ["tools[]:union"]`): the file is plugin-managed and always present, but the per-project tool list inside it is project-owned. `.config/wt.toml` is the same shape with an empty `owned_paths` — the plugin owns the marker and the file's existence; the project owns every hook table.
+
+Concrete `check-requirements.sh` addition (matching the hard-fail pattern at L97-L100 for `git`):
 
 ```bash
-# Soft requirement: worktrunk on PATH (used by Bytewyrd worktree workflow).
-if ! is_skipped "worktrunk" && ! command -v wt >/dev/null 2>&1; then
-  warnings+=("[warn] worktrunk (wt) not on PATH. Fix: install worktrunk (https://worktrunk.dev) and run 'wt config shell install' for cd integration. Bytewyrd workflows fall back to raw 'git worktree' when wt is absent.")
+# Hard requirement: worktrunk on PATH (the Bytewyrd worktree workflow depends on it).
+if ! command -v wt >/dev/null 2>&1; then
+  echo "[error] worktrunk (wt) not on PATH." >&2
+  echo "  Fix: install worktrunk from https://worktrunk.dev/, then run 'wt config shell install' once for cd integration." >&2
+  exit 2
 fi
 ```
 
-Add `worktrunk` to the suppressible-IDs list (L198) so `BYTEWYRD_SKIP_WARN=worktrunk` silences the warning for developers who deliberately use the raw-git fallback.
+The probe goes *before* any soft-warning probes (i.e., before L141 in the current file, in the hard-fail block alongside the existing `git` check). It does not participate in `BYTEWYRD_SKIP_WARN` — the hard-fail block has no suppression mechanism today, consistent with the `git` precedent.
 
 **Option B — `/sync` creates `.config/wt.toml` only when `command -v wt` succeeds.**
 
-Rejected because the file is meant to be team-shared: gating its creation on a single developer's toolchain breaks the team-share invariant. A developer without `wt` could still be the one running `/sync` (e.g., setting up a fresh repo for a teammate) and the file should be created.
+Rejected because the file is meant to be team-shared: gating its creation on a single developer's toolchain breaks the team-share invariant. A developer running `/sync` on machine A — even one whose `wt` install is in progress — should produce a file that a teammate on machine B can use. With Decision 1 making `wt` a hard dependency, this is moot in practice (the requirement-check hook fails before `/sync` runs), but the principle stands: the file is shared infrastructure and should not be conditional on per-machine toolchain state.
 
 **Option C — `/sync` adds a Step 8 report row that says "Run `wt config shell install` after install" if `wt` is detected.**
 
 Useful but separate from this RFC. The current `/sync` Step 8 report includes a list of follow-up tasks (verified — `skills/sync/SKILL.md` ~L752). Adding a one-line nudge ("If you haven't run `wt config shell install`, do it now to enable directory-changing for `wt switch`") is a small additive note rather than a separate option. **Adopted as part of Option A** — the report row is the user-facing surface.
 
-**Recommendation: Option A** with the Option C nudge folded in. `/sync` always creates `.config/wt.toml`; the check-requirements hook warns once when `wt` is missing; the Step 8 report adds a follow-up note for shell-integration when `wt` is present.
+**Recommendation: Option A** with the Option C nudge folded in. `/sync` always creates `.config/wt.toml`; the check-requirements hook hard-fails when `wt` is missing; the Step 8 report adds a follow-up note for shell-integration.
 
-### Decision 5 — What does `git-branch-cleanup` do when `wt` is present vs. absent?
+### Decision 5 — What does `git-branch-cleanup` do?
 
-**Option A — Dual-path skill body: when `wt` is present, use `wt list --format=json` + `wt remove`; when absent, keep the existing `git worktree list` + `git worktree remove` flow. Recommended.**
+**Option A — Single-path `wt`-only skill body: use `wt list --format=json` for enumeration and `wt remove --yes <branch>` for the per-branch delete cascade. Recommended.**
 
-`wt list --format=json` (Exa: `docs/content/list.md` "JSON output" section) returns structured per-worktree data including `main_state` (one of `is_main`, `same_commit`, `integrated`, `diverged`, `ahead`, `behind`, `orphan`, `empty`, `would_conflict`), `integration_reason`, `working_tree.modified`, and CI status. The plugin's `git-branch-cleanup` currently classifies branches manually using a combination of `git branch -v`, `git worktree list`, `git branch -r`, and `gh pr list` (verified — `skills/git-branch-cleanup/SKILL.md:L18-L31`). `wt list --format=json` collapses those into one call.
+With Decision 1 making `wt` a hard dependency, the skill body has one execution path. `wt list --format=json` (Exa: `docs/content/list.md` "JSON output" section) returns structured per-worktree data including `main_state` (one of `is_main`, `same_commit`, `integrated`, `diverged`, `ahead`, `behind`, `orphan`, `empty`, `would_conflict`), `integration_reason`, `working_tree.modified`, and CI status. The plugin's `git-branch-cleanup` currently classifies branches manually using a combination of `git branch -v`, `git worktree list`, `git branch -r`, and `gh pr list` (verified — `skills/git-branch-cleanup/SKILL.md:L18-L31`). `wt list --format=json` collapses those into one call.
 
 The classification rules in `git-branch-cleanup:L33-L43` (verified) map directly to `wt list --format=json` fields:
 
@@ -225,27 +234,27 @@ The classification rules in `git-branch-cleanup:L33-L43` (verified) map directly
 | Remote branch, PR merged, 0 commits ahead of main | `.main_state == "integrated"` + `.remote.ahead == 0` |
 | Branch has worktree + branch is being deleted | `.kind == "worktree"` (use `wt remove <branch>` not `git worktree remove`) |
 
-The dual-path skill body has two top-level branches; both use the same classification table; the diff is in the executable form (`wt remove <branch>` vs. `git worktree remove <path> + git branch -d <branch> + git push origin --delete <branch>` for the full delete cascade).
+For the per-branch delete cascade: `wt remove --yes <branch>` handles both the worktree removal and the local-branch deletion in one call (it deletes the local branch only when integrated, per worktrunk's six-check default — Exa: `docs/content/remove.md` "Branch cleanup" section). The remote-branch deletion stays raw `git push origin --delete <branch>` (Decision 2 (f); no worktrunk equivalent).
 
-**Option B — `wt`-only skill body: remove the raw-git fallback, hard-require `wt` to run `git-branch-cleanup`.**
+**Option B — Two-path skill body with a `command -v wt` probe at the top.**
 
-Rejected. The skill is invoked by the user; a soft-dependency posture (per Decision 1) means every skill must keep working when `wt` is absent. The dual-path body is the cost of that posture.
+Rejected. With Decision 1's hard-dependency posture, the probe always succeeds (the requirement-check hook fails earlier if `wt` is missing), so the second path is unreachable code. The decision tree's "what if `wt` is absent" branch was the lone reason this skill carried two execution paths; remove it and the skill body halves in length.
 
 **Option C — `git-branch-cleanup` becomes a thin wrapper around `wt remove` (no classification logic at all).**
 
 Rejected because `wt remove <branch>` removes a *specific* branch — it does not enumerate stale branches and ask the user to confirm them in batch. The plugin's `git-branch-cleanup` exists precisely to do the *enumeration + plan + confirm + execute* loop; collapsing it into a one-shot `wt remove` per branch would still require the enumeration and confirmation. The classification logic stays; the executable form changes.
 
-**Recommendation: Option A.** Dual-path body using `wt list --format=json` + `wt remove` when present, and the existing logic when absent.
+**Recommendation: Option A.** Single-path `wt`-only body using `wt list --format=json` for enumeration and `wt remove --yes <branch>` + `git push origin --delete <branch>` for the per-branch delete cascade.
 
 ## Drawbacks
 
-- **Adds a new `wt.toml` template, a new manifest artifact, and a new soft-dependency probe.** The structural addition is one template file (`.claude-plugin/scripts/templates/wt.toml.tpl`) plus one entry in `.claude-plugin/bootstrap-manifest.json`. The check-requirements probe is ~5 lines of shell. The skill / template edits are localized. **Mitigation:** the additions follow existing patterns (the `mise.toml` artifact uses the same `structured` extension strategy with `tools[]:union` — verified: bootstrap-manifest.json:L193-L195; the `gh-cli` probe in `check-requirements.sh` is the exact shape the new `worktrunk` probe takes).
+- **Adds a new `wt.toml` template, a new manifest artifact, and a new hard-dependency probe.** The structural addition is one template file (`.claude-plugin/scripts/templates/wt.toml.tpl`) plus one entry in `.claude-plugin/bootstrap-manifest.json`. The check-requirements probe is ~5 lines of shell. The skill / template edits are localized. **Mitigation:** the additions follow existing patterns (the `mise.toml` artifact uses the same `structured` extension strategy with `tools[]:union` — verified: bootstrap-manifest.json:L193-L195; the `git` hard-fail probe in `check-requirements.sh` is the exact shape the new `wt` probe takes).
+
+- **Hard dependency excludes machines without `wt`.** A contributor with a fresh checkout of a Bytewyrd-managed project must install worktrunk before `/sync` runs cleanly — the plugin's `SessionStart` hook exits with status 2 when `wt` is not on PATH. This is friction at first-touch. **Mitigation:** the install path is one command (Exa: `docs/content/_index.md` Install section — Homebrew, Cargo, winget, pacman), the install hint is printed by the failed probe with the URL https://worktrunk.dev, and the same posture already applies to `git` (which the probe also hard-fails on). The plugin treats `wt` as a baseline toolchain component, not an enhancement; first-touch friction is the cost of having a single supported workflow rather than two diverging ones.
 
 - **`.config/wt.toml` adds a new top-level directory to consumer projects (`.config/`).** Projects that already use `.config/` for other purposes (e.g., `.config/nvim/`, `.config/git/`) will see the directory grow. Most projects do not currently have `.config/`. **Mitigation:** the path `.config/wt.toml` is the canonical worktrunk location (Exa: `docs/content/config.md` confirms this is the only project-config path worktrunk reads). No alternative location exists. The directory addition is small and the file is the only entry.
 
 - **Worktrunk's first-run approval prompt is interactive.** A consumer project that adds a `pre-merge` hook to `.config/wt.toml` will, on first `wt merge` after clone, prompt the developer to approve the hook commands. In a CI environment without `--yes`, this is a hang. **Mitigation:** the empty-stub `.config/wt.toml` (Decision 3, Option A) ships with no active hooks, so the approval prompt does not fire on a fresh clone. When a project owner uncomments and adds a hook, the prompt fires once on the next merge and is then remembered (Exa: `docs/content/hook.md` confirms approvals persist in `~/.config/worktrunk/approvals.toml`). The README / Best Practices addition this RFC adds includes a one-line note about the prompt so developers are not surprised.
-
-- **Soft dependencies mean two parallel paths in every skill body.** `git-branch-cleanup` (Decision 5) carries both the `wt` and the raw-git classification logic; CLAUDE.md and CONTRIBUTING.md document both forms. Code duplication is the cost of graceful fallback. **Mitigation:** the duplication is *documented* duplication (both forms are visible to the reader in the same prose block), not *runtime* duplication (the skill runs one path or the other, not both). The classification table in Decision 5 lives in one place and is shared by both paths.
 
 - **Worktrunk version skew.** A consumer project committed to `.config/wt.toml` with a hook syntax valid in worktrunk 0.49 may break on a developer running worktrunk 0.31 (verified — the CHANGELOG.md mirror shows breaking hook-template-variable changes between 0.31 and 0.32). **Mitigation:** the empty-stub default uses no template variables (all examples are commented out and only invoked by the developer who uncomments them), so the default file is version-stable. The check-requirements probe could be extended later to enforce a minimum version, but is out of scope for this RFC.
 
@@ -263,14 +272,14 @@ Rejected because `wt remove <branch>` removes a *specific* branch — it does no
 |--------|------|----------------|
 | Create | `.claude-plugin/scripts/templates/wt.toml.tpl` | New template: the empty-stub `.config/wt.toml` content described in Decision 3, Option A. Contains the header comments and commented-out hook examples in the body; the `bootstrap-content-version` marker is inserted at line 1 by `/sync` at render time (per the TOML marker-insertion rule at `skills/sync/SKILL.md:L435`), matching the convention of `mise.toml.tpl` and `.gitignore.tpl`. |
 | Modify | `.claude-plugin/bootstrap-manifest.json` | Add one new artifact entry for `bytewyrd/.config/wt.toml@v1` pointing at the new template, with `extension_strategy: "structured"`, `owned_paths: []` (empty — the plugin only owns the marker line; project owns every other line), and `templated: false`. The `sha256` field (not `template_sha`, because `templated: false`) is computed by `.claude-plugin/scripts/build-manifest.sh` and committed alongside the manifest edit. |
-| Modify | `scripts/check-requirements.sh` | Add a soft probe for `wt` on PATH, after the existing `gh` probe (after L161 in the current file). Add `worktrunk` to the comma-separated suppressible-IDs list printed at L198. |
-| Modify | `.claude-plugin/scripts/templates/CLAUDE.md.tpl` | Add a new `## Workflow` section (currently absent — verified) with Session-start and Step-2 guidance using `wt switch -c` (primary) and `git worktree add` (fallback). The section is owned by the plugin and re-syncs via the existing `section` extension strategy. The plugin's bootstrap-manifest entry for `CLAUDE.md@v1` adds `## Workflow` to `owned_sections`. |
-| Modify | `.claude-plugin/scripts/templates/CONTRIBUTING.md.tpl` | Replace lines 28-32 (the raw `git worktree add` block) with a dual-form block: primary `wt switch -c <branch-name>` and fallback `git worktree add -b <branch-name> .worktrees/<branch-name>`. |
-| Modify | `.claude-plugin/scripts/templates/BEST_PRACTICES.md.tpl` | Append a one-line entry to the existing `## Workflow` section noting that the plugin uses worktrunk (`wt`) as the primary worktree command, with raw `git worktree` as a fallback. |
-| Modify | `skills/git-branch-cleanup/SKILL.md` | Add a Step 0 (probe `command -v wt`); rewrite Step 1 (Gather State) to use `wt list --format=json` when `wt` is present and `git worktree list` when absent; rewrite Step 4 (Execute) to call `wt remove --yes <branch>` when `wt` is present and the existing `git worktree remove` / `git branch -D` cascade when absent. Keep the classification table (Step 2) and plan presentation (Step 3) unchanged — those are tool-independent. |
-| Modify | `CLAUDE.md` (plugin's own, repo root) | Replace lines 118-120 (Session-start workflow) with the same dual-form `wt list` / `wt switch -c` + raw-git fallback guidance the new template ships. The plugin's own `CLAUDE.md` and the synced template's `CLAUDE.md` produce identical content for these lines. |
-| Modify | `.claude-plugin/CLAUDE.md` | Replace L86 (`git worktree list`) and L99 (`git log --oneline -5`) with the equivalent `wt list` / `wt list --format=json` forms. Replace L126 (`Use the /worktrunk skill to create...`) with the explicit `wt switch -c <branch>` command (the `/worktrunk` skill is the worktrunk-plugin configuration skill — useful for advanced config questions, but not the command itself). |
-| Modify | `skills/sync/SKILL.md` | Add one row to the Step 8 report table for `.config/wt.toml`. Append a follow-up note in the Step 8 reminder list: "If `wt` is on PATH, run `wt config shell install` once to enable directory switching for `wt switch`." Add one note to Step 5's manifest-application paragraph mentioning that re-running `/sync` on an existing `.config/wt.toml` will only touch the `bootstrap-content-version` marker line (the body is project-owned). |
+| Modify | `scripts/check-requirements.sh` | Add a hard probe for `wt` on PATH in the hard-fail block alongside the existing `git` check (around L97-L100). Exits with status 2 when missing. No suppressible-ID entry — hard-fail probes do not participate in `BYTEWYRD_SKIP_WARN`. |
+| Modify | `.claude-plugin/scripts/templates/CLAUDE.md.tpl` | Add a new `## Workflow` section (currently absent — verified) with Session-start and Step-2 guidance using `wt switch -c`. The section is owned by the plugin and re-syncs via the existing `section` extension strategy. The plugin's bootstrap-manifest entry for `CLAUDE.md@v1` adds `## Workflow` to `owned_sections`. |
+| Modify | `.claude-plugin/scripts/templates/CONTRIBUTING.md.tpl` | Replace lines 28-32 (the raw `git worktree add` block) with the `wt switch -c <branch-name>` form. |
+| Modify | `.claude-plugin/scripts/templates/BEST_PRACTICES.md.tpl` | Append a one-line entry to the existing `## Workflow` section noting that the plugin uses worktrunk (`wt`) for worktree creation and that project-level hooks live in `.config/wt.toml`. |
+| Modify | `skills/git-branch-cleanup/SKILL.md` | Rewrite Step 1 (Gather State) to use `wt list --format=json` for enumeration. Rewrite Step 4 (Execute) to call `wt remove --yes <branch>` followed by `git push origin --delete <branch>` for remote-branch removal. Keep the classification table (Step 2) and plan presentation (Step 3) unchanged — those are tool-independent. No `command -v wt` probe at the top of the skill body: `wt` is guaranteed by the requirement-check hook. |
+| Modify | `CLAUDE.md` (plugin's own, repo root) | Replace lines 118-120 (Session-start workflow) with the `wt list` / `wt switch -c` form. |
+| Modify | `.claude-plugin/CLAUDE.md` | Replace L86 (`git worktree list`) with `wt list`. Replace L99 (`git log --oneline -5`) with the `wt list --full` form. Replace L126 (`Use the /worktrunk skill to create...`) with the explicit `wt switch -c <branch>` command. |
+| Modify | `skills/sync/SKILL.md` | Add one row to the Step 8 report table for `.config/wt.toml`. Append a follow-up note in the Step 8 reminder list: "Run `wt config shell install` once to enable directory switching for `wt switch`." Add one note to Step 5's manifest-application paragraph mentioning that re-running `/sync` on an existing `.config/wt.toml` will only touch the `bootstrap-content-version` marker line (the body is project-owned). |
 
 No files are deleted. The worktrunk CLI is not added to `mise.toml`; users install it via cargo / brew / their distribution package manager (Exa: `docs/content/_index.md` Install section lists Homebrew, Cargo, winget, pacman). The check-requirements probe surfaces the install hint when it's missing.
 
@@ -361,46 +370,35 @@ Manifest updated: 1 entry's hash recomputed.
 
 #### Step 3 — Add the worktrunk probe to `scripts/check-requirements.sh`
 
-Edit `scripts/check-requirements.sh`. Insert the following block immediately after the existing `gh` probe at L161 (current content: `if ! is_skipped "gh-cli" && ! command -v gh >/dev/null 2>&1; then warnings+=(...); fi`). The insertion goes between that closing `fi` and the `# --- Output ---` separator at L163.
+Edit `scripts/check-requirements.sh`. Insert the following block immediately after the existing `git` hard-fail probe at L97-L100 (current content: `if ! command -v git >/dev/null 2>&1; then echo "..." >&2; exit 2; fi`). The insertion goes between that closing `fi` and the next probe block.
 
 ```bash
-# Soft requirement: worktrunk on PATH (used by Bytewyrd worktree workflow).
-if ! is_skipped "worktrunk" && ! command -v wt >/dev/null 2>&1; then
-  warnings+=("[warn] worktrunk (wt) not on PATH. Fix: install worktrunk (https://worktrunk.dev/) and run 'wt config shell install' for cd integration. Bytewyrd worktree workflows fall back to raw 'git worktree' when wt is absent.")
+# Hard requirement: worktrunk on PATH (the Bytewyrd worktree workflow depends on it).
+if ! command -v wt >/dev/null 2>&1; then
+  echo "[error] worktrunk (wt) not on PATH." >&2
+  echo "  Fix: install worktrunk from https://worktrunk.dev/, then run 'wt config shell install' once for cd integration." >&2
+  exit 2
 fi
 ```
 
-Then update the suppressible-IDs line at L198. The current line reads (verbatim):
-
-```
-  echo "Suppressible IDs: github, context7, code-review, exa, firefox-devtools, gh-cli"
-```
-
-Replace with:
-
-```
-  echo "Suppressible IDs: github, context7, code-review, exa, firefox-devtools, gh-cli, worktrunk"
-```
+The suppressible-IDs line at L198 does not change — `worktrunk` is a hard-fail probe with no `BYTEWYRD_SKIP_WARN` entry, consistent with the `git` precedent.
 
 Verification — run the hook script directly with `wt` artificially removed from PATH:
 
 ```bash
-env -i PATH=/usr/bin:/bin HOME="$HOME" bash scripts/check-requirements.sh 2>&1 | grep -c 'worktrunk'
-```
-
-Expected output: a non-zero count (the new warning line appears at least once in either the system-message or the warning bundle). Run again with the suppression:
-
-```bash
-env -i PATH=/usr/bin:/bin HOME="$HOME" BYTEWYRD_SKIP_WARN=worktrunk bash scripts/check-requirements.sh 2>&1 | grep -c 'worktrunk not on PATH'
+env -i PATH=/usr/bin:/bin HOME="$HOME" bash scripts/check-requirements.sh
+echo "Exit code: $?"
 ```
 
 Expected output:
 
 ```
-0
+[error] worktrunk (wt) not on PATH.
+  Fix: install worktrunk from https://worktrunk.dev/, then run 'wt config shell install' once for cd integration.
+Exit code: 2
 ```
 
-(The warning is suppressed because `worktrunk` is in `BYTEWYRD_SKIP_WARN`.)
+With `wt` on PATH, the hook script exits 0 (assuming no other hard-fail or warning conditions are active).
 
 #### Step 4 — Add a `## Workflow` section to `CLAUDE.md.tpl`
 
@@ -411,7 +409,7 @@ Edit `.claude-plugin/scripts/templates/CLAUDE.md.tpl`. Insert a new H2 section b
 
 ### Session start
 
-1. Run `wt list` (or `git worktree list` if `wt` is not on PATH) and `git branch --show-current`. Surface active feature-branch worktrees and ask: resume or start new?
+1. Run `wt list` and `git branch --show-current`. Surface active feature-branch worktrees and ask: resume or start new?
 2. Run `git fetch --all` before creating branches or worktrees.
 
 ### Starting new work
@@ -419,16 +417,19 @@ Edit `.claude-plugin/scripts/templates/CLAUDE.md.tpl`. Insert a new H2 section b
 On `main` with new work, create an isolated worktree + branch:
 
 ```bash
-# Primary (when worktrunk is installed):
 wt switch -c <branch-name>
-
-# Fallback (raw git — sanitize branch name: replace / with -):
-SANITIZED=$(echo "<branch-name>" | tr '/' '-')
-git worktree add -b "<branch-name>" .worktrees/"$SANITIZED"
-cd .worktrees/"$SANITIZED"
 ```
 
-`wt switch -c` creates the branch from the default branch (`main`/`master`) and switches to the new worktree. The worktree path comes from `~/.config/worktrunk/config.toml`'s `worktree-path` template; the Bytewyrd convention is `{{ repo_path }}/.worktrees/{{ branch | sanitize }}` — where `sanitize` replaces `/` with `-` — so both forms produce the same on-disk layout. With `wt`, project-level hooks in `.config/wt.toml` (pre-start install, pre-merge lint/test) run automatically.
+`wt switch -c` creates the branch from the default branch (`main`/`master`) and switches to the new worktree. The worktree path comes from `~/.config/worktrunk/config.toml`'s `worktree-path` template; the Bytewyrd convention is `{{ repo_path }}/.worktrees/{{ branch | sanitize }}` — where `sanitize` replaces `/` with `-` — so the resulting path is `.worktrees/<sanitized-branch-name>`. Project-level hooks in `.config/wt.toml` (pre-start install, pre-merge lint/test) run automatically.
+
+### Pulling main into a feature branch
+
+To pick up new commits from `main` into the in-progress feature worktree (the only documented worktree operation that stays raw git — `wt merge` is feature-branch → default-branch direction only, with no inverse):
+
+```bash
+git fetch
+git merge origin/main
+```
 
 Each parallel agent needs its own worktree. Sub-agents share the parent worktree.
 
@@ -471,7 +472,7 @@ Expected output: only the existing placeholders (`<project_name>`, `<description
 
 #### Step 5 — Update `CONTRIBUTING.md.tpl`
 
-Edit `.claude-plugin/scripts/templates/CONTRIBUTING.md.tpl`. Replace the current lines 26-34 (the "Development Workflow" section with the raw `git worktree add` block) with the dual-form block below. The outer fences below use four backticks so the inner ```bash``` triple-backtick fences are preserved verbatim — the actual `.tpl` file uses standard three-backtick fences.
+Edit `.claude-plugin/scripts/templates/CONTRIBUTING.md.tpl`. Replace the current lines 26-34 (the "Development Workflow" section with the raw `git worktree add` block) with the `wt`-only block below. The outer fences below use four backticks so the inner ```bash``` triple-backtick fences are preserved verbatim — the actual `.tpl` file uses standard three-backtick fences.
 
 For reference, the current lines (verbatim per `Read`) are:
 
@@ -494,19 +495,20 @@ Replace with (verbatim):
 ````markdown
 ## Development Workflow
 
-All work happens on feature branches. The recommended tool is [worktrunk](https://worktrunk.dev/) (`wt`), which manages git worktrees for parallel tasks; the raw `git worktree` form is supported as a fallback.
+All work happens on feature branches. The plugin uses [worktrunk](https://worktrunk.dev/) (`wt`) to manage git worktrees for parallel tasks; `wt` is a baseline toolchain dependency (the plugin's `SessionStart` hook hard-fails when it is not on PATH).
 
 ```bash
-# Primary (when worktrunk is installed):
 wt switch -c <branch-name>
-
-# Fallback (raw git — sanitize branch name: replace / with -):
-SANITIZED=$(echo "<branch-name>" | tr '/' '-')
-git worktree add -b "<branch-name>" .worktrees/"$SANITIZED"
-cd .worktrees/"$SANITIZED"
 ```
 
-Both forms produce the same on-disk layout (`.worktrees/<sanitized-branch-name>`, where `/` in the branch name is replaced with `-`). With `wt`, project-level hooks in `.config/wt.toml` (pre-start install, pre-merge lint/test) run automatically; the file ships with commented-out examples and is empty by default.
+`wt switch -c` creates the branch from the default branch and switches to the new worktree at `.worktrees/<sanitized-branch-name>` (where `/` in the branch name is replaced with `-`, per the user's `~/.config/worktrunk/config.toml` `worktree-path` template). Project-level hooks in `.config/wt.toml` (pre-start install, pre-merge lint/test) run automatically; the file ships with commented-out examples and is empty by default.
+
+To pull new commits from `main` into an in-progress feature worktree, use raw git — `wt merge` is the feature-branch → default-branch direction only and has no inverse:
+
+```bash
+git fetch
+git merge origin/main
+```
 
 See `CLAUDE.md` for agent delegation guidance.
 ````
@@ -522,7 +524,7 @@ Re-run `.claude-plugin/scripts/build-manifest.sh` to recompute `bytewyrd/docs/CO
 Edit `.claude-plugin/scripts/templates/BEST_PRACTICES.md.tpl`. Find the existing `## Workflow` section's last bullet (line L36 is the existing `git fetch --all` entry — verified). Append one new bullet immediately after it:
 
 ```markdown
-- _Workflow_: Use `wt switch -c <branch>` (worktrunk) as the primary command for creating worktrees; raw `git worktree add -b <branch> .worktrees/<branch>` is the documented fallback when `wt` is not installed. Both forms produce the same `.worktrees/<sanitized-branch>` layout. Project-level hooks live in `.config/wt.toml` (created by `/sync` as an empty stub with commented examples).
+- _Workflow_: Use `wt switch -c <branch>` (worktrunk) to create worktrees. The worktree lands at `.worktrees/<sanitized-branch>` (the path comes from the user's `~/.config/worktrunk/config.toml` `worktree-path` template). Project-level hooks live in `.config/wt.toml` (created by `/sync` as an empty stub with commented examples). The only worktree operation that stays raw git is pulling main into a feature branch (`git fetch && git merge origin/main`) — `wt merge` is feature→main direction only.
 ```
 
 Re-run `.claude-plugin/scripts/build-manifest.sh`. Expected output line:
@@ -531,9 +533,9 @@ Re-run `.claude-plugin/scripts/build-manifest.sh`. Expected output line:
   - bytewyrd/docs/BEST_PRACTICES.md@v1 → template_sha: <new-sha256>
 ```
 
-#### Step 7 — Rewrite `skills/git-branch-cleanup/SKILL.md` for dual-path execution
+#### Step 7 — Rewrite `skills/git-branch-cleanup/SKILL.md` for `wt`-only execution
 
-The current skill body has four steps. The rewrite keeps the same four steps but adds a Step 0 (probe) and conditionalizes Step 1 (Gather State) and Step 4 (Execute) on the probe result. Step 2 (Classify Each Branch) and Step 3 (Present a Plan) stay unchanged — the classification table is tool-independent and the plan presentation is identical.
+The current skill body has four steps. The rewrite keeps the same four steps; Steps 1 and 4 are rewritten to use `wt list --format=json` + `wt remove --yes`. Step 2 (Classify Each Branch) and Step 3 (Present a Plan) stay unchanged. No `command -v wt` probe at the top of the skill body — `wt` is guaranteed by the requirement-check hook.
 
 Full replacement content (the entire SKILL.md after the YAML frontmatter and `# Git Branch Cleanup` heading; the outer fence below uses four backticks so the inner ```bash``` triple-backtick fences are preserved verbatim — the actual SKILL.md file uses standard three-backtick fences):
 
@@ -542,21 +544,13 @@ Full replacement content (the entire SKILL.md after the YAML frontmatter and `# 
 
 Systematically identify and remove stale branches across local, remote, and worktrees by combining git state with GitHub PR status. Always present a plan before deleting anything.
 
-The skill auto-detects whether [worktrunk](https://worktrunk.dev/) (`wt`) is on PATH and uses it when present (richer enumeration + automatic branch-merge detection + project hooks); when absent, it falls back to raw `git worktree` and explicit merge-checks.
+The skill uses [worktrunk](https://worktrunk.dev/) (`wt`) for enumeration and removal — `wt list --format=json` returns one structured table covering both worktrees and branches with integration state, and `wt remove --yes` handles the worktree + local-branch delete cascade with six built-in merge-detection heuristics. Worktrunk is a baseline plugin dependency; the requirement-check hook guarantees `wt` is on PATH when this skill runs.
 
 ## Steps
 
-### 0. Detect worktrunk
-
-```bash
-if command -v wt >/dev/null 2>&1; then HAS_WT=1; else HAS_WT=0; fi
-```
-
-Branches `HAS_WT=1` and `HAS_WT=0` differ only in Steps 1 and 4. Steps 2 and 3 are identical.
-
 ### 1. Gather State
 
-**When `HAS_WT=1`** — one call returns everything Step 2 needs to classify:
+One call returns everything Step 2 needs to classify:
 
 ```bash
 git fetch --prune
@@ -571,20 +565,9 @@ The output JSON is an array of entries with the fields documented at https://wor
 - `.remote` — `{ name, branch, ahead, behind }` or absent when no upstream
 - `.ci.status` — `"passed"`, `"running"`, `"failed"`, `"conflicts"`, `"no-ci"`, `"error"` (with `--full` only)
 
-Cross-check with GitHub PR status (the existing call — `wt list`'s CI status is informational; the PR-merged check is still authoritative for "should this be deleted"):
+Cross-check with GitHub PR status — `wt list`'s CI status is informational; the PR-merged check is still authoritative for "should this be deleted":
 
 ```bash
-gh pr list --state merged --limit 30 --json number,title,headRefName
-gh pr list --state open --json number,title,headRefName
-```
-
-**When `HAS_WT=0`** — the original commands:
-
-```bash
-git fetch --prune
-git branch -v        # local: [gone], untracked, current
-git worktree list    # active worktrees and their branches
-git branch -r        # remote tracking branches
 gh pr list --state merged --limit 30 --json number,title,headRefName
 gh pr list --state open --json number,title,headRefName
 ```
@@ -593,22 +576,16 @@ gh pr list --state open --json number,title,headRefName
 
 | Condition | Action |
 |-----------|--------|
-| Local branch with `[gone]` (or `.remote` absent + `.kind == "branch"`) | Delete local |
-| Local branch, no remote, PR is merged (or `.main_state == "integrated"` + `.kind == "branch"`) | Delete local |
+| Local branch with `.remote` absent + `.kind == "branch"` (formerly `[gone]`) | Delete local |
+| `.main_state == "integrated"` + `.kind == "branch"` (PR merged, no worktree) | Delete local |
 | Local branch, no remote, no PR | Delete local (confirm intent) |
-| Remote branch, PR merged, 0 commits ahead of main (or `.main_state == "integrated"` + `.remote.ahead == 0`) | Delete remote |
+| `.main_state == "integrated"` + `.remote.ahead == 0` (PR merged, 0 commits ahead of main) | Delete remote |
 | Remote branch, no local, no open PR, old | Delete remote |
-| Branch has worktree + branch is being deleted (`.kind == "worktree"`) | Remove worktree first |
+| `.kind == "worktree"` + branch is being deleted | `wt remove` handles the order automatically |
 | Branch has open PR | Keep |
-| `main` / default branch (`.main_state == "is_main"`) | Keep |
+| `.main_state == "is_main"` (default branch) | Keep |
 
-**Check if remote branch is merged (when `HAS_WT=0`):**
-```bash
-git log --oneline main..origin/branch-name | wc -l
-# 0 = fully merged into main
-```
-
-(When `HAS_WT=1`, `.main_state == "integrated"` collapses six fallback heuristics — same-commit, ancestor, no-added-changes, trees-match, merge-adds-nothing, patch-id-match — into one field. See https://worktrunk.dev/remove/#branch-cleanup for the heuristics' definitions.)
+For the "integrated" state, `wt` collapses six heuristics — same-commit, ancestor, no-added-changes, trees-match, merge-adds-nothing, patch-id-match — into one field. See https://worktrunk.dev/remove/#branch-cleanup for the heuristics' definitions.
 
 ### 3. Present a Plan
 
@@ -616,49 +593,31 @@ Before deleting anything, show a table:
 
 | Branch | Location | Reason |
 |--------|----------|--------|
-| `foo/bar` | local | [gone] — remote deleted |
+| `foo/bar` | local | remote absent — remote deleted |
 | `origin/old-feature` | remote | merged PR #12, 0 commits ahead of main |
 
 Ask for confirmation, then execute.
 
 ### 4. Execute
 
-**When `HAS_WT=1`** — one command does both the worktree-removal and the local-branch deletion (`wt remove --yes <branch>` skips the approval prompt for the hook commands; the branch is deleted automatically when the branch is integrated, per worktrunk's six-check default — see https://worktrunk.dev/remove/#branch-cleanup):
+One command does both the worktree-removal and the local-branch deletion (`wt remove --yes <branch>` skips the approval prompt for the hook commands; the branch is deleted automatically when the branch is integrated, per worktrunk's six-check default — see https://worktrunk.dev/remove/#branch-cleanup):
 
 ```bash
-# Remove worktree + delete local branch when merged (one call):
+# Remove worktree + delete local branch when integrated (one call):
 wt remove --yes "$branch"
 
-# Delete the branch even if not merged (override the merge-check):
+# Delete the branch even if not integrated (override the merge-check):
 wt remove --yes --force-delete "$branch"
 
 # Delete remote branch (no worktrunk equivalent):
 git push origin --delete "$branch"
 ```
 
-**When `HAS_WT=0`** — the original cascade:
-
-```bash
-# Remove worktree if branch has one
-worktree=$(git worktree list | grep "\[$branch\]" | awk '{print $1}')
-root=$(git rev-parse --show-toplevel)
-if [ ! -z "$worktree" ] && [ "$worktree" != "$root" ]; then
-  git worktree remove --force "$worktree"
-fi
-
-# Delete local branch
-git branch -D "$branch"
-
-# Delete remote branch
-git push origin --delete "$branch"
-```
-
 ## Common Mistakes
 
-- Deleting a branch with an open PR — always check open PR list first
-- Forgetting to remove the worktree before deleting the branch — `git` will error; `wt remove` handles the order automatically
-- Treating "no remote tracking" as definitely safe to delete — confirm with PR history
-- When `HAS_WT=1`, calling `wt remove` without `--yes` in a script context — `wt` will prompt for hook approval on the first run per project and hang waiting for stdin
+- Deleting a branch with an open PR — always check the open PR list first.
+- Calling `wt remove` without `--yes` in a script context — `wt` will prompt for hook approval on the first run per project and hang waiting for stdin.
+- Trusting `.main_state == "integrated"` alone for a remote branch deletion without cross-checking the PR state — a force-pushed branch can appear `integrated` if the diff was preserved while history was rewritten; the PR-merged check from `gh pr list` is the authoritative confirmation.
 ````
 
 Verification — the skill body parses cleanly as Markdown (no unclosed code fences):
@@ -686,19 +645,16 @@ Edit the plugin's own root `CLAUDE.md` (the file consumers see when browsing the
 With (verbatim):
 
 ```markdown
-1. Run `wt list` (or `git worktree list` if `wt` is not on PATH) and `git branch --show-current`. Surface active feature-branch worktrees and ask: resume or start new?
+1. Run `wt list` and `git branch --show-current`. Surface active feature-branch worktrees and ask: resume or start new?
 2. Run `git fetch --all` before creating branches or worktrees.
-3. On `main` with new work, create an isolated worktree + branch:
-   - Primary: `wt switch -c <branch-name>`
-   - Fallback (raw git — sanitize branch name: replace `/` with `-`): `SANITIZED=$(echo "<branch-name>" | tr '/' '-') && git worktree add -b "<branch-name>" .worktrees/"$SANITIZED" && cd .worktrees/"$SANITIZED"`
-
-Both forms produce the same `.worktrees/<sanitized-branch>` layout (where `/` in the branch name is replaced with `-`). When `wt` is present, project hooks in `.config/wt.toml` (pre-start, pre-merge) run automatically.
+3. On `main` with new work, create an isolated worktree + branch with `wt switch -c <branch-name>`. The worktree lands at `.worktrees/<sanitized-branch>` (where `/` in the branch name is replaced with `-`, per the user's `worktree-path` template). Project hooks in `.config/wt.toml` (pre-start, pre-merge) run automatically.
+4. To pull main into the feature worktree mid-development, use raw git (`wt merge` is feature→main direction only): `git fetch && git merge origin/main`.
 ```
 
 Edit `.claude-plugin/CLAUDE.md`. Replace line 86 (verbatim: `git worktree list`) with:
 
 ```
-wt list      # or: git worktree list (if wt is not installed)
+wt list
 ```
 
 Replace line 99 (verbatim: `- Summary of recent commits (`git log --oneline -5` in the worktree)`) with:
@@ -710,10 +666,7 @@ Replace line 99 (verbatim: `- Summary of recent commits (`git log --oneline -5` 
 Replace line 126 (verbatim: `2. Use the `/worktrunk` skill to create an isolated worktree + branch for this task.`) with:
 
 ```
-2. Create an isolated worktree + branch:
-   - Primary: `wt switch -c <branch-name>` — uses the user's `~/.config/worktrunk/config.toml` `worktree-path` template (Bytewyrd convention: `{{ repo_path }}/.worktrees/{{ branch | sanitize }}`, where `sanitize` replaces `/` with `-`)
-   - Fallback (raw git — sanitize branch name: replace `/` with `-`): `SANITIZED=$(echo "<branch-name>" | tr '/' '-') && git worktree add -b "<branch-name>" .worktrees/"$SANITIZED" && cd .worktrees/"$SANITIZED"`
-   - The `/worktrunk` skill (from the `worktrunk@worktrunk` Claude Code plugin) provides configuration guidance for hooks and templates — install it via `claude plugin install worktrunk@worktrunk` if you want in-session help, but the CLI `wt` is what the workflow depends on.
+2. Create an isolated worktree + branch with `wt switch -c <branch-name>` — the path comes from the user's `~/.config/worktrunk/config.toml` `worktree-path` template (Bytewyrd convention: `{{ repo_path }}/.worktrees/{{ branch | sanitize }}`, where `sanitize` replaces `/` with `-`). The `/worktrunk` skill (from the `worktrunk@worktrunk` Claude Code plugin) provides configuration guidance for hooks and templates — install it via `claude plugin install worktrunk@worktrunk` if you want in-session help, but the CLI `wt` is what the workflow depends on.
 ```
 
 Verification — the file is well-formed Markdown:
@@ -743,7 +696,7 @@ Edit `skills/sync/SKILL.md`. Three additions:
 (b) Step 8 follow-up reminder list — at the very end of the file (the bullet list of follow-up tasks per `skills/sync/SKILL.md:L753-L755`), append one new bullet:
 
 ```markdown
-- If `wt` (worktrunk) is on PATH, run `wt config shell install` once to enable directory switching for `wt switch`. The `.config/wt.toml` file ships empty by default; uncomment example hooks in the file to enable pre-start install or pre-merge lint/test gates.
+- Run `wt config shell install` once to enable directory switching for `wt switch` (one-time per shell-rc). The `.config/wt.toml` file ships empty by default; uncomment example hooks in the file to enable pre-start install or pre-merge lint/test gates.
 ```
 
 (c) Step 5 — locate the existing `Non-manifest items` section (verified: line 458) and within it the existing two `### .worktrees/` headings (verified: lines 460, 484). The new `.config/wt.toml` is a *manifest* item, so it does not need a section under Non-manifest items — it is handled by the existing manifest-driven flow at the start of Step 5. However, the new artifact's empty body and `owned_paths: []` are unusual enough to warrant a brief note. Append a paragraph to the existing "Template-based artifact rendering" section (verified: line ~540), in the table of templates (verified: line 544 onwards), adding one row:
@@ -782,33 +735,33 @@ Re-running `/sync` after the manifest is in sync produces no fast-forward update
 
 After implementing, run these checks. Each maps to a decision in the analysis.
 
-1. **`wt`-present-then-absent symmetry on `git-branch-cleanup`**. With `wt` on PATH, run `/git-branch-cleanup`. Verify Step 1 prints `wt list --format=json` output (the JSON array). Then remove `wt` from PATH (`PATH=$(echo $PATH | sed 's|:/usr/bin||g')` if needed — exact path manipulation depends on where `wt` lives) and re-run. Verify Step 1 prints `git worktree list` output (text table). The classification table (Step 2) and plan presentation (Step 3) are identical in both modes; the executable commands in Step 4 differ.
+1. **`git-branch-cleanup` Step 1 calls `wt list --format=json`**. With `wt` on PATH, run `/git-branch-cleanup` against a repo with one merged branch (no worktree), one stale local branch (`[gone]` upstream), and one active branch with an open PR. Verify Step 1's output is the JSON array from `wt list --format=json --branches --remotes`. Verify the classification table in Step 2 correctly identifies each branch's state from the `.main_state`, `.kind`, and `.remote` fields.
 
 2. **`/sync` creates `.config/wt.toml` on a fresh consumer project**. In a fresh repo (no `.config/` directory present), run `/sync`. Verify `.config/wt.toml` is created with the marker on line 1 and the commented-out hook examples in the body. Re-run `/sync` immediately. Verify the file is reported as `unchanged` in the Step 8 report and the file is not rewritten (`md5sum .config/wt.toml` matches across the two runs).
 
 3. **`/sync` does not stomp on project-owned hooks**. In a fresh repo, run `/sync`. Edit `.config/wt.toml` to add `[pre-merge]\ntest = "cargo test"`. Re-run `/sync`. Verify the file is reported as `local-only edit preserved` (the plugin owns no `owned_paths` so the user edit is preserved). Verify the `[pre-merge]` block is still in the file. Verify the marker line is unchanged (no marker bump, since the plugin's content did not change).
 
-4. **`check-requirements.sh` warns when `wt` is missing**. With `wt` not on PATH (`env -i PATH=/usr/bin:/bin HOME=$HOME bash scripts/check-requirements.sh 2>&1`), verify the output contains a line matching `\[warn\] worktrunk \(wt\) not on PATH`. With `BYTEWYRD_SKIP_WARN=worktrunk` set, verify the same line does *not* appear (`env -i PATH=/usr/bin:/bin HOME=$HOME BYTEWYRD_SKIP_WARN=worktrunk bash scripts/check-requirements.sh 2>&1 | grep -c 'worktrunk (wt) not on PATH'` returns `0`).
+4. **`check-requirements.sh` hard-fails when `wt` is missing**. With `wt` not on PATH, run `env -i PATH=/usr/bin:/bin HOME=$HOME bash scripts/check-requirements.sh; echo "Exit: $?"`. Verify the output contains a line matching `\[error\] worktrunk \(wt\) not on PATH` on stderr and the exit code is `2`. With `wt` back on PATH, verify the same script exits `0` and produces no `worktrunk`-related output.
 
-5. **`check-requirements.sh` is silent when `wt` is present**. With `wt` on PATH and no other warnings active (run in a known-clean environment where Exa, Firefox MCP, and `gh` are all configured), verify `bash scripts/check-requirements.sh` exits 0 with no stderr output. (If unrelated warnings are present, verify only that no `worktrunk` warning appears.)
+5. **`check-requirements.sh` runs cleanly when `wt` is present**. With `wt` on PATH and no other hard-fail conditions active (run in a known-clean environment where `git` is also present), verify `bash scripts/check-requirements.sh; echo "Exit: $?"` exits `0`. (Soft-warning conditions like missing `gh` or unconfigured Exa may still produce stderr lines but do not affect the exit code.)
 
-6. **Re-running `/sync` after editing a template advances the manifest**. Edit `.claude-plugin/scripts/templates/wt.toml.tpl` (e.g., add a blank comment line at the bottom). Run `.claude-plugin/scripts/build-manifest.sh`. Verify the `bytewyrd/.config/wt.toml@v1` entry's `template_sha` value changes. Run `/sync` in a fresh consumer project. Verify the file is created with the new content. Run `/sync` in an existing consumer project that already has `.config/wt.toml` from a prior version. Verify the file is reported as `fast_forward` and the new comment line is added; no project-owned content is lost.
+6. **Re-running `/sync` after editing a template advances the manifest**. Edit `.claude-plugin/scripts/templates/wt.toml.tpl` (e.g., add a blank comment line at the bottom). Run `.claude-plugin/scripts/build-manifest.sh`. Verify the `bytewyrd/.config/wt.toml@v1` entry's `sha256` value changes. Run `/sync` in a fresh consumer project. Verify the file is created with the new content. Run `/sync` in an existing consumer project that already has `.config/wt.toml` from a prior version. Verify the file is reported as `fast_forward` and the new comment line is added; no project-owned content is lost.
 
 7. **Pre-commit manifest hook blocks stale-manifest commits**. Edit any template (`wt.toml.tpl`, `CLAUDE.md.tpl`, `CONTRIBUTING.md.tpl`, or `BEST_PRACTICES.md.tpl`) without running `build-manifest.sh`. Attempt `git commit -m "test"`. Verify the commit is rejected with the manifest-check error (per `.claude-plugin/CLAUDE.md` L201-L203 — verified). Run `.claude-plugin/scripts/build-manifest.sh` and retry the commit. Verify the commit succeeds.
 
-8. **`CLAUDE.md.tpl`'s `## Workflow` section renders correctly**. Manually run the template rendering for a fresh project: simulate `/sync` Step 4 on a hypothetical project with name `Sample` and one detected language (Rust). Verify the rendered `CLAUDE.md` contains a `## Workflow` heading with the dual-form `wt switch -c` / `git worktree add` block, and the section is placed between `## Tool Usage` and `## RFC Process`.
+8. **`CLAUDE.md.tpl`'s `## Workflow` section renders correctly**. Manually run the template rendering for a fresh project: simulate `/sync` Step 4 on a hypothetical project with name `Sample` and one detected language (Rust). Verify the rendered `CLAUDE.md` contains a `## Workflow` heading with the single-form `wt switch -c <branch-name>` block (no fallback column or alternative form), and the section is placed between `## Tool Usage` and `## RFC Process`. Verify the `Pulling main into a feature branch` subsection documents `git fetch && git merge origin/main` as the only documented worktree operation that stays raw git.
 
 9. **The empty-stub `wt.toml` does not trigger worktrunk's approval prompt**. With `wt` on PATH and a fresh consumer project's `.config/wt.toml` (the empty-stub from `/sync`), run `wt switch -c test/foo` from the project root. Verify no approval prompt appears (the file has no active hooks; worktrunk's prompt only fires when project hooks are configured per Exa: `docs/content/hook.md` "Security" section). Verify the worktree is created at `<repo_root>/.worktrees/test-foo` (the path matches the user's `worktree-path` template). Clean up with `wt remove --yes test/foo`.
 
-10. **Documented fallback commands produce the same on-disk result**. In a sample repo, run `wt switch -c test/a`. Note the worktree path (`<repo>/.worktrees/test-a`). Remove with `wt remove --yes test/a`. Run the fallback: `git worktree add -b test/a .worktrees/test-a && cd .worktrees/test-a`. Verify the worktree path is the same, the branch was created from `main`, and the working directory after the `cd` is identical. (The fallback produces the same end state; the difference is the absence of `wt`-managed hook execution and the path-template lookup.)
+10. **`wt switch -c` lands at the expected `.worktrees/<sanitized-branch>` path**. In a sample repo with the user's `~/.config/worktrunk/config.toml` `worktree-path = "{{ repo_path }}/.worktrees/{{ branch | sanitize }}"` (the Bytewyrd convention), run `wt switch -c test/a`. Verify the worktree path is `<repo>/.worktrees/test-a` (`/` in the branch name is replaced with `-`). Verify the branch was created from `main` (or the configured default branch). Clean up with `wt remove --yes test/a`.
 
-11. **`git-branch-cleanup` produces identical classification output across modes**. On a sample repo with three branches (one merged into main, one with an open PR, one with no remote), run `/git-branch-cleanup` with `wt` present and again with `wt` absent. Verify the Step 3 plan table is byte-for-byte identical between the two runs. (The classification table is tool-independent; if the outputs differ, Step 2's mapping table in the SKILL.md has a bug.)
+11. **`.config/wt.toml` re-sync does not lose the marker even after the plugin updates the marker schema**. The marker is `# bootstrap-content-version: bytewyrd/.config/wt.toml@v1:<sha12>` on line 1. If a future plugin update bumps to `@v2`, the legacy `@v1` marker should be classified as `conflict_legacy` by `/sync` Step 4 and the user offered the standard "Adopt plugin and add marker" resolution (per `skills/sync/SKILL.md:L411` — verified). Verify this manually by editing the marker on line 1 to `@v0` (a fake older version) and re-running `/sync`; verify the legacy-marker conflict path runs.
 
-12. **`.config/wt.toml` re-sync does not lose the marker even after the plugin updates the marker schema**. The marker is `# bootstrap-content-version: bytewyrd/.config/wt.toml@v1:<sha12>` on line 1. If a future plugin update bumps to `@v2`, the legacy `@v1` marker should be classified as `conflict_legacy` by `/sync` Step 4 and the user offered the standard "Adopt plugin and add marker" resolution (per `skills/sync/SKILL.md:L411` — verified). Verify this manually by editing the marker on line 1 to `@v0` (a fake older version) and re-running `/sync`; verify the legacy-marker conflict path runs.
+12. **The plugin's own `CLAUDE.md` and `.claude-plugin/CLAUDE.md` no longer recommend `git worktree add`**. Run `grep -rn 'git worktree add' CLAUDE.md .claude-plugin/CLAUDE.md`. Verify the command does not appear in either file as a recommended worktree-creation form. The only acceptable surviving mention is inside a verbatim "current content" quotation in this RFC's Implementation Spec text, which is not under those filenames.
 
-13. **The plugin's own `CLAUDE.md` and `.claude-plugin/CLAUDE.md` no longer reference `git worktree add` as a primary command**. Run `grep -rn 'git worktree add' CLAUDE.md .claude-plugin/CLAUDE.md`. Verify every match has the word "fallback" or "git worktree add -b" appears only inside a fallback context (i.e., after the primary `wt switch -c` recommendation). Manual inspection confirms no primary-recommended `git worktree add` remains.
+13. **`git merge origin/main` is the only raw-git command documented in the worktree workflow**. Run `grep -rn 'git worktree\|git merge origin' CLAUDE.md .claude-plugin/CLAUDE.md docs/CONTRIBUTING.md.tpl .claude-plugin/scripts/templates/CLAUDE.md.tpl .claude-plugin/scripts/templates/CONTRIBUTING.md.tpl skills/git-branch-cleanup/SKILL.md 2>/dev/null`. Verify every `git worktree` match is either a verbatim quotation of pre-RFC content for context (no recommended form remains) or absent. Verify `git merge origin/main` appears in `CLAUDE.md.tpl` and the plugin's own `CLAUDE.md` as the documented form for the "pull main into feature branch" operation.
 
-If any verification step fails, the failure points to one of: (a) the template edit produced malformed Markdown / TOML (Steps 1 / 4 / 5 / 6 — fixed by re-reading the file and correcting), (b) the manifest entry has the wrong `extension_strategy` or `owned_paths` (Step 2 — fixed by re-running `build-manifest.sh` and inspecting), (c) the probe in `check-requirements.sh` is shadowed by an earlier `exit 2` or a `case` short-circuit (Step 3 — fixed by inspecting the script around L97-L161), (d) the skill body's conditional execution accidentally always picks one branch (Step 7 — fixed by tracing the `HAS_WT` assignment), or (e) the plugin's own files were missed during the dogfood edit (Step 8 — fixed by re-grepping for `git worktree add` and confirming all primary callsites use `wt`).
+If any verification step fails, the failure points to one of: (a) the template edit produced malformed Markdown / TOML (Steps 1 / 4 / 5 / 6 — fixed by re-reading the file and correcting), (b) the manifest entry has the wrong `extension_strategy` or `owned_paths` (Step 2 — fixed by re-running `build-manifest.sh` and inspecting), (c) the probe in `check-requirements.sh` is shadowed by an earlier `exit 2` (Step 3 — fixed by inspecting the script around L97-L100 where the new probe sits next to the `git` probe), (d) the skill body's commands still reference raw `git worktree` (Step 7 — fixed by re-reading the skill and confirming every `git worktree` mention was replaced), or (e) the plugin's own files were missed during the dogfood edit (Step 8 — fixed by re-grepping for `git worktree add` and confirming all callsites use `wt switch -c`).
 
 ## Risks and open questions
 
@@ -824,7 +777,7 @@ If any verification step fails, the failure points to one of: (a) the template e
 
 - **Open question: Should `/sync` write per-language `pre-start` install hooks?** Decision 3 rejected this for the v1 stub. The follow-up question: after some real usage, will every consumer project's `.config/wt.toml` end up with the same one-line `pre-start.install = "..."`? If yes, the v2 stub could pre-populate per the detected language. **Resolution within this RFC:** capture as a follow-up; the empty-stub ships first; usage patterns inform the v2 update.
 
-- **Open question: Should `/git-branch-cleanup` be renamed to `/branch-cleanup` (dropping the `git-` prefix) since it now handles both `git`- and `wt`-driven cleanup?** The current name says "git" but the skill's primary path is `wt`. **Resolution within this RFC:** keep the name; renaming is a separate concern (it would break user aliases and require a CHANGELOG note, and is unrelated to the worktrunk integration). A future RFC can rename if the convention shifts.
+- **Open question: Should `/git-branch-cleanup` be renamed to `/branch-cleanup` (dropping the `git-` prefix) since its sole execution path is now `wt`-driven?** The current name says "git" but the skill body is `wt`-only. **Resolution within this RFC:** keep the name; renaming is a separate concern (it would break user aliases and require a CHANGELOG note, and is unrelated to the worktrunk integration). A future RFC can rename if the convention shifts.
 
 - **Open question: Should the plugin ship a `wt`-aware variant of `/rfc-implement` that creates the implementation worktree with `wt switch -c <implementation-branch> -x claude -- '<rfc-task-prompt>'` in a single command?** This is the most powerful pattern worktrunk enables (Exa: `docs/content/tips-patterns.md` "Alias for new worktree + agent" section). **Resolution within this RFC:** out of scope. The pattern is documented in `CLAUDE.md.tpl` and `CONTRIBUTING.md.tpl` for the human to use; the skill-level automation is a separate RFC.
 
@@ -834,16 +787,16 @@ If any verification step fails, the failure points to one of: (a) the template e
 
 ## Relationship to other RFCs
 
-- **`2026-05-12-user-scope-plugin-installation`** (status: `Done`) — established `scripts/check-requirements.sh` as the single hook that warns about missing requirements once per session, with the `BYTEWYRD_SKIP_WARN=<id>` opt-out. This RFC extends that file with one new probe (`worktrunk`) and one new suppressible ID. The structural pattern is identical; no new mechanism is introduced.
+- **`2026-05-12-user-scope-plugin-installation`** (status: `Done`) — established `scripts/check-requirements.sh` as the single hook that runs on `SessionStart`. The hook has two probe classes: hard-fail probes (no suppression, exit 2 on miss — currently only `git`) and soft-warning probes (suppressible via `BYTEWYRD_SKIP_WARN=<id>`, exit 0 with stderr message — currently `github`, `context7`, `code-review`, `exa`, `firefox-devtools`, `gh-cli`). This RFC extends the hard-fail class with one new probe (`wt`), matching the `git` precedent.
 
 - **`2026-05-14-sync-per-file-extension-strategies`** (status: `Done`) — defined the `structured` / `section` / `region` / `whole` extension strategies that the manifest uses. This RFC uses `structured` with empty `owned_paths` for `.config/wt.toml` — a configuration the strategy supports today (per the existing `mise.toml` entry's `owned_paths: ["tools[]:union"]` pattern, verified: bootstrap-manifest.json:L193-L196, with `tools` being a *single* owned path; the new entry having `owned_paths: []` is the limit case). The Step 5 / Step 7 logic in `skills/sync/SKILL.md` handles empty `owned_paths` correctly because the `structured` strategy iterates over `owned_paths` — an empty list iterates zero times, leaving the entire file body intact.
 
 - **`2026-05-12-sync-enforce-github-branch-auto-delete`** (status: `Approved`) — adds the `/github-verify` skill that `/sync` Step 6 calls. This RFC's worktrunk integration does not touch Step 6; the two RFCs are independent and merge cleanly. They share the pattern of "use the GitHub remote / a CLI tool to enforce a convention" but operate on different tools (`gh` vs. `wt`).
 
-- **`commit-commands:clean_gone` skill** (from the companion `commit-commands` plugin) — removes branches marked `[gone]` and their worktrees. This skill is independent of `git-branch-cleanup` (which lives in this plugin). This RFC's dual-path `git-branch-cleanup` does not affect `clean_gone`; both can run side-by-side. The two skills could converge in a future RFC if their classifications diverge in practice, but they are conceptually different (`clean_gone` is single-shot per-branch; `git-branch-cleanup` is plan-and-batch).
+- **`commit-commands:clean_gone` skill** (from the companion `commit-commands` plugin) — removes branches marked `[gone]` and their worktrees. This skill is independent of `git-branch-cleanup` (which lives in this plugin). This RFC's `wt`-only rewrite of `git-branch-cleanup` does not affect `clean_gone`; both can run side-by-side. The two skills could converge in a future RFC if their classifications diverge in practice, but they are conceptually different (`clean_gone` is single-shot per-branch; `git-branch-cleanup` is plan-and-batch).
 
-- **Future RFC — `wt`-aware `/rfc-implement`** (Open question above) — would have `/rfc-implement` spawn the `feature-engineer` agent in a fresh worktree created via `wt switch -c <impl-branch> -x claude -- '<rfc-content>'`. The pattern is documented in this RFC's `CLAUDE.md.tpl` but not yet automated. The future RFC would be a thin layer on top of this one: a check that `wt` is available, a `wt switch -c -x` invocation, and a fallback to the existing in-process agent spawn when `wt` is absent.
+- **Future RFC — `wt`-aware `/rfc-implement`** (Open question above) — would have `/rfc-implement` spawn the `feature-engineer` agent in a fresh worktree created via `wt switch -c <impl-branch> -x claude -- '<rfc-content>'`. The pattern is documented in this RFC's `CLAUDE.md.tpl` but not yet automated. With `wt` already a hard dependency (per Decision 1), the future RFC is a single-path implementation: one `wt switch -c -x` invocation and an explicit failure if `wt` is somehow absent (which should be impossible given the requirement-check hook). No fallback path needed.
 
-- **Future RFC — minimum worktrunk version enforcement** (Open question above) — would extend the requirement-check probe to assert `wt --version` returns at least some pinned floor (e.g., `0.49`). The infrastructure exists in `check-requirements.sh` (the warning mechanism); the version-comparison logic is small but adds complexity. Captured as a follow-up.
+- **Future RFC — minimum worktrunk version enforcement** (Open question above) — would extend the hard-fail probe to assert `wt --version` returns at least some pinned floor (e.g., `0.49`). The infrastructure exists in `check-requirements.sh` (the hard-fail mechanism); the version-comparison logic is small but adds complexity. Captured as a follow-up.
 
 - **Future RFC — Worktrunk Claude Code plugin (`worktrunk@worktrunk`) as a recommended companion** (Open question above) — would add `worktrunk@worktrunk` to the recommended-plugins list in `check-requirements.sh` (alongside `github`, `context7`, `code-review`). The activity-tracking benefit (🤖/💬 markers in `wt list`) is valuable for users running multiple parallel agents but adds noise for users who just want the CLI. This RFC takes the conservative path; a future RFC can promote the plugin.
