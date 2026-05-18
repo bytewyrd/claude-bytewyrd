@@ -40,6 +40,6 @@ The full surface of the plugin. Skills and agents, the data behind them.
 
 ### Contributing to the plugin
 
-If you want to work on the plugin itself — propose changes, add skills, modify agents — start with [contributing.md](contributing.md). It covers plugin anatomy, conventions, and the extension points you'll touch most often, including how to add a new skill (`how-to/add-a-skill.md`) and how to add a new agent (`how-to/add-an-agent.md`).
+If you want to work on the plugin itself — propose changes, add skills, modify agents — start with [contributing.md](contributing.md). It covers plugin anatomy, conventions, and the extension points you'll touch most often, including how to [add a new skill](contributing/add-a-skill.md) and how to [add a new agent](contributing/add-an-agent.md).
 
 For the narrow dev-workflow ops (clone, install locally, commit conventions, quality gate), see [`docs/CONTRIBUTING.md`](../CONTRIBUTING.md) — `contributing.md` here cross-links to it rather than duplicating.
