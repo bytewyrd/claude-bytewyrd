@@ -47,6 +47,17 @@ A second `SessionStart` hook checks whether a `feature-engineer` agent finished 
 
 Fires whenever a `bytewyrd:feature-engineer` subagent finishes. Prints a reminder to run `/docs-review` if the implemented feature affects user-visible behavior. Also creates a sentinel file (`.bytewyrd/last-feature-engineer-stop`) that the compact `SessionStart` hook reads.
 
+**Plugin-checkout hooks (project-local)**
+
+This repository's own checkout registers additional hooks in `.claude/settings.json` that are not distributed to consumer projects:
+
+- **`PreCompact`** — blocks context compaction until `/best-practices-extract` runs this session (see [the best-practices lifecycle](#the-best-practices-lifecycle) below)
+- **`Stop`** — prints a session-end documentation checklist when Claude Code stops
+- **`PostToolUse`** — reminds you to check `docs/guide/**` for drift after a `git commit` or GitHub file push
+- **`SessionStart`** (two additional) — bootstrap version check (notices when `docs/BEST_PRACTICES.md` is behind the plugin's sync content) and precompact sentinel reset (re-arms the PreCompact gate for each new session)
+
+These hooks fire only in sessions run inside this plugin checkout. Consumer projects do not receive them.
+
 For full hook details, see [Hooks reference](reference/hooks.md).
 
 ---
