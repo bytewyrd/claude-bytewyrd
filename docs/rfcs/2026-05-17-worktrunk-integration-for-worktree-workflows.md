@@ -99,7 +99,9 @@ The plugin executes / documents eight distinct worktree-related operations today
 
 **(c) Creating a worktree and launching Claude with a task** — not currently scripted; new capability. `wt switch -c <branch> -x claude -- '<task>'` is the worktrunk pattern (Exa: `docs/content/switch.md`). The plugin's `/rfc-implement` skill could, in a future iteration, use this to dispatch a `feature-engineer` agent in a fresh worktree — out of scope for this RFC (just documented).
 
-**(d) Removing a worktree** — `git worktree remove --force <path>` (today, in `git-branch-cleanup`). **Switch to `wt remove <branch>`**. `wt remove` runs `pre-remove` and `post-remove` hooks (Exa: `docs/content/remove.md` "Hooks" section) and conditionally deletes the branch if it is merged.
+**(d) Removing a worktree** — `git worktree remove --force <path>` (today, in `git-branch-cleanup`). **Switch to `wt remove <branch>`**. `wt remove` runs `pre-remove` and `post-remove` hooks (Exa: `docs/content/remove.md` "Hooks" section) and conditionally deletes the branch if it is merged. The plugin's `git-branch-cleanup` skill invokes `wt remove --yes <branch>` non-interactively; the `--yes` flag bypasses the first-run hook approval prompt (Exa: `docs/content/hook.md` "Security" section) and `wt remove` only deletes the local branch when its six built-in heuristics agree the branch is integrated into main.
+
+**Note on `wt merge`** — `wt merge` is the worktrunk command for merging a feature branch into the default branch. This RFC adds `.config/wt.toml` (which `wt merge` would consult for `pre-merge` and `post-merge` hooks) but does *not* prescribe `wt merge` as the plugin's standard merge path; merges in Bytewyrd projects happen via GitHub PRs (a workflow `wt merge` does not currently model end-to-end). Documenting the file is independent of documenting the command: the file is also consulted by `wt switch -c` (`pre-switch`, `pre-start`) and `wt remove` (`pre-remove`), both of which the plugin *does* prescribe. Developers who want to use `wt merge` locally (e.g., for solo-author projects without PRs) can do so; the `.config/wt.toml` is ready for it, but the plugin's documented PR-driven workflow still applies.
 
 **(e) Determining whether a branch is merged into main** — `git log --oneline main..origin/branch-name | wc -l` (today, in `git-branch-cleanup:L46-L48`). `wt remove` does this check internally with six heuristics (same-commit, ancestor, no-added-changes, trees-match, merge-adds-nothing, patch-id-match — Exa: `docs/content/remove.md` "Branch cleanup" section), which is strictly more thorough than the single-check `git log` form. **Switch to delegating the merge-detection to `wt remove`** (i.e., the skill calls `wt remove` and trusts it to skip the branch deletion when not merged).
 
@@ -107,7 +109,7 @@ The plugin executes / documents eight distinct worktree-related operations today
 
 **(g) Fetching from remote before any branch / worktree work** — `git fetch --all` (today, in `BEST_PRACTICES.md.tpl:L36`). `wt` does not provide a `git fetch` wrapper. **Keep `git fetch --all`** — the operation has no worktrunk equivalent.
 
-**(h) Pulling main into a feature branch (sync-with-main mid-development)** — `git merge origin/main` from inside the feature worktree. `wt merge` operates only in the feature-branch → default-branch direction (rebase, squash, fast-forward into main, with hooks + worktree removal — Exa: `docs/content/merge.md`); it has no inverse for pulling default into feature. **Keep raw `git merge origin/main`** when the developer wants to pick up new commits from `main` into the in-progress feature worktree. Following the global guidance in `~/.claude/CLAUDE.md` ("Git: merge over rebase, no squash, confirm shared-branch rebase"), the preferred form is `git fetch && git merge origin/main` — not `git rebase`. This is the only documented operation that stays raw git despite having a `wt`-named neighbor.
+**(h) Pulling main into a feature branch (sync-with-main mid-development)** — `git merge origin/main` from inside the feature worktree. `wt merge` operates only in the feature-branch → default-branch direction (rebase, squash, fast-forward into main, with hooks + worktree removal — Exa: `docs/content/merge.md`); it has no inverse for pulling default into feature. **Keep raw `git merge origin/main`** when the developer wants to pick up new commits from `main` into the in-progress feature worktree. The Bytewyrd convention is `git fetch && git merge origin/main` — explicit merge over `git rebase`, no squash, so a contributor can always tell where a feature branch diverged. This is the only documented operation that stays raw git despite having a `wt`-named neighbor.
 
 The decision matrix:
 
@@ -600,16 +602,23 @@ Ask for confirmation, then execute.
 
 ### 4. Execute
 
-One command does both the worktree-removal and the local-branch deletion (`wt remove --yes <branch>` skips the approval prompt for the hook commands; the branch is deleted automatically when the branch is integrated, per worktrunk's six-check default — see https://worktrunk.dev/remove/#branch-cleanup):
+`wt remove --yes <branch>` operates on local state — it removes the worktree (if any) and deletes the local branch (when integrated, per worktrunk's six-check default — see https://worktrunk.dev/remove/#branch-cleanup). The `--yes` flag skips the first-run hook approval prompt. For a remote-only branch (no local branch, no worktree — appears as a remote in `wt list --format=json --remotes`), skip `wt remove` and call only `git push origin --delete` because there is nothing local for `wt remove` to act on.
 
 ```bash
-# Remove worktree + delete local branch when integrated (one call):
+# Case 1 — branch exists locally (with or without a worktree):
+# Remove worktree (if any) + delete local branch when integrated (one call):
 wt remove --yes "$branch"
 
-# Delete the branch even if not integrated (override the merge-check):
+# Case 1b — local branch exists but is not yet integrated, and the user
+# explicitly confirmed force-delete:
 wt remove --yes --force-delete "$branch"
 
-# Delete remote branch (no worktrunk equivalent):
+# Case 2 — remote-only branch (no local, classified as "Delete remote" in Step 2):
+# Skip wt remove; the remote operation has no worktrunk equivalent.
+git push origin --delete "$branch"
+
+# Case 3 — branch existed both locally and remotely, both should go:
+wt remove --yes "$branch"
 git push origin --delete "$branch"
 ```
 
@@ -727,7 +736,7 @@ After all steps land, run `/sync` from the plugin's own repo root. Because the p
 
 - `.config/wt.toml` does not exist today (verified) → `/sync` classifies it as `add` and writes the empty-stub content. Report row: `added`.
 - The plugin's `CLAUDE.md` and `.claude-plugin/CLAUDE.md` are not synced via `/sync` (they live in the plugin repo, not in a consumer project) — they were edited directly in Step 8.
-- The new `wt.toml.tpl`, the `BEST_PRACTICES.md.tpl` addition, the `CONTRIBUTING.md.tpl` rewrite, and the `CLAUDE.md.tpl` workflow section are all template-source edits that produce new SHAs in the manifest. The pre-commit hook (`manifest-check.sh`) blocks the commit if the manifest is stale (verified: `.claude-plugin/CLAUDE.md` Architecture section L191-L203). So Step 2's manual `build-manifest.sh` invocation is the moment the manifest is brought in line with the template edits; without that, the commit will fail.
+- The new `wt.toml.tpl`, the `BEST_PRACTICES.md.tpl` addition, the `CONTRIBUTING.md.tpl` rewrite, the `CLAUDE.md.tpl` workflow section, and the new `bootstrap-manifest.json` entry (plus the `owned_sections` update for `CLAUDE.md@v1`) are all template-source / manifest edits that produce new SHAs in the manifest. The pre-commit hook (`manifest-check.sh`) blocks the commit if the manifest is stale (verified: `.claude-plugin/CLAUDE.md` Architecture section L191-L203). So Step 2's and Step 4's manual `build-manifest.sh` invocations are the moments the manifest is brought in line with the template edits; without those, the commit will fail.
 
 Re-running `/sync` after the manifest is in sync produces no fast-forward updates (the plugin's own `.config/wt.toml` was added on first run; on second run it is `unchanged` because the marker matches).
 
@@ -759,7 +768,7 @@ After implementing, run these checks. Each maps to a decision in the analysis.
 
 12. **The plugin's own `CLAUDE.md` and `.claude-plugin/CLAUDE.md` no longer recommend `git worktree add`**. Run `grep -rn 'git worktree add' CLAUDE.md .claude-plugin/CLAUDE.md`. Verify the command does not appear in either file as a recommended worktree-creation form. The only acceptable surviving mention is inside a verbatim "current content" quotation in this RFC's Implementation Spec text, which is not under those filenames.
 
-13. **`git merge origin/main` is the only raw-git command documented in the worktree workflow**. Run `grep -rn 'git worktree\|git merge origin' CLAUDE.md .claude-plugin/CLAUDE.md docs/CONTRIBUTING.md.tpl .claude-plugin/scripts/templates/CLAUDE.md.tpl .claude-plugin/scripts/templates/CONTRIBUTING.md.tpl skills/git-branch-cleanup/SKILL.md 2>/dev/null`. Verify every `git worktree` match is either a verbatim quotation of pre-RFC content for context (no recommended form remains) or absent. Verify `git merge origin/main` appears in `CLAUDE.md.tpl` and the plugin's own `CLAUDE.md` as the documented form for the "pull main into feature branch" operation.
+13. **`git merge origin/main` is the only raw-git command documented in the worktree workflow**. Run `grep -rn 'git worktree\|git merge origin' CLAUDE.md .claude-plugin/CLAUDE.md .claude-plugin/scripts/templates/CLAUDE.md.tpl .claude-plugin/scripts/templates/CONTRIBUTING.md.tpl .claude-plugin/scripts/templates/BEST_PRACTICES.md.tpl skills/git-branch-cleanup/SKILL.md 2>/dev/null`. Verify every `git worktree` match is absent (no recommended form remains in any of these files; pre-RFC quotations only live in this RFC, which is not in the grep paths). Verify `git merge origin/main` appears in the plugin's own `CLAUDE.md`, in `CLAUDE.md.tpl`, in `CONTRIBUTING.md.tpl`, and in `BEST_PRACTICES.md.tpl` as the documented form for the "pull main into feature branch" operation.
 
 If any verification step fails, the failure points to one of: (a) the template edit produced malformed Markdown / TOML (Steps 1 / 4 / 5 / 6 — fixed by re-reading the file and correcting), (b) the manifest entry has the wrong `extension_strategy` or `owned_paths` (Step 2 — fixed by re-running `build-manifest.sh` and inspecting), (c) the probe in `check-requirements.sh` is shadowed by an earlier `exit 2` (Step 3 — fixed by inspecting the script around L97-L100 where the new probe sits next to the `git` probe), (d) the skill body's commands still reference raw `git worktree` (Step 7 — fixed by re-reading the skill and confirming every `git worktree` mention was replaced), or (e) the plugin's own files were missed during the dogfood edit (Step 8 — fixed by re-grepping for `git worktree add` and confirming all callsites use `wt switch -c`).
 
@@ -773,7 +782,7 @@ If any verification step fails, the failure points to one of: (a) the template e
 
 - **Risk: The `.config/` directory may collide with other tools that read `.config/`.** Some tools (e.g., a project-local `.config/git/`) treat `.config/` as their own namespace. **Mitigation:** worktrunk's project-config path is canonically `.config/wt.toml` (Exa: `docs/content/config.md`), one file in one location. The directory is shared but the file's name is unambiguous; no collision is possible at the file level. Projects that already have `.config/` see one new file alongside whatever else lives there.
 
-- **Risk: Version skew between the developer's `wt` and a project's `.config/wt.toml`.** A hook block written against worktrunk 0.49's template-variable set may not work on a developer with worktrunk 0.31 (the CHANGELOG mirror shows breaking template-variable changes between 0.31 and 0.32 — verified). **Mitigation:** the empty-stub default uses no template variables (the commented examples reference `{{ branch | hash_port }}` but only as commented examples; they only matter when the user uncomments them). The check-requirements probe could be extended to test the minimum worktrunk version (e.g., `wt --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+'` then a `printf '%s\n%s' | sort -V | head` check), but this is out of scope.
+- **Risk: Version skew between the developer's `wt` and a project's `.config/wt.toml`.** A hook block written against worktrunk 0.49's template-variable set may not work on a developer with worktrunk 0.31 (the CHANGELOG mirror shows breaking template-variable changes between 0.31 and 0.32 — verified). Under the hard-dep posture (Decision 1), the requirement-check hook only asserts `wt` exists on PATH — it does not assert a minimum version. So a contributor with an outdated `wt` install passes the hard-fail check but then sees a per-command failure (`wt switch -c` errors when expanding the template, or `wt merge` errors when running a hook with a newer template variable) — a more confusing failure mode than the up-front "wt not installed" message. **Mitigation:** the empty-stub default uses no template variables (the commented examples reference `{{ branch | hash_port }}` but only as commented examples; they only matter when the user uncomments them), so the default file is version-stable for every supported worktrunk version. Adding a minimum-version assertion to the hard-fail probe (e.g., `wt --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+'` then a `printf '%s\n%s' | sort -V | head` check) is captured as a follow-up RFC (see "Relationship to other RFCs" below) rather than included here, because the version floor depends on which template variables and hook keys the plugin's shipped `.config/wt.toml` content uses — and that surface is empty in v1.
 
 - **Open question: Should `/sync` write per-language `pre-start` install hooks?** Decision 3 rejected this for the v1 stub. The follow-up question: after some real usage, will every consumer project's `.config/wt.toml` end up with the same one-line `pre-start.install = "..."`? If yes, the v2 stub could pre-populate per the detected language. **Resolution within this RFC:** capture as a follow-up; the empty-stub ships first; usage patterns inform the v2 update.
 
