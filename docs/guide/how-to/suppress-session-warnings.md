@@ -26,6 +26,7 @@ The full list of suppressible IDs (from `scripts/check-requirements.sh`):
 | `exa` | The Exa MCP server is not configured |
 | `firefox-devtools` | The Firefox MCP server is not configured |
 | `gh-cli` | The `gh` CLI is not on `PATH` |
+| `plugin-version` | The installed plugin version is older than the version this project last synced with |
 
 ## What you cannot suppress
 
