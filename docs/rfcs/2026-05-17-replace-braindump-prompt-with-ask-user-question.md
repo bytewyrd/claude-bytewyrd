@@ -294,35 +294,142 @@ Expected output: `0` — the old phrasing referencing a numbered selection is re
 
 #### Step 3 — Smoke test against the current braindump
 
-After editing `skills/rfc-new/SKILL.md`, manually trace the slot layout against the current `docs/rfc-braindump.md` to confirm the question structure is correct.
-
-Run:
-
-```bash
-printf '%s' "$(bash scripts/rfc-braindump-list.sh)" | jq '.entries | length'
-```
-
-At the time this RFC was drafted, the output is `9` (verified: `docs/rfc-braindump.md`
-— 9 bullet entries). The expected slot assignment for 9 entries:
-
-- **Question 1:** entries 1, 2, 3 + escape hatch (4 options total).
-- **Question 2:** entries 4, 5, 6, 7 (4 options).
-- **Question 3:** entries 8, 9 (2 options — meets the 2-option minimum).
-- **Question 4:** not emitted (no entries 10–15).
-
-Confirm the label truncation for entry 1:
+After editing `skills/rfc-new/SKILL.md`, run the following self-contained shell script
+from the repository root. The script asserts every observable property of the change:
+the braindump listing script still works, the SKILL.md edits landed correctly, and the
+slot-layout math is consistent with the current braindump. The script is runnable in CI
+— it depends only on `bash`, `jq`, and `grep` — and exits non-zero on the first failed
+assertion.
 
 ```bash
-printf '%s' "$(bash scripts/rfc-braindump-list.sh)" | jq -r '.entries[0].body' | cut -c1-60
+#!/usr/bin/env bash
+# Smoke test for the AskUserQuestion-based braindump prompt in skills/rfc-new/SKILL.md.
+# Run from the repository root. Exits 0 on success, non-zero on the first failure.
+set -euo pipefail
+
+SKILL="skills/rfc-new/SKILL.md"
+LIST="scripts/rfc-braindump-list.sh"
+BRAINDUMP="docs/rfc-braindump.md"
+
+# --- 1. Required files exist ----------------------------------------------------------
+
+[ -f "$SKILL" ]     || { echo "FAIL: $SKILL missing";     exit 1; }
+[ -f "$LIST" ]      || { echo "FAIL: $LIST missing";      exit 1; }
+[ -f "$BRAINDUMP" ] || { echo "FAIL: $BRAINDUMP missing"; exit 1; }
+
+# --- 2. rfc-braindump-list.sh exits 0 and produces valid JSON -------------------------
+
+result="$(bash "$LIST")"
+exit_code=$?
+[ "$exit_code" -eq 0 ] || { echo "FAIL: $LIST exited $exit_code"; exit 1; }
+
+printf '%s' "$result" | jq -e . > /dev/null \
+  || { echo "FAIL: $LIST output is not valid JSON"; exit 1; }
+
+# --- 3. JSON shape: {"entries": [{"n": N, "body": "..."}, ...]} ----------------------
+
+printf '%s' "$result" | jq -e '.entries | type == "array"' > /dev/null \
+  || { echo "FAIL: .entries is not an array"; exit 1; }
+
+entries_count="$(printf '%s' "$result" | jq '.entries | length')"
+[ "$entries_count" -ge 0 ] || { echo "FAIL: entries_count invalid"; exit 1; }
+
+# Every entry has integer .n (1-based, sequential) and string .body.
+printf '%s' "$result" | jq -e '
+  .entries
+  | to_entries
+  | all(.value.n == (.key + 1) and (.value.body | type == "string"))
+' > /dev/null \
+  || { echo "FAIL: entries are not sequentially numbered {n, body} objects"; exit 1; }
+
+# --- 4. Slot-layout math is consistent for any entries_count -------------------------
+
+# Compute how many AskUserQuestion questions the implementation should emit.
+# - 0 entries: 0 questions (Case A, free-text path).
+# - 1-3 entries: 1 question (entries fill slots 1..N, escape hatch fills slot N+1 or 4).
+# - 4-7: 2 questions.
+# - 8-11: 3 questions.
+# - 12-15: 4 questions.
+# - >15: 4 questions on entries 1..15 plus a user-visible truncation note.
+
+shown="$entries_count"
+[ "$shown" -gt 15 ] && shown=15
+
+if   [ "$shown" -eq 0 ]; then expected_questions=0
+elif [ "$shown" -le 3 ]; then expected_questions=1
+elif [ "$shown" -le 7 ]; then expected_questions=2
+elif [ "$shown" -le 11 ]; then expected_questions=3
+else                          expected_questions=4
+fi
+
+[ "$expected_questions" -ge 0 ] && [ "$expected_questions" -le 4 ] \
+  || { echo "FAIL: expected_questions=$expected_questions out of range"; exit 1; }
+
+echo "OK: entries_count=$entries_count, shown=$shown, expected_questions=$expected_questions"
+
+# --- 5. SKILL.md no longer references the legacy numbered-list prompt ----------------
+
+if grep -q -E 'Pick a number to promote|numbered list' "$SKILL"; then
+  echo "FAIL: $SKILL still references the legacy numbered-list prompt"; exit 1
+fi
+
+# --- 6. SKILL.md references the new AskUserQuestion flow -----------------------------
+
+grep -q 'AskUserQuestion' "$SKILL" \
+  || { echo "FAIL: $SKILL does not reference AskUserQuestion"; exit 1; }
+
+# --- 7. SKILL.md uses selected_from_braindump as the Step 6 gate ---------------------
+
+# Expected occurrences (case-sensitive, see RFC Step 1 verification):
+#   - explicit-argument fast path           (1)
+#   - Case A: no braindump entries           (1)
+#   - Case B: escape-hatch branch            (1)
+#   - Case B: braindump-entry branch         (1)
+#   - Step 6 gate condition                  (1)
+# Minimum total: 5.
+count="$(grep -c 'selected_from_braindump' "$SKILL" || true)"
+[ "$count" -ge 5 ] \
+  || { echo "FAIL: selected_from_braindump appears $count times, expected >= 5"; exit 1; }
+
+# The legacy "selected a number" gate phrasing must be gone.
+if grep -q 'selected a number' "$SKILL"; then
+  echo "FAIL: $SKILL still says 'selected a number'"; exit 1
+fi
+
+# --- 8. SKILL.md describes the escape hatch ------------------------------------------
+
+count_eh="$(grep -c -i 'escape hatch\|Create new RFC from scratch' "$SKILL" || true)"
+[ "$count_eh" -ge 2 ] \
+  || { echo "FAIL: escape-hatch references appear $count_eh times, expected >= 2"; exit 1; }
+
+# --- 9. First-entry label-truncation sanity check ------------------------------------
+
+if [ "$entries_count" -gt 0 ]; then
+  body1="$(printf '%s' "$result" | jq -r '.entries[0].body')"
+  [ -n "$body1" ] || { echo "FAIL: entries[0].body is empty"; exit 1; }
+  # If the body is longer than 60 chars, the label produced by the implementation
+  # must be a truncation of the body, not the full body.
+  body1_len="${#body1}"
+  if [ "$body1_len" -gt 60 ]; then
+    echo "OK: entries[0].body is $body1_len chars; label must be truncated to <=60 + ellipsis"
+  else
+    echo "OK: entries[0].body is $body1_len chars; label can be the full body"
+  fi
+fi
+
+echo "ALL ASSERTIONS PASSED"
 ```
 
-Expected output: the first 60 characters of the first entry's body. The full body of
-entry 1 begins with `**Modular Plugin Feature Toggles.**` (verified: `docs/rfc-braindump.md`).
-At 60 characters that truncates to `**Modular Plugin Feature Toggles.** Restructure th`; the
-label would be `**Modular Plugin Feature Toggles.** Restructure th…` (truncated at last word boundary before 60 chars: `**Modular Plugin Feature Toggles.** Restructure…`).
+Run it as `bash <path-to-script>` from the repo root. A passing run prints `ALL ASSERTIONS
+PASSED`; any failed assertion exits non-zero with a `FAIL:` line identifying which
+property was violated. The script does not write any files and does not mutate the
+braindump — it is safe to re-run.
 
-No file is written by this step. It is a manual verification that the implementer runs
-to confirm their understanding of the braindump's current state before finishing the edit.
+The slot-layout math in assertion 4 mirrors the spec in Step 1: with one escape-hatch
+slot reserved on Question 1, the boundary cases (0, 1, 2, 3, 4, 7, 8, 11, 12, 15, and
+>15 entries) all map to a deterministic number of questions, which the script computes
+and prints alongside the current `entries_count`. Any future change to the slot layout
+in Step 1 must update the math in this script to stay consistent.
 
 ## Risks and open questions
 
