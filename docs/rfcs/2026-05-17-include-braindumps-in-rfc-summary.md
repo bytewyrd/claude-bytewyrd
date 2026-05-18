@@ -53,7 +53,7 @@ Three coupled decisions: which data to show, how to truncate long entries, and w
 
 **Option A — Bold title only, extracted from the `body` field (recommended).**
 
-Every braindump entry written by the `/rfc-braindump` skill follows the format `**Title.** Paragraph.` (verified: `skills/rfc-braindump/SKILL.md:L28`). The bold title can be extracted from `body` with a simple pattern match: the text between the first `**` pair up to the period that follows. This gives a clean, short label that fits a table row or a bulleted list without wrapping. The full paragraph is available in the file for anyone who needs it.
+Every braindump entry written by the `/rfc-braindump` skill follows the format `**Title.** Paragraph.` (verified: `skills/rfc-braindump/SKILL.md:L28`). The bold title can be extracted from `body` with a simple pattern match: the text between the first `**` pair. The trailing period (`.`) is part of the source-formatting convention — a sentence-ending mark that closes the bold title clause — not part of the title itself, so the extraction strips a trailing `.` before display (`**Auto-prompt PR.**` → `Auto-prompt PR`, not `Auto-prompt PR.`). This gives a clean, short label that fits a table row or a bulleted list without wrapping. The full paragraph is available in the file for anyone who needs it.
 
 **Option B — Full body text.**
 
@@ -63,7 +63,7 @@ Displaying the full paragraph for each entry produces a readable single-column l
 
 More granular than Option A but less predictable: sentences vary in length and structure, and some entries front-load context that only resolves mid-sentence. The `**Title.**` bold pattern is more reliable and consistently short. Rejected in favor of Option A.
 
-**Recommendation: Option A.** Extract the bold-title substring from `body`. This is a well-defined, machine-readable convention enforced by the `/rfc-braindump` skill's Opus distillation step.
+**Recommendation: Option A.** Extract the bold-title substring from `body`, strip the trailing `.`. This is a well-defined, machine-readable convention enforced by the `/rfc-braindump` skill's Opus distillation step.
 
 ### Decision 2 — Entry cap
 
@@ -108,6 +108,7 @@ A single trailing line like `(also: 9 braindump entries — run /rfc-braindump o
 - **Braindump entries have no metadata.** Unlike RFC rows (which have `author` and `created`), braindump entries expose only their title. A user cannot tell from the summary who parked an idea or when. Mitigation: this is an intentional constraint — the braindump file does not store per-entry metadata, and adding metadata would require changing the braindump schema (a different RFC's scope). The section header links readers to `docs/rfc-braindump.md` in the remainder-count line for entries beyond the cap.
 
 - **Title extraction is a pattern match, not a structured parse.** If a braindump entry does not begin with `**Title.**`, the extraction falls back to the first 80 characters of `body`. Entries written by hand (not via `/rfc-braindump`) may not follow the bold-title convention. Mitigation: the fallback produces something readable, not an error. The `/rfc-braindump` skill enforces the convention via its Opus distillation step (verified: `skills/rfc-braindump/SKILL.md:L28`), so manually authored entries are the edge case, not the norm.
+  - **Malformed `**` edge case.** If a `body` contains an opening `**` with no matching closing `**` (e.g., `**Title without closing bold`), the pattern match yields no closing-bold capture. The fallback (first 80 characters of `body`) applies in this case, same as the no-bold-title case. Do not error or abort. This is enforced in the jq expression by guarding the bold-title branch with a second-`**` presence check before splitting.
 
 - **File-order display may surface stale entries first.** `rfc-braindump-list.sh` returns entries in file order, which is insertion order (verified: `scripts/rfc-braindump-list.sh:L31-L39`). Old, never-promoted ideas appear at the top. This is actually the desired behavior for a parking lot — older entries are more likely to need attention or explicit dropping — but it can look odd if the first entry is a long-obsolete idea. Mitigation: out of scope for this RFC; the braindump file's curation is the user's responsibility.
 
@@ -118,8 +119,9 @@ A single trailing line like `(also: 9 braindump entries — run /rfc-braindump o
 | Action | Path | Responsibility |
 |--------|------|----------------|
 | Modify | `skills/rfc-summary/SKILL.md` | Extend Steps 2–4 to fetch, truncate, and render braindump entries in a new `### Braindumps (parked ideas)` section after the Draft table |
+| Modify | `docs/rfc-process.md` | Update the one-line `/rfc-summary` description in the Skills table so the project-level RFC process doc reflects the expanded scope (Draft, Approved, and braindumps) |
 
-No new scripts. No agent files changed. No plugin.json change. No rfc-process.md change (the skill description remains accurate: it is still read-only and inline).
+No new scripts. No agent files changed. No plugin.json change.
 
 ### Steps
 
@@ -205,23 +207,26 @@ Group the sorted RFC rows by status. Build three lists:
 - **Draft** — rows whose `status` is `Draft`
 - **Other** — rows whose `status` is `Done` or `Dropped`; not displayed by row, only counted
 
-From `$braindump_entries`, extract a display title for each entry. Each `body` follows the format `**Title.** Paragraph.` (the bold-title convention enforced by `/rfc-braindump`). Extract the title by matching the text between the first `**` pair:
+From `$braindump_entries`, extract a display title for each entry. Each `body` follows the format `**Title.** Paragraph.` (the bold-title convention enforced by `/rfc-braindump`). Extract the title by matching the text between the first `**` pair, then strip a trailing `.` (the period is part of the source-formatting convention, not the title):
 
 ```bash
 # For each entry in $braindump_entries, extract the title.
-# jq expression: if body starts with **, take the text up to the closing **;
-# else fall back to the first 80 characters of body.
+# jq expression:
+#   - if body starts with ** AND has a closing ** somewhere after, take the
+#     text between the first ** pair and strip a trailing period.
+#   - otherwise (no opening **, OR opening ** with no matching close), fall
+#     back to the first 80 characters of body. Do not error or abort.
 braindump_titles="$(printf '%s' "$braindump_entries" | jq -r '
   .[] | .body |
-  if startswith("**") then
-    ltrimstr("**") | split("**")[0]
+  if startswith("**") and (.[2:] | contains("**")) then
+    ltrimstr("**") | split("**")[0] | rtrimstr(".")
   else
     .[0:80]
   end
 ')"
 ```
 
-`$braindump_titles` is a newline-separated list of display titles, one per entry, in file order.
+`$braindump_titles` is a newline-separated list of display titles, one per entry, in file order. The `and (.[2:] | contains("**"))` guard handles the malformed case where an opening `**` has no matching closing `**` (e.g., `**Title without closing bold`) — without it, `split("**")[0]` would return the entire remainder of the string. With it, such entries cleanly fall through to the 80-character fallback.
 
 Count total braindump entries:
 
@@ -311,7 +316,39 @@ This is one line; it provides the next-step hint without bloating the output. Do
 - **Braindump section is omitted when empty.** If `docs/rfc-braindump.md` is absent or contains no bullet entries, do not render the `### Braindumps (parked ideas)` header.
 ````
 
-#### Step 2 — Verification
+#### Step 2 — Update `docs/rfc-process.md`
+
+The project-level RFC process doc lists each RFC skill with a one-line description in a Skills table. Update the `/rfc-summary` row to reflect the expanded scope (it now also surfaces braindump entries). This keeps the doc consistent with the skill's `description` frontmatter line updated in Step 1.
+
+**Target line** (verified: `docs/rfc-process.md:L212`):
+
+```
+| `/rfc-summary` | List active RFCs (Draft and Approved) grouped by status for a quick standup snapshot |
+```
+
+**Replace with:**
+
+```
+| `/rfc-summary` | List active RFCs (Draft and Approved) grouped by status, plus parked braindump ideas, for a quick standup snapshot |
+```
+
+Exact Edit-tool call (preferred — Markdown table rows contain pipe characters, so `sed` is brittle here):
+
+- `old_string` (literal, single line):
+
+  ```
+  | `/rfc-summary` | List active RFCs (Draft and Approved) grouped by status for a quick standup snapshot |
+  ```
+
+- `new_string` (literal, single line):
+
+  ```
+  | `/rfc-summary` | List active RFCs (Draft and Approved) grouped by status, plus parked braindump ideas, for a quick standup snapshot |
+  ```
+
+The `<!-- END_UPSTREAM_CONTENT -->` marker at line 226 is below the Skills table, so this change falls within the upstream-synced section. That is expected — the upstream `rfc-process.md` source (in this plugin) ships the same one-line description, and updating only the local copy without updating the upstream would create drift on the next `/sync`. **The same edit must be applied to the upstream copy of `rfc-process.md` in this plugin's repository.** Implementers in the plugin repo: the file is `docs/rfc-process.md` (the canonical source); consumers running `/sync` against an updated plugin will receive the new line automatically.
+
+#### Step 3 — Verification
 
 After editing the file, run these checks:
 
@@ -365,15 +402,15 @@ After editing the file, run these checks:
    ```bash
    bash scripts/rfc-braindump-list.sh | jq -r '
      .entries[] | .body |
-     if startswith("**") then
-       ltrimstr("**") | split("**")[0]
+     if startswith("**") and (.[2:] | contains("**")) then
+       ltrimstr("**") | split("**")[0] | rtrimstr(".")
      else
        .[0:80]
      end
    '
    ```
 
-   Expected output: one line per braindump entry, each showing only the bold-title text (e.g., `Modular Plugin Feature Toggles`, `Auto-prompt PR creation in /rfc-new and parallelize /rfc-new-braindumps`, etc.), without the `**` markers or the paragraph body.
+   Expected output: one line per braindump entry, each showing only the bold-title text (e.g., `Modular Plugin Feature Toggles`, `Auto-prompt PR creation in /rfc-new and parallelize /rfc-new-braindumps`, etc.), without the `**` markers, without the trailing `.`, and without the paragraph body.
 
 6. **Manual smoke test (after plugin reload):**
 
