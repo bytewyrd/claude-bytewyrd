@@ -26,7 +26,8 @@ Optional but recommended — the plugin will warn you at session start if these 
 From any terminal:
 
 ```bash
-claude plugin install bytewyrd/claude-bytewyrd --scope user
+claude plugin marketplace add bytewyrd/claude-bytewyrd
+claude plugin install bytewyrd@bytewyrd
 ```
 
 Restart Claude Code if it is already running. The plugin is now available in every project you open.

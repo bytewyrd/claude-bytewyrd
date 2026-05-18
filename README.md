@@ -5,7 +5,9 @@
   </h1>
   <p>Opinionated Claude Code workflow — RFC-driven development, specialist agents, and best-practices capture, ready to install in any project</p>
   <br/>
-  <code>claude plugin install bytewyrd/claude-bytewyrd --scope project</code>
+  <code>claude plugin marketplace add bytewyrd/claude-bytewyrd</code>
+  &nbsp;&nbsp;then&nbsp;&nbsp;
+  <code>claude plugin install bytewyrd@bytewyrd</code>
   &nbsp;&nbsp;then&nbsp;&nbsp;
   <code>/bytewyrd:sync</code>
 </div>
@@ -63,11 +65,12 @@ Install once. Run `/sync`. Everything else follows.
 ## Getting started
 
 ```bash
-# Recommended: scoped to the project so teammates get prompted to install automatically
-claude plugin install bytewyrd/claude-bytewyrd --scope project
+# Add the marketplace, then install (user scope by default)
+claude plugin marketplace add bytewyrd/claude-bytewyrd
+claude plugin install bytewyrd@bytewyrd
 
-# Or: install for your user globally across all projects
-claude plugin install bytewyrd/claude-bytewyrd --scope user
+# Or: project-scope so teammates get prompted to install automatically
+claude plugin install bytewyrd@bytewyrd --scope project
 ```
 
 Then in any Claude Code session:

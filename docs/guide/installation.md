@@ -1,17 +1,18 @@
 ## Installation
 
-The plugin installs at user scope by default — install once per machine, use everywhere:
+First add the Bytewyrd marketplace, then install the plugin. User scope is the default — install once per machine, active in every project you open:
 
 ```bash
-claude plugin install bytewyrd/claude-bytewyrd --scope user
+claude plugin marketplace add bytewyrd/claude-bytewyrd
+claude plugin install bytewyrd@bytewyrd
 ```
 
-`--scope user` writes the enable-flag to `~/.claude/settings.json`, making the plugin available in every project you open.
+`--scope user` is the default and writes the enable-flag to `~/.claude/settings.json`, making the plugin available in every project you open.
 
 For team-wide setups where every collaborator should be prompted to install, use project scope instead:
 
 ```bash
-claude plugin install bytewyrd/claude-bytewyrd --scope project
+claude plugin install bytewyrd@bytewyrd --scope project
 ```
 
 Once installed, run `/bytewyrd:sync` in any project to bootstrap the conventions.
