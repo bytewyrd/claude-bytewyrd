@@ -140,6 +140,8 @@ RFC docs, best-practices file, agent delegation table, and CI are set up in one 
 
 ## Documentation
 
+- [User Guide](docs/guide/index.md) — tutorials, how-to guides, reference, and contributor docs
+- [Installation](docs/guide/installation.md) — how to install and configure the plugin
 - [Architecture](docs/ARCHITECTURE.md) — how the plugin is built and key design decisions
 - [Contributing](docs/CONTRIBUTING.md) — development workflow and conventions
 - [RFC Process](docs/rfc-process.md) — the design-first workflow (installed by `/sync`)
