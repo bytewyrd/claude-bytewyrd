@@ -18,7 +18,7 @@ You generally do not need to invoke agents directly. The skills know which agent
 
 Each agent carries a focused system prompt — the `rfc-architect` knows RFC structure and review protocols; the `refactoring-specialist` knows code smell catalogs, characterization test patterns, and Fowler's refactoring catalog. A specialist produces higher-quality output than the main agent would inline, and the model budget is used more efficiently (specialists default to the cheapest model that fits the task).
 
-The [agent delegation table in CLAUDE.md](../CLAUDE.md) maps task types to agents.
+The [agent delegation table in CLAUDE.md](../../CLAUDE.md) maps task types to agents.
 
 ---
 
