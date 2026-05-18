@@ -19,7 +19,7 @@ Sets up or refreshes a project repository with all standard conventions. Idempot
 2. **Step 4 — single "Proceed?" confirmation** — After printing the full change summary, one AskUserQuestion with options `Proceed` / `Cancel`. Omitted when there are no changes at all.
 3. **Step 4c (additive-merge-with-diff cherry-pick only)** — One AskUserQuestion per `additive_merge_with_diff_apply` artifact. All other strategies (authoritative, structured, owned-regions, additive-merge) are applied without further input after Proceed.
 
-When `docs/project-brief.md` already exists with complete identity *and* all plugin-managed files are at the current plugin version, Steps 4 and 4c are skipped — `/sync` reports everything as unchanged and exits without prompting.
+When `docs/project-brief.md` already exists with complete identity *and* all plugin-managed files are at the current plugin version, Steps 4 and 4c are skipped — `ALL_UNCHANGED=true` is printed in Step 1, `/sync` presents the "Everything is up to date." summary, and exits without prompting.
 
 ## Step 1 — Validate environment, detect plugins, classify artifacts
 
@@ -51,7 +51,8 @@ jq -r '
   "MISSING_RECOMMENDED="  + (.preflight.missing_recommended | tostring),
   "BRIEF_COMPLETE="       + (.brief_complete | tostring),
   "RFC_HAS_EXTENSIONS="   + (.rfc_process.has_extensions | tostring),
-  "CLASSIFICATIONS_COUNT=" + (.classifications | length | tostring)
+  "CLASSIFICATIONS_COUNT=" + (.classifications | length | tostring),
+  "ALL_UNCHANGED="        + (.all_unchanged | tostring)
 ' $TMPDIR/bytewyrd-sync-data.json && \
 echo "---" && \
 jq -r '.summary_text' $TMPDIR/bytewyrd-sync-data.json
@@ -266,9 +267,9 @@ Each element includes the manifest entry fields (`upstream_key`, `source`, `temp
 
 The change summary was pre-built by `sync-run.sh` and printed at the end of the Step 1 bash output (after the `---` separator). Present it to the user verbatim — do not re-derive it from the raw classifications.
 
-If the summary ends with "Everything is up to date." there are no changes — exit without prompting.
+**If `ALL_UNCHANGED=true` was printed in Step 1, present the summary and stop — do not show any prompt.** There is nothing to apply.
 
-Otherwise, ask one AskUserQuestion:
+If `ALL_UNCHANGED=false`, ask one AskUserQuestion:
 
 **"Apply these changes?"** with options:
 - `Proceed` — continue to Step 4a.

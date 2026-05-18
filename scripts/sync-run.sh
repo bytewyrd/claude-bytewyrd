@@ -105,6 +105,10 @@ summary_text="$(printf '%s' "$partial_json" \
   | bash "$SCRIPT_DIR/sync-summary.sh" 2>/dev/null \
   || echo "(summary generation failed)")"
 
+# True when every classification is unchanged or local_only (nothing to write).
+all_unchanged="$(printf '%s' "$classifications_json" \
+  | jq '[.[] | select(.classification != "unchanged" and .classification != "local_only")] | length == 0')"
+
 # --- Combine and emit ---
 jq -n \
   --argjson preflight          "$preflight_json" \
@@ -114,6 +118,7 @@ jq -n \
   --arg     brief_description  "$brief_description" \
   --argjson rfc_process        "$rfc_process_json" \
   --arg     summary_text       "$summary_text" \
+  --argjson all_unchanged      "$all_unchanged" \
   '{
     preflight:         $preflight,
     classifications:   $classifications,
@@ -121,5 +126,6 @@ jq -n \
     brief_name:        $brief_name,
     brief_description: $brief_description,
     rfc_process:       $rfc_process,
-    summary_text:      $summary_text
+    summary_text:      $summary_text,
+    all_unchanged:     $all_unchanged
   }'
