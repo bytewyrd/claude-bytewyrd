@@ -1,7 +1,7 @@
 {
   "artifacts": [
     {
-      "upstream_key": "bytewyrd/.claude/settings.json@v1",
+      "upstream_key": "bytewyrd/.claude/settings.json@632b4c58",
       "source": "templates/settings.json.tpl",
       "target": ".claude/settings.json",
       "template_sha": "b265f554260ac234a5787d8d8238f700e4ba755b6b56e2f041f32ec96d23ffd5",
@@ -19,7 +19,7 @@
       ]
     },
     {
-      "upstream_key": "bytewyrd/.github/PULL_REQUEST_TEMPLATE.md@v1",
+      "upstream_key": "bytewyrd/.github/PULL_REQUEST_TEMPLATE.md@bc393baf",
       "source": "templates/PULL_REQUEST_TEMPLATE.md.tpl",
       "target": ".github/PULL_REQUEST_TEMPLATE.md",
       "sha256": "250662b840027cd82490e597996cebf9ce77055014c0bb54dd3bbb1e6db42ac8",
@@ -27,7 +27,7 @@
       "templated": false
     },
     {
-      "upstream_key": "bytewyrd/.github/workflows/ci.yml@v1",
+      "upstream_key": "bytewyrd/.github/workflows/ci.yml@bc393baf",
       "source": "templates/ci.yml.tpl",
       "target": ".github/workflows/ci.yml",
       "template_sha": "cdd7c920475280a2134dd186a732f229fe0230084ba0b2ee6ec45186229f93b2",
@@ -39,7 +39,7 @@
       ]
     },
     {
-      "upstream_key": "bytewyrd/.gitignore@v1",
+      "upstream_key": "bytewyrd/.gitignore@657bbdc9",
       "source": "templates/.gitignore.tpl",
       "target": ".gitignore",
       "sha256": "2df1ccc0325e6ef8c3cf38a405649436ce2f0e1d994680a60d3c5b9d6559a819",
@@ -50,7 +50,7 @@
       "templated": false
     },
     {
-      "upstream_key": "bytewyrd/CLAUDE.md@v1",
+      "upstream_key": "bytewyrd/CLAUDE.md@6cbeb80b",
       "source": "templates/CLAUDE.md.tpl",
       "target": "CLAUDE.md",
       "template_sha": "0993a89ec9e87cfa7d01eafd93b2e307eaf16d30ab8cb085e2351e1fe0614f67",
@@ -76,7 +76,7 @@
       ]
     },
     {
-      "upstream_key": "bytewyrd/README.md@v1",
+      "upstream_key": "bytewyrd/README.md@b73ff74a",
       "source": "templates/README.md.tpl",
       "target": "README.md",
       "template_sha": "efd02c9f1d3e8860f3eaf2f94150a8abe9a7e72d1cb0b1f7b0bdb877f528f52b",
@@ -88,7 +88,7 @@
       ]
     },
     {
-      "upstream_key": "bytewyrd/docs/ARCHITECTURE.md@v1",
+      "upstream_key": "bytewyrd/docs/ARCHITECTURE.md@b73ff74a",
       "source": "templates/ARCHITECTURE.md.tpl",
       "target": "docs/ARCHITECTURE.md",
       "sha256": "6e7f1602bba0139dd87dd168eb8d09d059d0eb9d007d1e2f4a8c85eb7b5c55a8",
@@ -96,7 +96,7 @@
       "templated": false
     },
     {
-      "upstream_key": "bytewyrd/docs/BEST_PRACTICES.md@v1",
+      "upstream_key": "bytewyrd/docs/BEST_PRACTICES.md@896a1c6d",
       "source": "templates/BEST_PRACTICES.md.tpl",
       "target": "docs/BEST_PRACTICES.md",
       "template_sha": "143d5240f6e53e3cb61873935a182d3425cefbaae3fe8999745fe0dce7291a16",
@@ -190,7 +190,7 @@
       ]
     },
     {
-      "upstream_key": "bytewyrd/docs/CONTRIBUTING.md@v1",
+      "upstream_key": "bytewyrd/docs/CONTRIBUTING.md@b73ff74a",
       "source": "templates/CONTRIBUTING.md.tpl",
       "target": "docs/CONTRIBUTING.md",
       "sha256": "76fc00220ae50d664b49ec3d2a36b87ccd841627f1febe1ecdd565766272a4e9",
@@ -198,7 +198,7 @@
       "templated": false
     },
     {
-      "upstream_key": "bytewyrd/docs/rfc-process.md@v1",
+      "upstream_key": "bytewyrd/docs/rfc-process.md@af9bca80",
       "source": "rfc-process.md",
       "target": "docs/rfc-process.md",
       "sha256": "e637fb5bf98b615ef76140aa185c8abdce5f7f01cdf853d170efe11fb9ee3751",
@@ -206,7 +206,7 @@
       "templated": false
     },
     {
-      "upstream_key": "bytewyrd/mise.toml@v1",
+      "upstream_key": "bytewyrd/mise.toml@ebf354bf",
       "source": "templates/mise.toml.tpl",
       "target": "mise.toml",
       "template_sha": "8ae46e038f0fd4d80c30849b4710a60ceeb3493916b3c525d98885c60cb9f599",

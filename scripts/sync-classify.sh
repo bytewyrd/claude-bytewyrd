@@ -141,16 +141,33 @@ emit() {
   jq -n "${args[@]}" "$filter"
 }
 
-# Helper: read marker sha from a file via the sister script.
+# Helper: read marker sha from a file, with upstream_key cross-check.
+# If the marker's upstream_key does not match the expected fingerprint for this
+# manifest entry, treat the marker as absent (→ legacy classification). This
+# fires when extension_strategy or ownership config (owned_paths, owned_sections,
+# owned_boundaries) changed — the old sha12 is no longer comparable to the new
+# plugin SHA because the canonicalization method changed.
 read_marker_sha() {
   local f="$1"
   if [ ! -f "$f" ]; then
     printf ''
     return
   fi
-  local out
+  local out marker_found marker_key marker_sha expected_key
   out="$(bash "$script_dir/sync-marker-read.sh" "$f")"
-  echo "$out" | jq -r 'if .found then .sha12 else "" end'
+  marker_found="$(printf '%s' "$out" | jq -r '.found')"
+  if [ "$marker_found" != "true" ]; then
+    printf ''
+    return
+  fi
+  marker_key="$(printf '%s' "$out" | jq -r '.upstream_key // ""')"
+  marker_sha="$(printf '%s' "$out" | jq -r '.sha12 // ""')"
+  expected_key="$(compute_upstream_key "$manifest_json")"
+  if [ "$marker_key" != "$expected_key" ]; then
+    printf ''
+    return
+  fi
+  printf '%s' "$marker_sha"
 }
 
 # Helper: compute canonical SHA via the sister script. Forwards strategy-

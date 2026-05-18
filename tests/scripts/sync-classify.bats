@@ -121,12 +121,14 @@ EOF
 
 - a
 EOF
-  m='{"upstream_key":"c@v1","source":"templates/CLAUDE.md.tpl","target":"CLAUDE.md","extension_strategy":"additive-merge","owned_sections":["## Tool Usage"]}'
+  m_base='{"source":"templates/CLAUDE.md.tpl","target":"CLAUDE.md","extension_strategy":"additive-merge","owned_sections":["## Tool Usage"]}'
+  expected_key="$(compute_upstream_key "$m_base")"
+  m="$(printf '%s' "$m_base" | jq --arg k "$expected_key" '. + {upstream_key: $k}')"
   # First, compute the plugin canonical SHA so we can construct a matching marker.
   plug_sha="$(bash "$SCRIPT_ROOT/scripts/sync-canonical.sh" additive-merge "$PLUGIN_ROOT/templates/CLAUDE.md.tpl" --owned-sections '["## Tool Usage"]' | jq -r .sha12)"
   cat > CLAUDE.md <<EOF
 # Title
-<!-- bootstrap-content-version: c@v1:$plug_sha -->
+<!-- bootstrap-content-version: ${expected_key}:$plug_sha -->
 
 ## Tool Usage
 
@@ -275,10 +277,12 @@ EOF
   local_sha="$(bash "$SCRIPT_ROOT/scripts/sync-canonical.sh" structured .gitignore --owned-paths "$paths" | jq -r .sha12)"
   # Prepend the marker as line 1 of .gitignore.
   tmpfile="$(mktemp)"
-  printf '# bootstrap-content-version: g@v1:%s\n\n' "$local_sha" > "$tmpfile"
+  m_base='{"source":"templates/.gitignore.tpl","target":".gitignore","extension_strategy":"structured","owned_paths":["bytewyrd:base"],"templated":false}'
+  expected_key="$(compute_upstream_key "$m_base")"
+  m="$(printf '%s' "$m_base" | jq --arg k "$expected_key" '. + {upstream_key: $k}')"
+  printf '# bootstrap-content-version: %s:%s\n\n' "$expected_key" "$local_sha" > "$tmpfile"
   cat .gitignore >> "$tmpfile"
   mv "$tmpfile" .gitignore
-  m='{"upstream_key":"g@v1","source":"templates/.gitignore.tpl","target":".gitignore","extension_strategy":"structured","owned_paths":["bytewyrd:base"],"templated":false}'
   run bash "$SCRIPT" "$m" .gitignore "$PLUGIN_ROOT"
   assert_success
   assert_equal "$(echo "$output" | jq -r .classification)" "fast_forward"
@@ -305,8 +309,11 @@ EOF
   # so all three differ — triggers conflict), the heading, an old body, plus a
   # user-owned heading the plugin doesn't know about.
   paths='[{"type":"heading","heading":"## Workflow"}]'
-  cat > BEST.md <<'EOF'
-<!-- bootstrap-content-version: b@v1:000000000000 -->
+  m_base='{"source":"templates/BEST.md.tpl","target":"BEST.md","extension_strategy":"owned-regions","owned_boundaries":[{"type":"heading","heading":"## Workflow"}],"templated":false}'
+  expected_key="$(compute_upstream_key "$m_base")"
+  m="$(printf '%s' "$m_base" | jq --arg k "$expected_key" '. + {upstream_key: $k}')"
+  cat > BEST.md <<EOF
+<!-- bootstrap-content-version: ${expected_key}:000000000000 -->
 
 # BEST
 
@@ -318,7 +325,6 @@ old workflow content.
 
 my custom notes.
 EOF
-  m='{"upstream_key":"b@v1","source":"templates/BEST.md.tpl","target":"BEST.md","extension_strategy":"owned-regions","owned_boundaries":[{"type":"heading","heading":"## Workflow"}],"templated":false}'
   run bash "$SCRIPT" "$m" BEST.md "$PLUGIN_ROOT"
   assert_success
   assert_equal "$(echo "$output" | jq -r .classification)" "conflict"
