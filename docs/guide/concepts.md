@@ -49,6 +49,8 @@ Fires whenever a `bytewyrd:feature-engineer` subagent finishes. Prints a reminde
 
 **Plugin-checkout hooks (project-local)**
 
+> *These hooks are relevant only if you are contributing to this plugin repository. Consumer projects do not receive them.*
+
 This repository's own checkout registers additional hooks in `.claude/settings.json` that are not distributed to consumer projects:
 
 - **`PreCompact`** — blocks context compaction until `/best-practices-extract` runs this session (see [the best-practices lifecycle](#the-best-practices-lifecycle) below)
