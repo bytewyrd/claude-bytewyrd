@@ -184,7 +184,9 @@ fi
 # Warning path: print warning bundle, inject one-line summary into context,
 # exit 0.
 warning_count="${#warnings[@]}"
-sys_msg="Bytewyrd plugin: $warning_count requirement(s) missing. See terminal for details. Suppress individual warnings with BYTEWYRD_SKIP_WARN=<id1>,<id2>."
+sys_msg="Bytewyrd plugin: $warning_count requirement(s) missing.
+$(printf '%s\n' "${warnings[@]}")
+Suppress individual warnings with BYTEWYRD_SKIP_WARN=<id1>,<id2>."
 warning_bundle="$(printf '%s\n' "${warnings[@]}")"
 ctx="Bytewyrd plugin warnings active: $(printf '%s; ' "${warnings[@]}" | sed 's/; $//')"
 
