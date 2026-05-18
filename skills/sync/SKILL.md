@@ -833,7 +833,3 @@ Exa MCP — permissions pre-configured in settings.local.json.
 If Exa is not yet set up globally, configure it as an MCP server in Claude Code settings.
 ```
 
-Remind the user of follow-up tasks:
-- Edit `CLAUDE.md` to fill in the actual file structure once source code is added
-- Fill in `docs/ARCHITECTURE.md` once the system design is settled
-- Run `/best-practices-extract` at the end of meaningful sessions
