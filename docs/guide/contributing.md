@@ -56,8 +56,8 @@ Never edit exported artifacts directly without first validating the change in th
 
 Two task-oriented guides cover the common contribution paths:
 
-- [Add a new skill to the plugin](how-to/add-a-skill.md) — full lifecycle: shape selection, naming, frontmatter, local testing, README and CLAUDE.md updates.
-- [Add a new agent to the plugin](how-to/add-an-agent.md) — including the audit checklist every agent must pass.
+- [Add a new skill to the plugin](contributing/add-a-skill.md) — full lifecycle: shape selection, naming, frontmatter, local testing, README and CLAUDE.md updates.
+- [Add a new agent to the plugin](contributing/add-an-agent.md) — including the audit checklist every agent must pass.
 
 Both link back into the architecture and conventions captured here.
 

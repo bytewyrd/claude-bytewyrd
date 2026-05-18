@@ -25,4 +25,4 @@ Skills can be invoked as `/skill-name` (or `/bytewyrd:skill-name` when there's a
 
 The Claude Code plugin system reads `skills/<name>/SKILL.md` at the plugin root and exposes each one as `/skill-name`. The skill body is the prompt the main agent reads when the skill is invoked. Some skills spawn specialist subagents (see the [Agents reference](agents.md)); others run inline against the main agent.
 
-To author a new skill, see [Add a new skill to the plugin](../how-to/add-a-skill.md).
+To author a new skill, see [Add a new skill to the plugin](../contributing/add-a-skill.md).
