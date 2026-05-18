@@ -64,10 +64,17 @@ teardown() {
   rm -rf "$tmp_dir"
 }
 
-@test "success — output includes brief_complete, rfc_process, summary_text" {
+@test "success — output includes brief_complete, rfc_process, summary_text, all_unchanged" {
   run bash "$SCRIPT"
   assert_success
-  run bash -c "echo '$output' | jq -e 'has(\"brief_complete\") and has(\"rfc_process\") and has(\"summary_text\")'"
+  run bash -c "echo '$output' | jq -e 'has(\"brief_complete\") and has(\"rfc_process\") and has(\"summary_text\") and has(\"all_unchanged\")'"
+  assert_success
+}
+
+@test "success — all_unchanged is true when no actionable classifications" {
+  run bash "$SCRIPT"
+  assert_success
+  run bash -c "echo '$output' | jq -e '.all_unchanged == true'"
   assert_success
 }
 
