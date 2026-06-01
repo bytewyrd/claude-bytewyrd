@@ -12,7 +12,7 @@ Agents that participate directly in the bytewyrd plugin's RFC and docs workflow.
 
 | Agent | Model | Role |
 |-------|-------|------|
-| `rfc-architect` | opus | RFC authoring, research, design review. Spawned by `/rfc-new`, `/rfc-read-feedback`, `/rfc-update`. |
+| `rfc-architect` | opus | RFC authoring, research, design review. Spawned by `/rfc-new`, `/rfc-read-feedback`. |
 | `feature-engineer` | opus | RFC-driven feature implementation with SOLID and TDD. Spawned by `/rfc-implement`. |
 | `code-reviewer` | opus | Rigorous PR review — correctness, security, performance, conventions. Default for PRs and spawned by `/rfc-consensus-review`. |
 | `refactoring-specialist` | opus | Deliberate, behavior-preserving refactoring with characterization tests and an approval gate. Spawned by `/refactor`. |
@@ -100,4 +100,4 @@ Agents that participate directly in the bytewyrd plugin's RFC and docs workflow.
 
 Claude Code reads `agents/<name>.md` files at the plugin root. Each agent's `description` frontmatter is what the autoload heuristic uses to decide when to spawn the agent. Models are set per-agent so the cheapest-fit model applies by default; skills that spawn agents can override the model at invocation time.
 
-To add a new agent, see [Add a new agent to the plugin](../how-to/add-an-agent.md).
+To add a new agent, see [Add a new agent to the plugin](../contributing/add-an-agent.md).

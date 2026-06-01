@@ -146,6 +146,7 @@ Use `/rfc-new` to create a new RFC. The skill handles numbering, template creati
    - **Coverage** — skim every requirement; can each be pointed to a section of the implementation spec? List and fill any gaps.
    - **Placeholder scan** — search for any prohibited pattern from the "No placeholders" list above; fix each one.
    - **Consistency** — do all type names, function signatures, file paths, and interface names used in later steps match what was defined in earlier steps?
+   - **Evidence Audit** — every external claim in the draft has an in-line citation (`Context7: <library> v<version>`, `Exa: <URL>`) or is explicitly marked `[UNVERIFIED]` with a one-line note explaining what verification was attempted and why it was inconclusive. Every internal claim has a `verified: <path>[:Lnnn]` citation. The protocol the agent follows for verification and citation lives in `agents/rfc-architect.md` (sections "Evidence-Based Research Discipline" through "Citation Format and the `[UNVERIFIED]` Marker"). Any unresolved finding from this audit blocks surfacing the draft.
 5. `/rfc-consensus-review` runs: five independent reviewers in parallel, findings synthesized by consensus. Critical findings (4–5/5 reviewers) are fixed by `rfc-architect` in a second pass; consensus runs once more to verify. If critical findings remain after two passes, they are surfaced to the human alongside the RFC.
 6. Present the post-consensus RFC to the human. RFC status stays `Draft`.
 
@@ -194,7 +195,7 @@ Use `/rfc-implement`. The skill spawns a `feature-engineer` agent (`model: "opus
 
 ## Maintaining project RFC files
 
-Projects keep a `docs/rfc-process.md` that is a **self-contained copy** of this document, plus optional project-specific extensions in a `## Project Extensions` section at the bottom. This makes the full process visible to all contributors, not just those with the plugin installed.
+Projects keep a `docs/rfc-process.md` that is a **self-contained copy** of this document. This makes the full process visible to all contributors, not just those with the plugin installed.
 
 **Skills:**
 
@@ -208,7 +209,6 @@ Projects keep a `docs/rfc-process.md` that is a **self-contained copy** of this 
 | `/rfc-approve` | Approve a Draft RFC (human-invoked) |
 | `/rfc-implement` | Begin implementing an Approved RFC |
 | `/rfc-drop` | Drop an RFC with a reason |
-| `/rfc-update` | Pull upstream changes into `docs/rfc-process.md` (also handled automatically by `/sync`) |
 | `/sync` | Set up or refresh the full project Claude Code environment, including RFC process |
 
 **Project extensions may add:**

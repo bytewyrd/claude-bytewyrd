@@ -1,3 +1,6 @@
+<!-- bootstrap-content-version: bytewyrd/CLAUDE.md@6cbeb80b:61f9b5c01dba -->
+<!-- Bootstrapped by the Bytewyrd plugin. This file is now owned by this project — /sync will not update it. Maintain it as part of your codebase. -->
+
 # Bytewyrd's Claude Plugin
 
 Opinionated Claude Code plugin for Bytewyrd projects — skills, agents, and RFC-driven workflow
@@ -34,12 +37,18 @@ claude-bytewyrd/
 | Code reviews | code-reviewer |
 | Refactoring (deliberate) | refactoring-specialist (via `/refactor`) |
 | Architecture / RFCs | rfc-architect |
-| User-facing docs (`docs/guide/**`) | docs-agent (via `/docs-review`) |
+| User-facing docs (`docs/guide/**`, `README.md`) | docs-agent (via `/docs-review`) |
 | General-purpose docs (ad-hoc) | documentation-writer |
 | Claude agent authoring | claude-agent-author |
 | Debugging | debugger |
 
 New agents added to `agents/` must meet the criteria in [`docs/agent-audit-criteria.md`](docs/agent-audit-criteria.md). Existing agents may be re-audited when the criteria file is updated; the tracking table in that file shows each agent's last-audited criteria version.
+
+## Auto Mode
+
+When Claude Code is running in Auto mode, do not make independent decisions — Auto mode grants execution speed, not decision authority. Every action must be grounded in a decision already made by the user (in the conversation, an RFC, a plan, or an explicit instruction). When a choice has not been resolved, stop and surface it rather than deciding unilaterally.
+
+Always prefer the `AskUserQuestion` tool when you need input from the user — it presents a structured, interactive prompt rather than a plain text question and is harder to overlook. Use it even for simple yes/no or option choices.
 
 ## Tool Usage
 
@@ -62,7 +71,7 @@ Required before reporting any UI or frontend change done. The dev server must al
 - **File exists:** read it (self-contained — full process + any project extensions). Use RFC skills for all design and implementation work.
 - **File absent:** RFC process does not apply. Do not follow the RFC workflow.
 
-RFCs live in `docs/rfcs/`; filename format `YYYY-MM-DD-<kebab-title>.md`. Lifecycle: `Draft → Approved → Done | Dropped`. Skills: `/rfc-new`, `/rfc-approve`, `/rfc-implement`, `/rfc-drop`, `/rfc-braindump`, `/rfc-read-feedback`, `/rfc-summary`, `/rfc-consensus-review`.
+RFCs live in `docs/rfcs/`; filename format `YYYY-MM-DD-<kebab-title>.md`. Lifecycle: `Draft → Approved → Done | Dropped`. Skills: `/rfc-new`, `/rfc-approve`, `/rfc-implement`, `/rfc-drop`, `/rfc-braindump`, `/rfc-read-feedback`, `/rfc-consensus-review`.
 
 ## Evidence-Based Development
 
@@ -161,7 +170,7 @@ Run `/docs-review <scope-hint>` when:
 - A user reports a tutorial does not work, a how-to guide references a missing flag, or a reference page is out of date.
 - Before a release — sweep `docs/guide/**` to confirm no broken examples or stale references ship to users.
 
-`/docs-review` spawns the `docs-agent` subagent on Sonnet. It is scoped strictly to `docs/guide/**` and the contributor section — it never touches `docs/ARCHITECTURE.md`, `docs/CONTRIBUTING.md`, `docs/BEST_PRACTICES.md`, `docs/project-brief.md`, or anything under `docs/rfcs/`. Those files have separate owners.
+`/docs-review` spawns the `docs-agent` subagent on Sonnet. It is scoped to `docs/guide/**`, the contributor section, and `README.md` (bootstrap-once: written by `/sync` at project creation, then project-owned) — it never touches `docs/ARCHITECTURE.md`, `docs/CONTRIBUTING.md`, `docs/BEST_PRACTICES.md`, `docs/project-brief.md`, or anything under `docs/rfcs/`. Those files have separate owners.
 
 The skill enforces a seven-phase protocol: resolve scope → coverage audit → drift detection → plan → **approval gate** → apply → report. The approval gate stops the subagent before any mutation; review the plan, approve specific findings, and the subagent applies them one commit at a time.
 
@@ -171,6 +180,35 @@ The skill enforces a seven-phase protocol: resolve scope → coverage audit → 
 - Update `docs/ARCHITECTURE.md` if components changed.
 - Update `docs/CONTRIBUTING.md` if dev workflow or quality gates changed.
 - Commit with Conventional Commits: `type(scope): message`.
+
+## Git
+
+- **Never squash commits** or use squash-merge when merging branches. Preserve the full commit history.
+- **Use merge, not rebase, to integrate branches.** The only acceptable use of rebase is reorganizing or cleaning up commits within a branch (interactive rebase for tidying before a PR). Never rebase to integrate upstream changes.
+- **Confirm before rebasing a shared branch.** If a branch has been pushed to the remote or is not purely local, always ask the user before running any rebase. History rewrites on shared branches affect collaborators.
+
+## Maintaining the bootstrap manifest
+
+The `bootstrap-manifest.json` file records the current SHA-256 hash of every artifact source that `/sync` manages. It must stay in sync with the actual source files.
+
+**After editing any artifact source or template file** (anything under `templates/`, or a non-templated source like `rfc-process.md`), regenerate the manifest:
+
+```bash
+scripts/build-manifest.sh
+```
+
+The script walks the manifest, recomputes the `sha256` or `template_sha` for each artifact's source file, and also recomputes `upstream_key` (fingerprinted from `extension_strategy` + strategy config — see Architecture Decision table). It preserves all other structural metadata (`extension_strategy`, `owned_sections`, `owned_paths`, `templated`, `template_inputs`) — it never modifies those fields.
+
+**Adding a new artifact:** edit the manifest by hand to add the new entry (with a placeholder `sha256: ""` or `template_sha: ""`), then run `build-manifest.sh` to compute the hash and `upstream_key`. The script computes `upstream_key` automatically — `extension_strategy` still requires maintainer judgment, `upstream_key` does not.
+
+**The pre-commit hook** (`hooks/pre-commit/manifest-check.sh`) runs `build-manifest.sh --check` and fails the commit if the manifest is stale. This prevents shipping a plugin where the recorded hash for an artifact does not match the artifact's current content, which would cause every consumer to see phantom fast-forward updates on the next `/sync` run.
+
+To wire the hook into git (one-time setup on a fresh clone):
+
+```bash
+ln -sf ../../hooks/pre-commit/manifest-check.sh .git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit
+```
 
 ## Conventions
 

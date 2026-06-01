@@ -9,64 +9,83 @@ description: Set up or refresh a project repository with all standard convention
 
 Sets up or refreshes a project repository with all standard conventions. Idempotent — re-running computes a three-way diff for every plugin-managed artifact and presents a categorized summary (additions, fast-forward updates, conflicts, local-only edits, unchanged) before writing anything.
 
+**Output rule:** do not narrate tool calls or internal implementation steps before executing them. The user does not know or care which scripts run internally. Only output the change summary and any required prompts.
+
 ## Interaction model
 
-Sync collects user input at two points:
+/sync has three user interaction points:
 
-1. **Steps 2a–2c (project identity)** — Only when `docs/project-brief.md` is absent or incomplete. Same as before: one AskUserQuestion for gaps in name/description, optional body-fill, brief creation.
-2. **Step 4a (batch confirmation)** — One AskUserQuestion with up to two questions (one for additions, one for fast-forward updates). Omitted entirely when there are no additions or fast-forward updates.
-3. **Step 4b (per-conflict resolution)** — One AskUserQuestion per conflict. Run sequentially, one at a time.
+1. **Steps 2a–2c (project identity)** — Only when `docs/project-brief.md` is absent or incomplete. One AskUserQuestion for name/description gaps; optional body-fill; brief creation.
+2. **Step 4 — single "Proceed?" confirmation** — After printing the full change summary, one AskUserQuestion with options `Proceed` / `Cancel`. Omitted when there are no changes at all.
+3. **Step 4c (additive-merge-with-diff cherry-pick only)** — One AskUserQuestion per `additive_merge_with_diff_apply` artifact. All other strategies (authoritative, structured, owned-regions, additive-merge) are applied without further input after Proceed.
 
-When `docs/project-brief.md` already exists with complete identity *and* all plugin-managed files are already at the current plugin version, both Steps 4a and 4b are skipped — `/sync` reports everything as unchanged and exits without prompting.
+When `docs/project-brief.md` already exists with complete identity *and* all plugin-managed files are at the current plugin version, Steps 4 and 4c are skipped — `ALL_UNCHANGED=true` is printed in Step 1, `/sync` presents the "Everything is up to date." summary, and exits without prompting.
 
-## Step 1 — Validate environment + detect installed plugins + detect GitHub remote
+## Step 1 — Validate environment, detect plugins, classify artifacts
 
-Run:
-```bash
-git rev-parse --show-toplevel
-git config user.name
-```
+Log: `Running /sync analysis…`
 
-If either fails, stop with a clear error message.
-
-**Additional pre-flight checks required for diff computation:**
+Run the consolidated deterministic-phase script **exactly once** and write its output to a session file:
 
 ```bash
-# Required for /sync diff computation
-command -v sha256sum >/dev/null || command -v shasum >/dev/null || { echo "/sync requires sha256sum or shasum for diff computation. Install with: brew install coreutils (macOS) or apt install coreutils (Debian/Ubuntu)" >&2; exit 1; }
-command -v jq >/dev/null || { echo "/sync requires jq for diff computation. Install with: brew install jq (macOS) or apt install jq (Debian/Ubuntu)" >&2; exit 1; }
-command -v python3 >/dev/null || { echo "/sync requires python3 for TOML parsing. Install with: brew install python3 (macOS) or apt install python3 (Debian/Ubuntu)" >&2; exit 1; }
+bash scripts/sync-run.sh > $TMPDIR/bytewyrd-sync-data.json && \
+jq -r '
+  "REPO_ROOT="          + .preflight.repo_root,
+  "GIT_USER="           + .preflight.git_user,
+  "PROJECT_SLUG="       + .preflight.project_slug,
+  "PLUGIN_ROOT="        + .preflight.plugin_root,
+  "PLUGIN_VERSION="     + .preflight.plugin_version,
+  "HAS_SUBSTANTIAL_CONTENT=" + (.preflight.has_substantial_content | tostring),
+  "GITHUB_DESCRIPTION=" + .preflight.github_description,
+  "DOCS_AGENT_DRIFTED=" + (.preflight.docs_agent_drifted | tostring),
+  "SIDECAR_MIGRATED="   + (.preflight.sidecar_migrated | tostring),
+  "SIDECAR_MESSAGE="    + .preflight.sidecar_message,
+  "HAS_RUST="           + (.preflight.has_rust | tostring),
+  "HAS_JS="             + (.preflight.has_js | tostring),
+  "HAS_GO="             + (.preflight.has_go | tostring),
+  "HAS_PYTHON="         + (.preflight.has_python | tostring),
+  "HAS_SVELTE="         + (.preflight.has_svelte | tostring),
+  "HAS_RUBY="           + (.preflight.has_ruby | tostring),
+  "HAS_RAILS="          + (.preflight.has_rails | tostring),
+  "HAS_K8S_CUE="        + (.preflight.has_k8s_cue | tostring),
+  "HAS_TERRAFORM="      + (.preflight.has_terraform | tostring),
+  "MISSING_CRITICAL="     + (.preflight.missing_critical | tostring),
+  "MISSING_RECOMMENDED="  + (.preflight.missing_recommended | tostring),
+  "BRIEF_COMPLETE="       + (.brief_complete | tostring),
+  "RFC_HAS_EXTENSIONS="   + (.rfc_process.has_extensions | tostring),
+  "CLASSIFICATIONS_COUNT=" + (.classifications | length | tostring),
+  "ALL_UNCHANGED="        + (.all_unchanged | tostring)
+' $TMPDIR/bytewyrd-sync-data.json && \
+echo "---" && \
+jq -r '.summary_text' $TMPDIR/bytewyrd-sync-data.json
 ```
 
-If any required tool is missing, stop with the error message shown above naming the missing tool and the one-line install hint.
+If `sync-run.sh` exits non-zero, stop immediately — it has already printed the relevant error to stderr. The error is self-explanatory; no further wrapping needed.
 
-**Write target:** all files created or modified by sync go to the directory returned by `git rev-parse --show-toplevel`. This is always the correct target — whether you're in a standard checkout or a worktree. **Never** run `git rev-parse --git-common-dir` or otherwise detect the "main" repo root and redirect writes there. If sync is invoked from a worktree, the worktree is the intended working context; changes land on a branch and flow through a PR — that is the desired workflow.
+The output above includes a `---` separator followed by the pre-built `/sync — change summary:` text. **Read and present that summary to the user verbatim — do not re-derive it from the raw classifications.** All subsequent data access uses `$TMPDIR/bytewyrd-sync-data.json`; never re-run `sync-run.sh`.
 
-If the repo already has substantial committed content (more than a LICENSE/README), note: "This repo already has content — sync will skip any files that already exist and only create the ones that are missing."
+The script also writes `.bytewyrd/docs-agent-version` as a side effect when the plugin's docs-agent version differs from the project's recorded version — no separate Step 1.5 logic is required in the skill.
 
-**Derive `project_slug`** — the repo/package identity name:
+**Sidecar migration (one-time, idempotent):** preflight performs the legacy `.claude/.bootstrap-versions.json` → `.bytewyrd/.bootstrap-versions.json` move automatically. If `SIDECAR_MIGRATED == true`, log `SIDECAR_MESSAGE` in the Step 8 report under "Migration notes." The migration only fires when the old path exists and the new path does not; otherwise it's a silent no-op.
 
-```bash
-basename $(git rev-parse --show-toplevel)
-```
+**Surface the collected context to the user as appropriate:**
 
-This is the raw directory name as-is (e.g., `tinywyrd`, `eve-platform`). It is never changed or asked about. It is used anywhere the machine-readable name is needed: CLI binary references, package name examples, `cd <project-slug>` in setup docs, etc.
+- If `HAS_SUBSTANTIAL_CONTENT == true`, note: "This repo already has content — sync will skip any files that already exist and only create the ones that are missing."
+- If `MISSING_CRITICAL` is a non-empty JSON array, warn that critical plugins are missing (GitHub MCP). Do not stop — the warning is informational; the user can re-run after installing.
+- If `MISSING_RECOMMENDED` is a non-empty JSON array, note the recommended plugins (Context7, Code Review). Same non-blocking semantics.
+- If `DOCS_AGENT_DRIFTED == true`, print the drift suggestion using `plugin_docs_ver` and `project_docs_ver` from the preflight JSON:
 
-**Detect GitHub remote (use to pre-populate defaults in Step 2):**
+  ```
+  The plugin's docs-agent has improved (project=<project_docs_ver>, plugin=<plugin_docs_ver>). Consider running /docs-review against docs/guide/** to re-audit user-facing documentation with the updated checks.
+  ```
 
-```bash
-git remote get-url origin 2>/dev/null
-```
+  Do **not** auto-invoke `/docs-review` — `/sync` only prints the suggestion. The decision to run the review belongs to the main agent or the user.
 
-If this returns a `github.com` URL, run:
+`PROJECT_SLUG` is the raw directory name as-is (e.g., `tinywyrd`, `eve-platform`). It is never changed or asked about. It is used anywhere the machine-readable name is needed: CLI binary references, package name examples, `cd <project-slug>` in setup docs, etc.
 
-```bash
-gh repo view --json name,description
-```
+`GITHUB_DESCRIPTION` is the current GitHub repo description (empty string when no GitHub remote is configured or `gh` is unavailable). It is the pre-fill default for the description question in Step 2.
 
-Store `github_description` (the repo's current description, empty string if unset) as the default for the description question in Step 2. If `gh` is unavailable or fails, proceed without it.
-
-Then read `~/.claude/plugins/installed_plugins.json`. Extract the `plugins` object keys to get the set of installed plugin identifiers. Cross-check against:
+The plugin cross-check covers:
 
 | Plugin | Identifier | Criticality |
 |--------|-----------|-------------|
@@ -74,52 +93,26 @@ Then read `~/.claude/plugins/installed_plugins.json`. Extract the `plugins` obje
 | Context7 | `context7@claude-plugins-official` | Recommended |
 | Code Review | `code-review@claude-plugins-official` | Recommended |
 
-The `bytewyrd@bytewyrd` plugin is NOT in this table — its installation is asserted at user scope on the developer's machine, not in the project's `.claude/settings.json`. The plugin's own `SessionStart` hook (shipped in `hooks/hooks.json`) detects whether it is enabled and surfaces a hard failure to the user if it is referenced in `.claude/settings.json` but missing from the installed-plugin registry.
+The `bytewyrd@bytewyrd` plugin is NOT in this table and NOT written to project settings — it is installed once per machine at user scope. The plugin's `SessionStart` hook validates companion plugins and MCP servers for users who have it installed; new collaborators who don't have it are directed to install via the CONTRIBUTING.md hint `/sync` adds to every consumer project.
 
 Note: Exa is a separate MCP server (not a plugin) — its permissions go unconditionally in `settings.local.json`.
 
-Store:
-- `installed`: set of installed plugin identifiers
-- `missing`: recommended plugins not in `installed`
+**Write target:** all files created or modified by sync go to the directory returned in `REPO_ROOT`. This is always the correct target — whether you're in a standard checkout or a worktree. **Never** run `git rev-parse --git-common-dir` or otherwise detect the "main" repo root and redirect writes there. If sync is invoked from a worktree, the worktree is the intended working context; changes land on a branch and flow through a PR — that is the desired workflow.
 
-If `github@claude-plugins-official` is missing from `installed`, warn but do not stop.
-
----
-
-## Step 1.5 — Detect docs-agent version drift
-
-Read the plugin's `docs-agent-version` marker from `$CLAUDE_PLUGIN_ROOT/agents/docs-agent.md`:
+**Also record the plugin version** so the `SessionStart` hook can warn collaborators who are on an older version than the one that last ran `/sync` on this project:
 
 ```bash
-PLUGIN_DOCS_VER=$(grep -m1 'docs-agent-version:' "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/agents/docs-agent.md" 2>/dev/null | sed -E 's/.*docs-agent-version: ([^ ]+).*/\1/')
+PLUGIN_VER=$(jq -r '.version // empty' "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/.claude-plugin/plugin.json" 2>/dev/null || echo "")
+[ -n "$PLUGIN_VER" ] && echo "$PLUGIN_VER" > .bytewyrd/plugin-version
 ```
 
-Read the project's recorded marker from `.bytewyrd/docs-agent-version`:
-
-```bash
-PROJECT_DOCS_VER=$(cat .bytewyrd/docs-agent-version 2>/dev/null || echo "")
-```
-
-If `PLUGIN_DOCS_VER` is non-empty and differs from `PROJECT_DOCS_VER` (including the case where `PROJECT_DOCS_VER` is empty because the file does not exist yet), print this suggestion to the agent's output:
-
-```
-The plugin's docs-agent has improved (project=<PROJECT_DOCS_VER>, plugin=<PLUGIN_DOCS_VER>). Consider running /docs-review against docs/guide/** to re-audit user-facing documentation with the updated checks.
-```
-
-Then record the new version so subsequent sync runs do not re-prompt until the marker changes again. Only write the marker if `PLUGIN_DOCS_VER` is non-empty (guard with `[ -n "$PLUGIN_DOCS_VER" ]`) to prevent overwriting a valid marker with an empty string when the plugin's agent file is unreachable.
-
-```bash
-mkdir -p .bytewyrd
-echo "$PLUGIN_DOCS_VER" > .bytewyrd/docs-agent-version
-```
-
-Do **not** auto-invoke `/docs-review` — `/sync` only prints the suggestion. The decision to run the review belongs to the main agent or the user.
-
-If `PLUGIN_DOCS_VER` is empty (the plugin's `agents/docs-agent.md` does not yet exist or does not carry the marker), skip this step silently — the plugin may be on a version that predates this feature.
+Only write if `PLUGIN_VER` is non-empty. If the file is unreadable (e.g. development checkout with a non-standard layout), skip silently.
 
 ---
 
 ## Step 2 — Gather project identity from the brief
+
+**Skip this step entirely when `BRIEF_COMPLETE=true` was printed in Step 1.** In that case set `project_name` and `description` by reading the brief directly from `docs/project-brief.md` (no prompts needed), then proceed to Step 3.
 
 Project identity (`project_name` and `description`) is sourced from `docs/project-brief.md`. The brief is the single source of truth — `/sync` does not maintain identity values independently of it.
 
@@ -227,54 +220,21 @@ The brief file is written in Step 5 — not here — so that `/sync` writes all 
 
 ## Step 3 — Detect component structure
 
-Scan the repo for language manifest files to determine component roots. Run all commands — language detection is the output of this step, not an input:
+Language detection ran in Step 1. The `HAS_*` flags were printed in the Step 1 output. `LANGUAGES` and `COMPONENT_ROOTS` are available from the session file:
 
 ```bash
-# Rust
-find . -name "Cargo.toml" -not -path "*/target/*" | sort
-
-# JS/TS
-find . -name "package.json" -not -path "*/node_modules/*" | sort
-
-# Go
-find . -name "go.mod" | sort
-
-# Python
-find . -name "pyproject.toml" -o -name "setup.py" | grep -v "*/node_modules/*" | sort
-
-# Svelte
-find . -name "*.svelte" -not -path "*/node_modules/*" | head -1
-
-# Ruby / Rails
-find . -name "Gemfile" -not -path "*/vendor/*" | head -1
-find . -name "config/application.rb" | head -1
-
-# Kubernetes / CUE / kapply
-find . -name "*.cue" -path "*/k8s/*" | head -1
-grep -rl "kapply" .github/ Dockerfile* Makefile 2>/dev/null | head -1
-
-# Terraform / Terragrunt
-find . -name "*.tf" -not -path "*/.terraform/*" | head -1
-find . -name "terragrunt.hcl" | head -1
+jq '.preflight.languages' $TMPDIR/bytewyrd-sync-data.json
+jq '.preflight.component_roots' $TMPDIR/bytewyrd-sync-data.json
 ```
 
-**Build `component_roots`** — a list of `{ language, path, name }` entries:
+`COMPONENT_ROOTS` is a list of `{ language, path, name }` entries with these rules baked into the script:
 
-- **Rust**: If root `Cargo.toml` contains `[workspace]`, read its `members` array — each member is a component. If it's a standalone crate, the component is `.`. If no `Cargo.toml` exists, default to `.`.
-- **JS/TS**: Each directory containing a `package.json` is a component. Use the `name` field from the JSON as the component name, falling back to the directory name.
-- **Go**: Each directory containing a `go.mod` is a module/component.
-- **Python**: Each directory containing `pyproject.toml` or `setup.py` is a component.
-- **If nothing is found for a language**: default to a single component at `.`.
+- **Rust**: If root `Cargo.toml` contains `[workspace]`, the script reads its `members` array via `python3 + tomllib` and emits one entry per member, resolving each member's `package.name` from its Cargo.toml. If it's a standalone crate, the component is `.` with the package name. If no `Cargo.toml` exists, no Rust entries are emitted.
+- **JS/TS**: Each directory containing a `package.json` is a component. The script uses the `name` field from the JSON as the component name, falling back to the directory name.
+- **Go**: Each directory containing a `go.mod` is a module/component (named by its dirname).
+- **Python**: Each directory containing `pyproject.toml` or `setup.py` is a component (named by its dirname).
 
-**Derive stack-detection flags** — independent of component roots, the following booleans gate the stack-specific best-practice sections appended in Step 5:
-
-- `has_svelte = true` if any `*.svelte` file is found OR `"svelte"` appears in any `package.json` `dependencies` or `devDependencies` field.
-- `has_ruby = true` if a `Gemfile` is found.
-- `has_rails = true` if `config/application.rb` is found OR `"rails"` gem is listed in the `Gemfile`.
-- `has_k8s_cue = true` if any `*.cue` file under `k8s/` is found OR `kapply` appears in a CI workflow or `Dockerfile`.
-- `has_terraform = true` if any `*.tf` file is found OR any `terragrunt.hcl` is found.
-
-These flags are consumed by Step 5's `docs/BEST_PRACTICES.md` creation policy: sync appends the matching addition block only when its flag is true (e.g., the Svelte block only when `has_svelte`, the Rails block only when `has_rails` and after the Ruby block since Rails depends on Ruby being present).
+The stack-detection flags `HAS_SVELTE`, `HAS_RUBY`, `HAS_RAILS`, `HAS_K8S_CUE`, `HAS_TERRAFORM` are independent of component roots. They are consumed by Step 5's `docs/BEST_PRACTICES.md` creation policy: sync appends the matching addition block only when its flag is true (e.g., the Svelte block only when `HAS_SVELTE`, the Rails block only when `HAS_RAILS` and after the Ruby block since Rails depends on Ruby being present).
 
 Since sync is idempotent, re-running it after adding new components will detect them and fill in any missing config.
 
@@ -286,174 +246,251 @@ This step replaces the former "Print creation summary." It runs the pre-flight d
 
 ### Pre-flight diff procedure
 
-Determine the plugin root:
+`PLUGIN_ROOT` was printed by Step 1. If needed: `jq -r '.preflight.plugin_root' $TMPDIR/bytewyrd-sync-data.json`.
+
+Read the manifest at `$PLUGIN_ROOT/bootstrap-manifest.json`. Also read the sidecar at `.bytewyrd/.bootstrap-versions.json` (treat as `{}` if absent).
+
+**SHA-256:** all canonical-form hashing is done by `scripts/sync-canonical.sh`, which uses `sha256sum` (Linux) with a `shasum -a 256` fallback (macOS) and emits the first 12 hex chars. Callers never invoke `sha256sum` directly — they always go through the helper script so the canonical form is consistent across strategies.
+
+`CLASSIFICATIONS` comes from the session file written in Step 1 — no second bash call to `sync-run.sh` is needed:
 
 ```bash
-echo "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}"
+jq '.classifications' $TMPDIR/bytewyrd-sync-data.json
 ```
 
-Use the printed path as `PLUGIN_ROOT`. Read the manifest at `$PLUGIN_ROOT/.claude-plugin/bootstrap-manifest.json`. Also read the sidecar at `.claude/.bootstrap-versions.json` (treat as `{}` if absent).
+Each element includes the manifest entry fields (`upstream_key`, `source`, `templated`, `owned_paths`, `owned_boundaries`, `owned_sections`) merged with the classification result (`classification`, `strategy`, `target`, `recorded_sha`, `plugin_sha`, `chunks`). Parse `.classification` for the verdict; `.recorded_sha` and `.plugin_sha` are surfaced for Steps 4b/4c prompts; `.chunks` drives the per-file chunk detail in the summary.
 
-**Cross-platform SHA-256:**
+`sync-classify.sh` implements both the strategy-first dispatch (for `bootstrap`, `authoritative`, `additive-merge`, `additive-merge-with-diff`, `owned-regions`) and the seven-cell structured matrix (for `owned-regions` and `structured`). It internally calls `sync-canonical.sh` for the per-strategy hash computation and `sync-marker-read.sh` to read the local marker. See those scripts for the per-strategy canonicalization rules and marker format.
 
-```bash
-# Prefer sha256sum (Linux); fall back to shasum -a 256 (macOS).
-if command -v sha256sum >/dev/null; then
-  hash_cmd="sha256sum"
-else
-  hash_cmd="shasum -a 256"
-fi
-# Usage: echo "content" | $hash_cmd | cut -c1-12  → first 12 hex chars
-```
+**Plugin canonical for additive-merge:** at classification time the canonical is approximated from the raw template source under each `owned_sections` heading — sufficient to detect "template changed since we last wrote this file" without requiring full project inputs at classification time. At apply time the merge re-renders the template with full inputs and writes the true canonical SHA into the marker.
 
-For each artifact in the manifest (skipping the `.bootstrap-versions.json` sidecar entry itself):
+**Classification outcomes by strategy** (also tabulated in the script header for cross-reference):
 
-1. **Compute `plugin_current_canonical_sha`** — render the template with `project_inputs` (for templated artifacts) or read the plugin source (for non-templated). Canonicalize the result per the artifact's `extension_strategy` (see Canonicalization rules below). Compute SHA-256, take first 12 hex chars.
-
-2. **If the target file is absent** → classify as **`add`**.
-
-3. **If the target file exists:**
-   - For Markdown/TOML/gitignore/YAML files: extract `local_ancestor_sha` from the embedded marker line (the `<!-- bootstrap-content-version: <key>:<sha-12> -->` comment on line 2, or the `# bootstrap-content-version: <key>:<sha-12>` comment on line 1 for TOML/gitignore/YAML).
-   - For JSON files (`.claude/settings.json`, `.claude/settings.local.json`): look up `local_ancestor_sha` from the sidecar by `upstream_key`.
-   - If no marker/sidecar entry exists: `local_ancestor_sha = None` (legacy file).
-   - Canonicalize the local file content → `local_current_canonical_sha` (first 12 hex chars).
-
-4. **Classify** per the matrix:
-
-| Conditions | Classification |
-|------------|----------------|
-| Target file absent | **add** |
-| No marker, `local_current == plugin_current` | **unchanged_legacy** |
-| No marker, `local_current != plugin_current` | **conflict_legacy** |
-| Marker present, `local_ancestor == plugin_current` | **unchanged** |
-| Marker present, `local_current == local_ancestor` AND `plugin_current != local_ancestor` | **fast_forward** |
-| Marker present, `local_current != local_ancestor` AND `plugin_current == local_ancestor` | **local_only** |
-| Marker present, all three differ AND `local_current != plugin_current` | **conflict** |
-| Marker present, all three differ AND `local_current == plugin_current` | **unchanged** (converged) |
-
-**Canonicalization rules** (same function applied to both local and plugin content — hashes must be directly comparable):
-
-- **`whole` strategy:** full file content with the marker line(s) removed (the embedded comment line and any immediately following blank line).
-- **`region` strategy:** file content from line 1 up to and including `region_end_marker`, with the marker line(s) removed. The project-extension region after the marker is excluded entirely.
-- **`section` strategy:** extract each heading in `owned_sections` (manifest order). For each: the literal heading line + `\n` + section body (all lines from heading to next H2 or EOF, trimmed of leading/trailing blank lines) + `\n`. Concatenate all owned sections. Sections absent from the file contribute heading + `\n` with empty body.
-- **`structured` strategy (JSON):** for each path in `owned_paths`, extract the value using `jq` (sort keys) and serialize it; concatenate. For id-based array paths (`[]:<id_key>`): serialize only entries with a non-empty id, sorted by id. For set-union array paths (`[]:union`): serialize only the plugin-contributed entries.
-- **`structured` strategy (`.gitignore`):** for each tagged block in `owned_paths`, extract the `# <tag>\n` line + lines in the block + `\n`; concatenate.
+| Strategy | Possible classifications |
+|----------|--------------------------|
+| `bootstrap` | `bootstrap_create`, `local_only` |
+| `authoritative` | `authoritative_add`, `unchanged`, `authoritative_update` |
+| `additive-merge` | `additive_merge_apply`, `unchanged` |
+| `additive-merge-with-diff` | `additive_merge_with_diff_apply`, `unchanged` |
+| `owned-regions` / `structured` | `add`, `unchanged_legacy`, `conflict_legacy`, `unchanged`, `fast_forward`, `local_only`, `conflict` |
 
 ### Print the summary
 
-After classifying all artifacts, print a categorized summary:
+The change summary was pre-built by `sync-run.sh` and printed at the end of the Step 1 bash output (after the `---` separator). Present it to the user verbatim — do not re-derive it from the raw classifications.
 
-```
-/sync — change summary:
+**If `ALL_UNCHANGED=true` was printed in Step 1, present the summary and stop — do not show any prompt.** There is nothing to apply.
 
-Additions (N new files):
-  + <path>
-  + <path>
+If `ALL_UNCHANGED=false`, ask one AskUserQuestion:
 
-Fast-forward updates (N files, no local edits):
-  ~ <path>  (plugin: <brief description of change>)
+**"Apply these changes?"** with options:
+- `Proceed` — continue to Step 4a.
+- `Cancel` — exit without writing any files.
 
-Legacy marker injection (N files, content matches — adding version marker only):
-  + <path>  (first sync after upgrade — no content change)
+### Step 4a — Deterministic batch apply (no further confirmation)
 
-Conflicts (N files, local edits collide with plugin update):
-  ! <path>  (<conflict scope description>)
+All artifacts except `additive_merge_with_diff_apply` are applied in a single script call immediately after the user clicks Proceed:
 
-Local-only edits (N files, plugin unchanged): <path>, <path>
-
-Unchanged (N files): (collapsed)
+```bash
+BATCH_RESULT="$(bash scripts/sync-apply-batch.sh $TMPDIR/bytewyrd-sync-data.json)"
 ```
 
-If any category is empty, omit it entirely. If there are no changes at all, print "Everything is up to date." and skip Steps 4a and 4b.
+`sync-apply-batch.sh` detects the session file, extracts `plugin_root`, builds the project-inputs object from `preflight` + `brief_name`/`brief_description`, and filters out `additive_merge_with_diff_apply`, `unchanged`, and `local_only` items internally.
 
-If this is the first run after upgrading to a plugin version that ships per-file markers (i.e., any `unchanged_legacy` or `conflict_legacy` entries exist), prepend a one-time banner:
+The batch script handles all of the following without user input:
+
+| Classification | Strategy | Action |
+|---|---|---|
+| `authoritative_add`, `authoritative_update` | authoritative | Overwrite and stamp |
+| `add`, `fast_forward`, `unchanged_legacy` | any | Apply owned regions/paths and stamp |
+| `conflict`, `conflict_legacy` | owned-regions | Plugin-owned regions replaced; user-owned preserved; stamp |
+| `conflict`, `conflict_legacy` | structured (.gitignore) | Plugin tag-blocks replaced; all other content preserved; stamp |
+| `conflict`, `conflict_legacy` | structured (JSON) | Plugin dot-path values overwritten; all other keys preserved; stamp |
+| `additive_merge_apply` | additive-merge | Run LLM item merge; write; stamp (if auto-merge produces contradictions, escalates to `!` cherry-pick flow) |
+| `bootstrap_create` | bootstrap | Render template; write; stamp |
+
+**Special case for `docs/rfc-process.md`** (authoritative): if `RFC_HAS_EXTENSIONS=true` was printed in Step 1, print a one-time warning quoting the `## Project Extensions` section (from `jq -r '.rfc_process.body' $TMPDIR/bytewyrd-sync-data.json`) before the batch write. No extra prompt — the user already clicked Proceed.
 
 ```
-This is the first /sync run after an upgrade that adds per-file content tracking.
-Existing plugin-managed files have been classified by comparing local content
-against the plugin's current shipped content. Files that match exactly were
-silently marked. Files that differ are listed under "Conflicts (legacy)" — pick
-"Adopt plugin and add marker" for any file you have not intentionally edited.
-Future runs will only flag files that genuinely diverged.
+docs/rfc-process.md — your '## Project Extensions' section will be removed
+because the file is now plugin-authoritative.
+The content was:
+
+  <quoted section body, indented 2 spaces, truncated to 200 chars>
+
+Copy anything you want to keep to docs/CONTRIBUTING.md or a new
+docs/rfc-process-extensions.md before the next step.
 ```
 
-### Step 4a — Batch confirmation for additions and fast-forwards
+`unchanged` and `local_only` artifacts are silently skipped.
 
-Ask one AskUserQuestion. The question set depends on which categories have items:
+### Step 4c — Additive-merge-with-diff cherry-pick
 
-- If `additions` or `unchanged_legacy` is non-empty: include Question 1 — "Apply N additions (+ N legacy marker insertions)?" with options:
-  - `Yes, apply all`
-  - `Review each` (drops into per-file prompts)
-  - `Skip all`
-- If `fast_forwards` is non-empty: include Question 2 — "Apply N fast-forward updates? (no local edits will be lost)" with the same three options.
+Applies only to `additive_merge_with_diff_apply` artifacts (currently: `.github/PULL_REQUEST_TEMPLATE.md` and `.github/workflows/ci.yml`).
 
-The two questions are sent in a single AskUserQuestion call. If neither category has items, skip Step 4a entirely.
+**`additive_merge_with_diff_apply` (additive-merge-with-diff strategy).** Run the per-section merge, run Pass 1 of the soundness review (auto-apply all fix types). Generate the unified diff between the local file and the (merged + Pass 1 result) by running:
 
-`unchanged_legacy` entries are included in the additions question because they require a file write (marker insertion) but no content change — the user should see them but does not need per-file confirmation.
+```bash
+bash scripts/sync-unified-diff.sh <local-file> <merged-content-file>
+```
 
-`Review each` mode: for each file in the category, ask one AskUserQuestion with "Apply update to `<path>`?" and options `Apply` / `Skip`. Print the first 40 lines of the unified diff between local and plugin-rendered content immediately before the question.
+Parse the JSON output. Use `.diff` as the human-readable diff to print. Use `.hunks` (an array of `{id, label, diff}` records) to build the `Accept with exclusions` multiSelect checkbox list — each hunk becomes one option labeled by `.hunks[].label`. Then present the four-option diff-review prompt:
 
-### Step 4b — Per-conflict resolution
+- `Accept all` — write the merged result, then run Pass 2 of the soundness review (explain-and-ask). The Pass 2 prompt is described below.
+- `Accept with exclusions` — present the hunk multiSelect checkbox list. Deselected hunks revert to the local content for that range. Write the result; then run Pass 2.
+- `Manual 3-way merge` — write the file with git-style conflict markers (`<<<<<<< local`, `=======`, `>>>>>>> plugin`); skip Pass 2; print the explanation below.
+- `Defer` — no write; skip Pass 2; re-present next run.
 
-For each conflict in the `conflict` (and `conflict_legacy`) list, run sequentially. Before each question, print:
+**Soundness-review Pass 2 explain-and-ask prompt** (runs only for `additive-merge-with-diff` `Accept all` and `Accept with exclusions` paths). After the write, if Pass 2 finds any soundness issues, print each issue (location, type, description, suggested fix) and ask one AskUserQuestion:
 
-- The file path and the conflict scope (e.g., "conflict in `## Tool Usage` section of `CLAUDE.md`" for `section` strategy; "conflict in upstream region of `docs/rfc-process.md`" for `region` strategy).
-- A compact unified diff (first 40 lines) of local content vs plugin content restricted to the affected owned region/section/path.
-- For `conflict_legacy` only: a note that this file pre-dates per-file markers, so the diff is between local content and the plugin's current content — not a true 3-way merge.
+- `Fix automatically` — apply all soundness fixes from Pass 2, then write again.
+- `I'll handle it` — leave the file as-is; the user resolves the issues manually.
 
-Then ask one AskUserQuestion:
+**Manual 3-way merge explanation** (printed when `Manual 3-way merge` is chosen):
 
-**"How to resolve conflict in `<path>`?"** with options:
+> Wrote `<path>` with git-style conflict markers for `<N>` hunks. Open the file, resolve each conflict by keeping the version you want (or composing a merge), remove the marker lines, and re-run `/sync`.
 
-- `Adopt plugin version (replace local edits in the owned region)`
-- `Keep local version (skip this update; will re-surface on next /sync)`
-- `Merge into local manually (write scratch files, then re-run /sync)`
-- `Skip for now (revisit later)`
+Until the conflict markers are removed, the file classifies as `additive_merge_with_diff_apply` on subsequent runs.
 
-For `conflict_legacy` only, add a fifth option:
-
-- `Adopt plugin and add marker (recommended if you haven't customized this file)`
-
-**Actions:**
-
-- `Adopt plugin version` → write plugin content merged per the artifact's `extension_strategy` (owned regions/sections/paths replaced; user-owned regions preserved). Update the marker.
-- `Keep local version` → no write; marker not updated; conflict re-surfaces on next run.
-- `Merge into local manually` → write plugin content to `.claude/sync-conflict-<sanitized-path>.txt` and local content to `.claude/sync-local-<sanitized-path>.txt`. Print: "Wrote scratch files for manual merge. Re-run `/sync` after merging." Do not write the target file.
-- `Skip for now` → identical to `Keep local version` but recorded separately in the Step 8 report.
-- `Adopt plugin and add marker` (legacy only) → write plugin content and set the marker to the plugin's current sha.
+**Note:** only `additive_merge_with_diff_apply` artifacts enter Step 4c. All other classifications are handled by the deterministic batch in Step 4a.
 
 ---
 
 ## Step 5 — Apply changes
 
-This step applies the actions determined by Steps 4a and 4b. For each artifact in the diff result, apply its action. Templates are read from `$PLUGIN_ROOT/.claude-plugin/scripts/templates/`. Non-templated artifact sources are read from the `source` field in the manifest (resolved relative to `$PLUGIN_ROOT`).
+This step applies the actions determined by Steps 4a and 4b. For each artifact in the diff result, apply its action. Templates are read from `$PLUGIN_ROOT/templates/`. Non-templated artifact sources are read from the `source` field in the manifest (resolved relative to `$PLUGIN_ROOT`).
 
-**Template rendering rule:** read the template source file as a string; for each `<placeholder>` token, substitute the corresponding value from `project_inputs`. Unrecognized placeholders are replaced with empty string. For conditional regions (`<!--lang:rust-start-->...<!--lang:rust-end-->` etc.), include the block content (without the delimiter comments) when the corresponding language is detected; otherwise strip the entire block including delimiters. All delimiter comment lines are stripped from the rendered output.
+**Template rendering rule:** for each templated artifact, run:
 
-**Marker insertion rule:** after rendering content for a new or updated file, insert the `bootstrap-content-version` marker. Compute `sha12 = first 12 hex chars of SHA-256(canonicalize(rendered_content, artifact))`. Insert per file type:
-- Markdown (`.md`): insert `<!-- bootstrap-content-version: <upstream_key>:<sha12> -->` as line 2 (after the first line of the file).
-- TOML (`.toml`): insert `# bootstrap-content-version: <upstream_key>:<sha12>` as line 1, followed by a blank line, then the file content.
-- YAML (`.yml`, `.yaml`): insert `# bootstrap-content-version: <upstream_key>:<sha12>` as line 1, followed by a blank line.
-- `.gitignore`: insert `# bootstrap-content-version: <upstream_key>:<sha12>` as line 1, followed by a blank line.
+```bash
+bash scripts/sync-render-template.sh <template-path> <inputs-json-path>
+```
+
+The script emits the rendered content on stdout. Internally it substitutes `<placeholder>` tokens from the inputs JSON (lowercased keys), and includes or strips `<!--lang:NAME-start-->...<!--lang:NAME-end-->` blocks based on the inputs `languages` array or `has_NAME` truthy keys. See the script header for the exact contract.
+
+**Marker insertion rule:** after writing content for a new or updated file, compute the canonical SHA via `sync-canonical.sh`, then stamp the marker according to file type:
+
+- Markdown (`.md`): `bash scripts/sync-write-header.sh <file> <upstream_key> <sha12> bootstrap` (or `authoritative` for plugin-owned files). The script handles both fresh-write and replace.
+- TOML / YAML / `.gitignore`: insert `# bootstrap-content-version: <upstream_key>:<sha12>` as line 1, followed by a blank line, then the file content. (No header-writer script — these inline `#` markers do not have the two-line tagline form.)
 - JSON files: do **not** embed a marker in the file. The marker is stored in the sidecar (Step 5.5).
 
-**Apply actions:**
+To read an existing marker from a file (for diff classification or any other lookup), run `bash scripts/sync-marker-read.sh <file>` and parse `.sha12` (or branch on `.found == false` when no marker is present).
 
-1. **`add`** — Render the template with `project_inputs`. Insert the marker. Write the file. Track as `added`.
+Step 4a runs the batch apply for all deterministic items. The `BATCH_RESULT` JSON array is the source of truth for Step 8 tracking. Items with `"result": "needs-agent"` in the batch result are additive-merge-with-diff items that were deferred to Step 4c.
 
-2. **`fast_forward`** (approved in Step 4a) — Render the template or read the plugin source. Apply the extension strategy to merge against the local file:
-   - `whole`: replace the full file with plugin content (marker updated).
-   - `region`: replace the upstream region (everything up to and including `region_end_marker`) with the plugin's rendered upstream region; preserve the project-extension region (everything after `region_end_marker`) byte-for-byte.
-   - `section`: for each heading in `owned_sections`, replace the section body in the local file with the plugin's rendered body for that section. Preserve all other sections (user-owned sections, sections the plugin doesn't own). If a plugin-owned section is absent from the local file, insert it after the last preceding owned section in manifest order. Reserialize: marker on line 2, then sections in their preserved relative order.
-   - `structured` (JSON/TOML): for each path in `owned_paths`, replace the value at that path with the plugin's current value. Preserve all other paths. Update the sidecar rather than embedding a marker.
-   - `structured` (.gitignore): for each tag in `owned_paths`, replace the tagged block. Preserve all untagged blocks. Update marker on line 1.
-   Update the marker to the new sha. Track as `fast-forward applied`.
+**Apply actions (for reference — the batch script implements these):**
 
-3. **`conflict`** / **`conflict_legacy`** (resolution from Step 4b) — Apply per the chosen resolution option. Track the resolution in the Step 8 report.
+1. **`add`** — Render the template via `sync-render-template.sh` with `project_inputs`. Compute the canonical SHA via `sync-canonical.sh` for the artifact's strategy. Write the file, then stamp the marker per the "Marker insertion rule" above. Track as `added`.
+
+2. **`fast_forward`** — Apply the extension strategy:
+   - `owned-regions`: run `bash scripts/sync-owned-regions-apply.sh <local> <plugin-source> '<owned_boundaries-json>'` and write the result to the target. Stamp the marker.
+   - `structured` (JSON, dot-path): for each path in `owned_paths`, overwrite the local value with the plugin value via `jq`. All other keys are preserved. JSON files: flag `sidecar_update_needed` (Step 5.5). `.gitignore`: replace each tagged block; stamp the inline marker.
+   Track as `fast-forward applied`.
+
+3. **`conflict`** / **`conflict_legacy`** — Same apply logic as `fast_forward` for the matching strategy. Plugin-owned regions/paths always win; project-owned content is preserved. Track as `conflict resolved (deterministic)` or `conflict_legacy resolved (deterministic)`.
 
 4. **`unchanged_legacy`** — Silently re-write the file with the marker inserted (no content change). Track as `unchanged (legacy marker added)`.
 
 5. **`unchanged`** / **`local_only`** — No action. Track as `unchanged` or `local-only edit preserved`.
+
+6. **`additive_merge_apply`** (additive-merge strategy) — Run the per-section LLM item merge. If all sections merge cleanly (no contradictions): write the file, stamp the marker, track as `~`. If any section produces unresolvable contradictions: do NOT write; instead surface the item as `!` and run the `additive_merge_with_diff` interactive flow (diff display + user cherry-pick). After user resolves, write and stamp.
+
+7. **`additive_merge_with_diff_apply`** (additive-merge-with-diff strategy) — Run the same per-section item merge as `additive-merge`. Pass 1 of the soundness review auto-applies all fix types (`duplicate`, `structural`, `ordering`, `semantic`). Render a unified diff of (local file) vs (merged + Pass 1 result) and present the Step 4c diff-review prompt. On `Accept all` or `Accept with exclusions`: write the file, then run Pass 2 of the soundness review (explain-and-ask — the user chooses `Fix automatically` or `I'll handle it`). On `Manual 3-way merge`: write the file with git-style conflict markers; skip Pass 2. On `Defer`: no write. The marker SHA is `plugin_sha` (not the merged-file SHA). Track per the chosen path.
+
+8. **`bootstrap_create`** (bootstrap strategy, confirmed in Step 4b) — Render the template with `project_inputs` via `sync-render-template.sh`. Write the rendered content to disk, then stamp the two-line header in place:
+
+   ```bash
+   bash scripts/sync-write-header.sh <target> <upstream_key> <sha12> bootstrap
+   ```
+
+   `<sha12>` is the canonical SHA from `sync-canonical.sh` (here, the canonical for a freshly-written file is just the rendered content). The script handles both prepend (no existing header) and replace (existing recognized header).
+
+   Track as `bootstrapped`. If the user deselected the file in Step 4b → no write, defer (re-surfaces next run). Local-only files (file present, no marker) → no write, preserve.
+
+9. **`authoritative_add`** / **`authoritative_update`** (authoritative strategy — applied automatically in Step 4a) — Read the plugin source. Write it to the target, then stamp the two-line header:
+
+   ```bash
+   bash scripts/sync-write-header.sh <target> <upstream_key> <sha12> authoritative
+   ```
+
+   Local edits in the body are replaced without confirmation. Track as `authoritative-overwritten`. `unchanged` → no action.
+
+10. **`owned-regions`** apply — run:
+
+    ```bash
+    bash scripts/sync-owned-regions-apply.sh <local-file> <plugin-source> '<owned_boundaries-json>'
+    ```
+
+    The script writes the merged content to stdout — the caller writes it back to the target and then stamps the marker on line 2. See the script for the exact merge semantics (replace owned headings in place, preserve user-owned content, insert absent plugin-owned headings after the last preceding present heading).
+
+### Additive-merge algorithm
+
+For every owned section in `owned_sections` of an `additive-merge` or `additive-merge-with-diff` artifact, the merge runs as follows. Sections in the local file that are **not** listed in `owned_sections` are invisible to this algorithm — they are never read, never compared, never modified, and never flagged as conflicts. They survive untouched into the reserialized output.
+
+**Step A — Extract items.** For each owned section, run:
+
+```bash
+bash scripts/sync-item-parser.sh markdown --section '<heading>' < <file>
+```
+
+(For `.github/workflows/ci.yml`, use `yaml` instead of `markdown` and pass the file directly with no `--section`.) Parse the JSON output: `.items[]` is the list of discrete items, each with `index`, `text`, and `type` (one of `bullet`, `paragraph`, `codeblock`, `yaml-key`). Top-level bullets carry their sub-bullets; paragraphs are one item; code blocks are one item.
+
+**Step B — Classify pairs in one batch LLM call per section.** The batch LLM-comparison helper is invoked once per owned section (not per pair). A single prompt lists all plugin items and all local items for the section and asks for a complete classification matrix in one JSON response. Prompt format:
+
+```
+You are classifying relationships between items in a developer documentation section.
+
+Plugin items (indexed 0..P-1):
+<plugin_items_json_array>
+
+Local items (indexed 0..L-1):
+<local_items_json_array>
+
+For every (plugin_index, local_index) pair, classify the relationship as:
+  - "same_concept": the items express the same rule or fact, possibly in different wording
+  - "different_concept": the items express genuinely different concepts
+  - "contradiction": the items express opposing rules — one negates or prohibits what the other prescribes
+
+Return JSON: {"pairs": [{"pi": <int>, "li": <int>, "rel": "<one of the three>", "conf": <float 0-1>}]}
+Include only pairs where you classified a meaningful relationship (same_concept or contradiction);
+omit pairs where rel == "different_concept" to keep the response compact.
+```
+
+**Step C — Apply the classification.**
+
+- `same_concept` pairs with `conf >= 0.5` → **replace** the local item with the plugin item's wording (plugin wins on phrasing for the matching concept).
+- `contradiction` pairs with `conf >= 0.5` → add to the section's `pending_contradictions` list (resolved one item at a time in Step 4c's `additive_merge_apply` flow).
+- Plugin items not in any `same_concept` pair → **append** to the section after the last preserved/replaced item.
+- Local items not in any `same_concept` or `contradiction` pair → **preserve byte-for-byte** in their original position.
+
+**Step D — Soundness review.** After the merge, run the soundness reviewer (described below). For `additive-merge`, auto-apply only `duplicate` and `structural` fixes; log `ordering` and `semantic` issues as suggestions in the Step 8 report. For `additive-merge-with-diff` Pass 1, auto-apply all fix types; Pass 2 explain-and-asks.
+
+**Step E — Reserialize.** Emit the merged section body with one blank line between items. Concatenate **all** sections — owned and non-owned — in their original order in the file. Sections **not** listed in `owned_sections` are carried through **byte-for-byte, unmodified**, in their original position. They are never classified as conflicts, never shown in a diff prompt, and never modified. Newly inserted plugin sections (headings absent from the local file) are placed after the last preceding owned section that is present. Write the marker on line 2 with `plugin_sha` (canonicalized plugin items only) — not the merged-file SHA.
+
+### Soundness review
+
+The soundness reviewer runs as an LLM-assisted pass (one call per file per pass) after the merge step. It checks:
+
+1. **Ordering** — sections and items appear in logical order for the file type.
+2. **No duplicates** — no two items within the same section express the same concept.
+3. **Structural validity** — the file is well-formed (valid YAML, valid heading hierarchy, no unclosed fences).
+4. **Semantic coherence** — no two adjacent items make contradictory prescriptions.
+
+**Reviewer output shape (one entry per issue):**
+
+```json
+{
+  "location": "<line-number-or-section-heading>",
+  "type": "ordering | duplicate | structural | semantic",
+  "description": "<one-line explanation>",
+  "suggested_fix": "<concrete edit>"
+}
+```
+
+**Auto-apply matrix:**
+
+- `additive-merge` — auto-apply `duplicate` and `structural` fixes only. Log `ordering` and `semantic` as suggestions in the Step 8 report (no edit).
+- `additive-merge-with-diff` Pass 1 — auto-apply all four fix types.
+- `additive-merge-with-diff` Pass 2 — explain-and-ask: print every issue, then a single AskUserQuestion with `Fix automatically` / `I'll handle it`.
 
 **Non-manifest items** — the following are always applied regardless of the manifest diff flow (they do not participate in the 3-way diff because they are not plugin-managed artifacts with extension strategies):
 
@@ -539,24 +576,23 @@ Track in the Step 8 report as `created (full template)`.
 
 ### Template-based artifact rendering
 
-All plugin-managed file content is rendered from templates under `$PLUGIN_ROOT/.claude-plugin/scripts/templates/`. Each template file maps to a manifest entry:
+All plugin-managed file content is rendered from templates under `$PLUGIN_ROOT/templates/`. Each template file maps to a manifest entry:
 
 | Template file | Manifest `upstream_key` | Notes |
 |---|---|---|
-| `CLAUDE.md.tpl` | `bytewyrd/CLAUDE.md@v1` | Templated; placeholders: `<project_name>`, `<description>`, `<project_slug>`, `<LANGUAGE_TOOLCHAIN_SECTION>`, `<AGENT_TABLE_ROWS>`, `<TOOL_USAGE_SECTION>`; conditional regions `<!--lang:*-start/end-->` |
-| `README.md.tpl` | `bytewyrd/README.md@v1` | Templated; placeholders: `<project_name>`, `<description>` |
-| `BEST_PRACTICES.md.tpl` | `bytewyrd/docs/BEST_PRACTICES.md@v1` | Templated; conditional language regions |
-| `CONTRIBUTING.md.tpl` | `bytewyrd/docs/CONTRIBUTING.md@v1` | Non-templated (whole strategy) |
-| `ARCHITECTURE.md.tpl` | `bytewyrd/docs/ARCHITECTURE.md@v1` | Non-templated (whole strategy) |
+| `CLAUDE.md.tpl` | `bytewyrd/CLAUDE.md@v1` | Templated; additive-merge strategy; placeholders: `<project_name>`, `<description>`, `<project_slug>`, `<LANGUAGE_TOOLCHAIN_SECTION>`, `<AGENT_TABLE_ROWS>`, `<TOOL_USAGE_SECTION>`; conditional regions `<!--lang:*-start/end-->` |
+| `README.md.tpl` | `bytewyrd/README.md@v1` | Templated; bootstrap strategy; placeholders: `<project_name>`, `<description>` |
+| `BEST_PRACTICES.md.tpl` | `bytewyrd/docs/BEST_PRACTICES.md@v1` | Templated; owned-regions strategy; conditional language regions |
+| `CONTRIBUTING.md.tpl` | `bytewyrd/docs/CONTRIBUTING.md@v1` | Non-templated; bootstrap strategy |
+| `ARCHITECTURE.md.tpl` | `bytewyrd/docs/ARCHITECTURE.md@v1` | Non-templated; bootstrap strategy |
 | `settings.json.tpl` | `bytewyrd/.claude/settings.json@v1` | Templated; structured strategy; sidecar marker |
-| `settings.local.json.tpl` | `bytewyrd/.claude/settings.local.json@v1` | Non-templated; structured strategy; sidecar marker |
+| `settings.local.json.tpl` | `bytewyrd/.claude/settings.local.json@v1` | Non-templated; bootstrap strategy (create once, then project-owned; never updated by sync) |
 | `mise.toml.tpl` | `bytewyrd/mise.toml@v1` | Templated; structured strategy |
 | `.gitignore.tpl` | `bytewyrd/.gitignore@v1` | Non-templated; structured strategy |
-| `ci.yml.tpl` | `bytewyrd/.github/workflows/ci.yml@v1` | Templated; whole strategy |
-| `PULL_REQUEST_TEMPLATE.md.tpl` | `bytewyrd/.github/PULL_REQUEST_TEMPLATE.md@v1` | Non-templated; whole strategy |
-| `.bootstrap-versions.json.tpl` | `bytewyrd/.claude/.bootstrap-versions.json@v1` | Whole strategy; generated at sync time |
+| `ci.yml.tpl` | `bytewyrd/.github/workflows/ci.yml@v1` | Templated; additive-merge-with-diff strategy |
+| `PULL_REQUEST_TEMPLATE.md.tpl` | `bytewyrd/.github/PULL_REQUEST_TEMPLATE.md@v1` | Non-templated; additive-merge-with-diff strategy |
 
-The `rfc-process.md` source (`bytewyrd/docs/rfc-process.md@v1`) is read directly from `$PLUGIN_ROOT/rfc-process.md` (non-templated, region strategy).
+The `rfc-process.md` source (`bytewyrd/docs/rfc-process.md@v1`) is read directly from `$PLUGIN_ROOT/rfc-process.md` (non-templated, authoritative strategy).
 
 **Template rendering details** (for reference when rendering templates):
 
@@ -576,17 +612,17 @@ The `rfc-process.md` source (`bytewyrd/docs/rfc-process.md@v1`) is read directly
   - Go: `| golang-pro | Go-specific code |`
   - Python: `| python-pro | Python-specific code |`
   - Shell/Infra: terraform-engineer, kubernetes-specialist, cloud-architect, sre-engineer
-  - Always: feature-engineer (new features), code-reviewer (code reviews), rfc-architect (architecture/RFCs), documentation-writer (docs), debugger (debugging)
+  - Always: feature-engineer (new features), code-reviewer (code reviews), rfc-architect (architecture/RFCs), docs-agent via `/docs-review` (`docs/guide/**` and `README.md`), documentation-writer (ad-hoc docs outside `docs/guide/**`), debugger (debugging)
 
 - `<TOOL_USAGE_SECTION>`: build from installed tools. Exa and Firefox MCP are unconditional. Context7 only if `context7@claude-plugins-official` is installed. If none installed, omit the `## Tool Usage` section entirely.
 
 **`settings.json.tpl` rendering:**
 
-**Do NOT include `bytewyrd@bytewyrd`.** The plugin is installed at user scope (`~/.claude/settings.json`); projects do not assert plugin enablement in `.claude/settings.json`. The plugin's own `SessionStart` requirement-check hook surfaces gaps per session. (Teams that want to mandate plugin enablement at project scope can manually add `"bytewyrd@bytewyrd": true` to their `.claude/settings.json`'s `enabledPlugins` block; this is documented in `docs/guide/installation.md` but is not the default.)
+**Do NOT include `bytewyrd@bytewyrd` or `extraKnownMarketplaces.bytewyrd`.** The plugin is installed at user scope (`~/.claude/settings.json`); projects do not assert plugin enablement or marketplace registration in `.claude/settings.json`. Discoverability for new team members is handled by the CONTRIBUTING.md install-hint block (Step 5). (Teams that want project-scope enforcement can manually add `"bytewyrd@bytewyrd": true` to their `.claude/settings.json`'s `enabledPlugins` block; this is documented in `docs/guide/installation.md` but is not the default.)
 
-**Cleanup of legacy entries (always run before writing):** If the existing `.claude/settings.json` contains a `bytewyrd@bytewyrd` entry under `enabledPlugins`, remove it. This is a forward-only migration: pre-RFC projects had the entry; post-RFC projects must not. The cleanup is idempotent — re-running `/sync` on a clean post-RFC project is a no-op. Use `jq -e 'del(.enabledPlugins["bytewyrd@bytewyrd"])'` if `jq` is available (bracket notation is required — dot notation with `@` in the key is non-portable across jq versions); otherwise hand-edit.
+**Cleanup of legacy entries (always run before writing):** Remove any pre-existing `bytewyrd@bytewyrd` entry under `enabledPlugins` and any `bytewyrd` key under `extraKnownMarketplaces`. These are forward-only migrations: pre-RFC projects had both; post-RFC projects must not. Use `jq -e 'del(.enabledPlugins["bytewyrd@bytewyrd"]) | del(.extraKnownMarketplaces.bytewyrd) | if .extraKnownMarketplaces == {} then del(.extraKnownMarketplaces) else . end'` if `jq` is available; otherwise hand-edit. The cleanup is idempotent — re-running `/sync` on a clean post-RFC project is a no-op.
 
-**Include only if installed** — an uninstalled `claude-plugins-official` plugin causes Claude Code to error on startup. Read `~/.claude/plugins/installed_plugins.json` and include each entry only if its identifier is present in the registry. Add `"github@claude-plugins-official": true`, `"context7@claude-plugins-official": true`, `"code-review@claude-plugins-official": true` only for plugins in `installed`.
+**`<ENABLED_PLUGINS_ENTRIES>`** — this template variable expands to the full content of the `enabledPlugins` object (no leading `bytewyrd@bytewyrd` base entry). If no companion plugins are installed it is empty (resulting in `"enabledPlugins": {}`). Otherwise it expands to a newline-indented, comma-separated list of `"<id>": true` entries. Only include installed identifiers — an uninstalled `claude-plugins-official` plugin causes Claude Code to error on startup. Check each identifier against the `INSTALLED_PLUGINS` array collected in Step 1 (sourced from `~/.claude/plugins/installed_plugins.json`). Add `"github@claude-plugins-official": true`, `"context7@claude-plugins-official": true`, `"code-review@claude-plugins-official": true` only when the identifier appears in `INSTALLED_PLUGINS`.
 
 The `PreToolUse` hook's quality-gate command chains gate commands for all detected languages with `&&`. Skip Shell/Infra. Wrap non-root component paths in a subshell. If no languages with a standard gate are detected, omit the `PreToolUse` hook entirely.
 
@@ -687,7 +723,7 @@ The `description` value is sourced from `docs/project-brief.md`, ensuring local 
 mkdir -p docs/rfcs && test -f docs/rfcs/.gitkeep || touch docs/rfcs/.gitkeep
 ```
 
-The `docs/rfc-process.md` file is now managed as a manifest artifact with `extension_strategy: "region"` (upstream key `bytewyrd/docs/rfc-process.md@v1`). Its creation, update, and conflict handling are handled by the Step 4–5 diff/apply flow, just like any other manifest artifact. The bespoke sync logic that previously lived in this step has been removed — it was a single-file implementation of the same pattern the manifest generalizes.
+The `docs/rfc-process.md` file is managed as a manifest artifact with `extension_strategy: "authoritative"` (upstream key `bytewyrd/docs/rfc-process.md@v1`). It is plugin-owned and overwritten automatically in Step 4a whenever the plugin's `rfc-process.md` source changes. Before the write, Step 4a checks for a `## Project Extensions` section and surfaces a warning with a single acknowledgement prompt so users can copy their customizations before they are replaced.
 
 ---
 
@@ -695,32 +731,80 @@ The `docs/rfc-process.md` file is now managed as a manifest artifact with `exten
 
 ### Step 5.5 — Rewrite sidecar if any JSON artifact's marker advanced
 
-Before printing the report, check whether any JSON-format artifact's marker was updated in Step 5 (i.e., `.claude/settings.json` or `.claude/settings.local.json` was written with a new marker). If yes, rewrite `.claude/.bootstrap-versions.json` in full with all current marker entries. If no JSON artifact's marker changed, the sidecar is not rewritten.
+Before printing the report, check whether any JSON-format artifact's marker was updated in Step 5 (i.e., `.claude/settings.json` was written with a new marker). If yes, rewrite `.bytewyrd/.bootstrap-versions.json` in full with all current marker entries. If no JSON artifact's marker changed, the sidecar is not rewritten.
+
+Note: `.claude/settings.local.json` is now `bootstrap` strategy and does not use a sidecar marker — it is created once and left project-owned thereafter.
 
 ### Final report
 
-Print a summary of every artifact processed, grouped by outcome category. Use the new outcome labels:
+Print a summary of every artifact processed, grouped by outcome category. Outcome labels by strategy:
 
-| File | Outcome |
-|------|---------|
-| `CLAUDE.md` | added / fast-forward applied / conflict resolved (see note) / unchanged / local-only edit preserved / unchanged (legacy marker added) |
-| `README.md` | added / fast-forward applied / ... |
-| `docs/BEST_PRACTICES.md` | added / fast-forward applied / ... |
-| `docs/CONTRIBUTING.md` | added / fast-forward applied / ... |
-| `docs/ARCHITECTURE.md` | added / fast-forward applied / ... |
-| `docs/rfc-process.md` | added / fast-forward applied / conflict resolved / ... |
-| `.claude/settings.json` | added / fast-forward applied / ... |
-| `.claude/settings.local.json` | added / fast-forward applied / ... |
-| `.github/workflows/ci.yml` | added / fast-forward applied / ... |
-| `.github/PULL_REQUEST_TEMPLATE.md` | added / fast-forward applied / ... |
-| `mise.toml` | added / fast-forward applied / ... |
-| `.gitignore` | added / fast-forward applied / ... |
-| `.worktrees/` | created / already exists |
-| `docs/guide/` | created / already exists |
-| `docs/project-brief.md` | created (full template) / migrated / skipped (user opted not to create) / exists |
-| `docs/rfcs/.gitkeep` | created / already exists |
-| `rust-toolchain.toml` | created / already exists (Rust only) |
-| GitHub repo description | updated via `gh repo edit` / skipped (no remote or description) |
+| Strategy | Outcomes |
+|----------|----------|
+| `structured` | added / fast-forward applied / conflict resolved (see note) / unchanged / local-only edit preserved / unchanged (legacy marker added) |
+| `additive-merge` | added / additive-merge applied (per-section summary, see below) / unchanged / deferred |
+| `additive-merge-with-diff` | added / additive-merge-with-diff applied (Pass 1 fixes: N, Pass 2 outcome: applied / user-handled) / manual-3-way-pending / deferred |
+| `bootstrap` | bootstrapped / local-only (existing) / deferred |
+| `authoritative` | authoritative-overwritten / unchanged |
+| `owned-regions` | added / fast-forward applied / conflict resolved / unchanged / local-only edit preserved |
+
+Per-file outcomes:
+
+| File | Strategy | Typical outcomes |
+|------|----------|------------------|
+| `CLAUDE.md` | additive-merge | additive-merge applied / unchanged |
+| `README.md` | bootstrap | bootstrapped / local-only (existing) |
+| `docs/BEST_PRACTICES.md` | owned-regions | added / fast-forward applied / conflict resolved / unchanged |
+| `docs/CONTRIBUTING.md` | bootstrap | bootstrapped / local-only (existing) |
+| `docs/ARCHITECTURE.md` | bootstrap | bootstrapped / local-only (existing) |
+| `docs/rfc-process.md` | authoritative | authoritative-overwritten / unchanged |
+| `.claude/settings.json` | structured | added / fast-forward applied / conflict resolved / unchanged |
+| `.claude/settings.local.json` | bootstrap | bootstrapped / local-only (existing, never re-touched by sync) |
+| `.github/workflows/ci.yml` | additive-merge-with-diff | additive-merge-with-diff applied / manual-3-way-pending / unchanged |
+| `.github/PULL_REQUEST_TEMPLATE.md` | additive-merge-with-diff | additive-merge-with-diff applied / manual-3-way-pending / unchanged |
+| `mise.toml` | structured | added / fast-forward applied / unchanged |
+| `.gitignore` | structured | added / fast-forward applied / unchanged |
+| `.worktrees/` | (non-manifest) | created / already exists |
+| `docs/guide/` | (non-manifest) | created / already exists |
+| `docs/project-brief.md` | (non-manifest) | created (full template) / migrated / skipped (user opted not to create) / exists |
+| `docs/rfcs/.gitkeep` | (non-manifest) | created / already exists |
+| `rust-toolchain.toml` | (non-manifest) | created / already exists (Rust only) |
+| GitHub repo description | (non-manifest) | updated via `gh repo edit` / skipped (no remote or description) |
+
+**Per-section breakdown for `additive-merge` files** (printed when at least one replacement or soundness fix occurred):
+
+```
+CLAUDE.md — additive-merge apply:
+  ## Tool Usage      — 2 same-concept replacements, 1 new item appended, 0 soundness fixes
+  ## Security        — 0 replacements, 0 appended, 1 soundness fix (duplicate removed)
+  ## Conventions     — 1 same-concept replacement, 0 appended, 0 soundness fixes
+  Total: 3 replacements, 1 appended, 1 soundness fix — run `git diff CLAUDE.md` to inspect
+```
+
+The `run \`git diff <path>\` to inspect` line is printed for every file that had at least one replacement or soundness fix.
+
+**Deferred section.** List every file the user deferred at the Step 4b checkbox prompt or the Step 4c `Defer` option:
+
+```
+Deferred (N items, re-presented next run):
+  - <path>
+  - <path>
+```
+
+**Migration notes.** If the sidecar was relocated, print:
+
+```
+Migrated .bootstrap-versions.json: .claude/ → .bytewyrd/
+```
+
+**Manifest errors.** If any artifact's `extension_strategy` is unrecognized, print:
+
+```
+Manifest errors:
+  - <path>: <error message>
+```
+
+These artifacts are not classified or applied — they require a manifest fix.
 
 For conflicts where the user chose `Merge into local manually`:
 ```
@@ -737,7 +821,7 @@ N conflict(s) deferred — will re-surface on the next /sync run.
 
 Collapse `unchanged` and `local-only edit preserved` to single-line summaries (count only, no per-file listing).
 
-If `missing` (from Step 1) is non-empty, print:
+If `MISSING_RECOMMENDED` (from Step 1) is non-empty, print:
 ```
 Missing plugins — not added to enabledPlugins:
   - <identifier>  →  install: /install <name>
@@ -749,7 +833,3 @@ Exa MCP — permissions pre-configured in settings.local.json.
 If Exa is not yet set up globally, configure it as an MCP server in Claude Code settings.
 ```
 
-Remind the user of follow-up tasks:
-- Edit `CLAUDE.md` to fill in the actual file structure once source code is added
-- Fill in `docs/ARCHITECTURE.md` once the system design is settled
-- Run `/best-practices-extract` at the end of meaningful sessions

@@ -1,0 +1,223 @@
+{
+  "artifacts": [
+    {
+      "upstream_key": "bytewyrd/.claude/settings.json@632b4c58",
+      "source": "templates/settings.json.tpl",
+      "target": ".claude/settings.json",
+      "template_sha": "9eae2efbae44c42b2f7df3c8b242010c2e64b0aebd96d03decf6a700e1451ec7",
+      "extension_strategy": "structured",
+      "owned_paths": [
+        "hooks"
+      ],
+      "templated": true,
+      "template_inputs": [
+        "project_name",
+        "description",
+        "languages",
+        "installed_plugins",
+        "component_roots"
+      ]
+    },
+    {
+      "upstream_key": "bytewyrd/.github/PULL_REQUEST_TEMPLATE.md@bc393baf",
+      "source": "templates/PULL_REQUEST_TEMPLATE.md.tpl",
+      "target": ".github/PULL_REQUEST_TEMPLATE.md",
+      "sha256": "250662b840027cd82490e597996cebf9ce77055014c0bb54dd3bbb1e6db42ac8",
+      "extension_strategy": "additive-merge-with-diff",
+      "templated": false
+    },
+    {
+      "upstream_key": "bytewyrd/.github/workflows/ci.yml@bc393baf",
+      "source": "templates/ci.yml.tpl",
+      "target": ".github/workflows/ci.yml",
+      "template_sha": "cdd7c920475280a2134dd186a732f229fe0230084ba0b2ee6ec45186229f93b2",
+      "extension_strategy": "additive-merge-with-diff",
+      "templated": true,
+      "template_inputs": [
+        "languages",
+        "component_roots"
+      ]
+    },
+    {
+      "upstream_key": "bytewyrd/.gitignore@657bbdc9",
+      "source": "templates/.gitignore.tpl",
+      "target": ".gitignore",
+      "sha256": "2df1ccc0325e6ef8c3cf38a405649436ce2f0e1d994680a60d3c5b9d6559a819",
+      "extension_strategy": "structured",
+      "owned_paths": [
+        "bytewyrd:base"
+      ],
+      "templated": false
+    },
+    {
+      "upstream_key": "bytewyrd/CLAUDE.md@6cbeb80b",
+      "source": "templates/CLAUDE.md.tpl",
+      "target": "CLAUDE.md",
+      "template_sha": "5d8026aea7afb156097ce5b7909572e8c1c1917626a38cf99e9ea88d2367ea66",
+      "extension_strategy": "additive-merge",
+      "owned_sections": [
+        "## Agent delegation",
+        "## Tool Usage",
+        "## RFC Process",
+        "## Evidence-Based Development",
+        "## Model Usage Optimization",
+        "## Claude Code Sandbox — Container Tool Compatibility",
+        "## Security",
+        "## Conventions"
+      ],
+      "templated": true,
+      "template_inputs": [
+        "project_name",
+        "description",
+        "project_slug",
+        "languages",
+        "installed_plugins",
+        "component_roots"
+      ]
+    },
+    {
+      "upstream_key": "bytewyrd/README.md@b73ff74a",
+      "source": "templates/README.md.tpl",
+      "target": "README.md",
+      "template_sha": "efd02c9f1d3e8860f3eaf2f94150a8abe9a7e72d1cb0b1f7b0bdb877f528f52b",
+      "extension_strategy": "bootstrap",
+      "templated": true,
+      "template_inputs": [
+        "project_name",
+        "description"
+      ]
+    },
+    {
+      "upstream_key": "bytewyrd/docs/ARCHITECTURE.md@b73ff74a",
+      "source": "templates/ARCHITECTURE.md.tpl",
+      "target": "docs/ARCHITECTURE.md",
+      "sha256": "6e7f1602bba0139dd87dd168eb8d09d059d0eb9d007d1e2f4a8c85eb7b5c55a8",
+      "extension_strategy": "bootstrap",
+      "templated": false
+    },
+    {
+      "upstream_key": "bytewyrd/docs/BEST_PRACTICES.md@896a1c6d",
+      "source": "templates/BEST_PRACTICES.md.tpl",
+      "target": "docs/BEST_PRACTICES.md",
+      "template_sha": "0972c875ad31a23a41aedbafa65b9d81ac2d45e10bc8c67331e7e7ea27f22d32",
+      "extension_strategy": "owned-regions",
+      "owned_boundaries": [
+        {
+          "type": "heading",
+          "heading": "## Pitfall"
+        },
+        {
+          "type": "heading",
+          "heading": "## Workflow"
+        },
+        {
+          "type": "heading",
+          "heading": "## Claude Code"
+        },
+        {
+          "type": "heading",
+          "heading": "## Code Design"
+        },
+        {
+          "type": "heading",
+          "heading": "## Code Style"
+        },
+        {
+          "type": "heading",
+          "heading": "## Architecture"
+        },
+        {
+          "type": "heading",
+          "heading": "## Testing"
+        },
+        {
+          "type": "heading",
+          "heading": "## Documentation"
+        },
+        {
+          "type": "heading",
+          "heading": "## Security"
+        },
+        {
+          "type": "heading",
+          "heading": "## Error Handling"
+        },
+        {
+          "type": "heading",
+          "heading": "## Rust"
+        },
+        {
+          "type": "heading",
+          "heading": "## JavaScript / TypeScript"
+        },
+        {
+          "type": "heading",
+          "heading": "## Python"
+        },
+        {
+          "type": "heading",
+          "heading": "## Go"
+        },
+        {
+          "type": "heading",
+          "heading": "## Svelte"
+        },
+        {
+          "type": "heading",
+          "heading": "## Ruby"
+        },
+        {
+          "type": "heading",
+          "heading": "## Rails"
+        },
+        {
+          "type": "heading",
+          "heading": "## Kubernetes / CUE / kapply"
+        },
+        {
+          "type": "heading",
+          "heading": "## Terraform / Terragrunt"
+        }
+      ],
+      "templated": true,
+      "template_inputs": [
+        "languages",
+        "has_svelte",
+        "has_ruby",
+        "has_rails",
+        "has_k8s_cue",
+        "has_terraform"
+      ]
+    },
+    {
+      "upstream_key": "bytewyrd/docs/CONTRIBUTING.md@b73ff74a",
+      "source": "templates/CONTRIBUTING.md.tpl",
+      "target": "docs/CONTRIBUTING.md",
+      "sha256": "76fc00220ae50d664b49ec3d2a36b87ccd841627f1febe1ecdd565766272a4e9",
+      "extension_strategy": "bootstrap",
+      "templated": false
+    },
+    {
+      "upstream_key": "bytewyrd/docs/rfc-process.md@af9bca80",
+      "source": "rfc-process.md",
+      "target": "docs/rfc-process.md",
+      "sha256": "c5856491597885bb4f0fec4d84dc41f2f1ef0965c60e53623e600af6f8805044",
+      "extension_strategy": "authoritative",
+      "templated": false
+    },
+    {
+      "upstream_key": "bytewyrd/mise.toml@ebf354bf",
+      "source": "templates/mise.toml.tpl",
+      "target": "mise.toml",
+      "template_sha": "8ae46e038f0fd4d80c30849b4710a60ceeb3493916b3c525d98885c60cb9f599",
+      "extension_strategy": "structured",
+      "owned_paths": [
+        "tools[]:union"
+      ],
+      "templated": true,
+      "template_inputs": [
+        "languages"
+      ]
+    }
+  ]
+}

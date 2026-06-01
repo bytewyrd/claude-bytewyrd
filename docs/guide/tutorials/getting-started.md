@@ -43,10 +43,13 @@ Open Claude Code in your project directory. In the session, run:
 `/sync` is idempotent — safe to re-run any time the plugin updates. On the first run, it asks for the project name and a one-line description (used in `docs/project-brief.md`), then creates or updates:
 
 - `CLAUDE.md` — operating rules for Claude in this project.
+- `README.md` — bootstrap landing page (written once, then project-owned).
 - `docs/ARCHITECTURE.md`, `docs/CONTRIBUTING.md`, `docs/BEST_PRACTICES.md` — internal docs scaffolds.
 - `docs/rfc-process.md` — the full RFC workflow, including any project-specific extensions.
 - `docs/rfcs/` — directory for future RFCs.
-- `.claude/settings.json` — permission allow-lists for the standard MCP servers.
+- `.claude/settings.json` — permissions, hooks, and MCP-server allow-lists.
+- `.github/PULL_REQUEST_TEMPLATE.md` and `.github/workflows/ci.yml` — PR template and starter CI workflow.
+- `.gitignore` and `mise.toml` — sensible defaults; merged additively if you already maintain them.
 
 If anything is missing or out of date, `/sync` shows a categorized summary (additions, fast-forward updates, conflicts) and asks you to approve before writing.
 
@@ -68,11 +71,42 @@ The skill creates a date-based RFC file in `docs/rfcs/YYYY-MM-DD-<slug>.md`, spa
 
 If you have rough ideas you want to capture without authoring a full RFC, use `/rfc-braindump <idea>` first — entries land in `docs/rfc-braindump.md` and can be promoted later with `/rfc-new`.
 
-## Step 4 — Approve the RFC
+## Step 4 — Revise and approve the RFC
 
-Read the Draft. If you spot something to change, add inline `FEEDBACK:` comments and run `/rfc-read-feedback` — `rfc-architect` will revise. If the consensus surfaced design questions you want a second opinion on, run `/rfc-consensus-review`.
+Read the Draft. You have three ways to push back before approving.
 
-When you are happy with the Draft, approve it:
+**Targeted feedback — `/rfc-read-feedback`**
+
+Open the RFC file and add `FEEDBACK:` comments directly in the markdown wherever you want something changed:
+
+```markdown
+## Implementation spec
+
+<!-- FEEDBACK: This approach couples two concerns — split the helper into its own module. -->
+The skill will write directly to the main skill file.
+```
+
+Then run:
+
+```
+/rfc-read-feedback
+```
+
+`rfc-architect` reads every `FEEDBACK:` marker, revises the RFC to incorporate each comment, removes the markers, and runs the self-review checklist. Repeat this cycle as many times as you need.
+
+**Broader review — `/rfc-consensus-review`**
+
+If you want an independent second opinion on the whole RFC rather than targeted comments, run:
+
+```
+/rfc-consensus-review
+```
+
+This spawns five parallel reviewer agents and synthesizes their findings by consensus. Critical findings (4–5/5 reviewers agree) are auto-fixed; moderate and minor findings are presented to you as design decisions to resolve one at a time.
+
+**Approve — `/rfc-approve`**
+
+When you are satisfied with the Draft:
 
 ```
 /rfc-approve
@@ -88,16 +122,40 @@ This is the **only** step in the workflow that is human-only. Agents draft and r
 
 This spawns the `feature-engineer` subagent with the Approved RFC as its primary spec. The agent reads the RFC, builds the change, and opens a pull request. When the PR merges (or when you mark it manually), the RFC moves to `Done`.
 
-If you decide partway through that the design needs revision, stop the implementation and either run `/rfc-read-feedback` to amend the Draft, or `/rfc-drop` to retire it.
+If you decide partway through that the design needs revision, stop the implementation and run `/rfc-read-feedback` to amend the RFC and re-enter the approval cycle. To retire it entirely, run:
+
+```
+/rfc-drop <reason>
+```
 
 ## What to do next
 
-You now have the full loop. From here:
+You now have the full loop. Here is the rest of the skill surface, organized by when you'll reach for each one.
 
-- `/best-practices-record <one-line lesson>` after any session where you learned something non-obvious — entries flow into `~/.claude/BEST_PRACTICES.md`.
-- `/best-practices-extract` at the end of a meaningful session — surfaces session learnings to `docs/BEST_PRACTICES.md` and offers to promote portable ones globally.
-- `/docs-review <scope>` after `/rfc-implement` lands user-visible behavior — checks `docs/guide/**` for drift.
-- `/refactor <scope>` before extending code that has thin test coverage — deliberate phased refactor with characterization tests.
-- `/rfc-summary` for a quick snapshot of every Draft and Approved RFC.
+**Capture ideas early**
+
+- `/rfc-braindump <idea>` — log a rough idea to `docs/rfc-braindump.md` without authoring a full RFC. Useful when you're not ready to commit to a design.
+
+**Track in-flight work**
+
+- `/rfc-summary` — list every Draft and Approved RFC at a glance (identifier, title, author, date). Read-only, runs inline.
+
+**Maintain code quality**
+
+- `/refactor <scope>` — deliberate phased refactor with characterization tests, approval gate, and one commit per step. Run this before extending code that has thin test coverage so the upcoming feature has a clean place to land.
+
+**Keep docs in sync**
+
+- `/docs-review <scope>` — after `/rfc-implement` lands user-visible behavior, audit `docs/guide/**` for drift (broken examples, stale references, workflow changes). The scope can be an RFC identifier, a path, or `all`.
+
+**Capture learnings**
+
+- `/best-practices-record <one-line lesson>` — capture a single cross-project lesson immediately into `~/.claude/BEST_PRACTICES.md`.
+- `/best-practices-extract` — at the end of a meaningful session, surface non-obvious learnings to `docs/BEST_PRACTICES.md` and optionally promote portable ones globally.
+
+**Housekeeping**
+
+- `/git-branch-cleanup` — prune stale local branches (no remote, merged PRs, abandoned remotes) and clean up orphaned worktrees.
+- `/sync` — re-run any time the plugin updates to pull in new conventions, templates, or settings without overwriting your project-owned content.
 
 For task-specific recipes, see the [how-to guides](../how-to). For the full skill and agent surface, see the [reference section](../reference).

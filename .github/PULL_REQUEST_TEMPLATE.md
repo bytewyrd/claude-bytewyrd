@@ -1,3 +1,5 @@
+<!-- bootstrap-content-version: bytewyrd/.github/PULL_REQUEST_TEMPLATE.md@bc393baf:e3b0c44298fc -->
+
 ## Summary
 
 <!-- 1-3 sentences: what this PR does and why -->

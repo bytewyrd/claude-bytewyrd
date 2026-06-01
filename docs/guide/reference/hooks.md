@@ -1,6 +1,8 @@
 # Hooks reference
 
-The plugin ships two hooks that fire automatically during Claude Code sessions. Both are defined in `hooks/hooks.json` and execute shell commands — no network calls, no Claude invocations.
+The plugin ships hooks that fire automatically during Claude Code sessions. The hooks documented on this page are distributed to every consumer project via `/sync` and are defined in `hooks/hooks.json`. All hooks execute shell commands — no network calls, no Claude invocations.
+
+Project-local hooks — defined in `.claude/settings.json` in the plugin's own checkout and not distributed to consumers — are documented in [Contributing to the plugin](../contributing.md#hooks-in-the-plugin-checkout).
 
 ## SubagentStop — feature-engineer reminder
 
@@ -60,6 +62,7 @@ Hard failures are not suppressible — Claude Code would error later in the same
 | `exa` | No `mcp__exa__` permission entry in any settings file | Add Exa under `mcpServers` in `~/.claude.json` or `.mcp.json` |
 | `firefox-devtools` | No `mcp__firefox-devtools__` permission entry in any settings file | Install Firefox MCP |
 | `gh-cli` | `gh` not on `PATH` | Install the GitHub CLI |
+| `plugin-version` | The installed plugin version is older than the version that last ran `/sync` on this project | Run `/sync` to update the project, or upgrade the plugin |
 
 ### Suppressing warnings
 
@@ -73,3 +76,4 @@ export BYTEWYRD_SKIP_WARN=firefox-devtools,gh-cli
 Add the export to your shell profile (`~/.zshrc`, `~/.bashrc`, etc.) to make it permanent. The check is per-session; the variable is read fresh each time.
 
 **Silent path:** when all checks pass, the script exits without output.
+

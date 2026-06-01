@@ -1,6 +1,6 @@
 ---
 name: docs-review
-description: Run a scoped documentation review against the codebase. The skill instructs the main agent to spawn the docs-agent subagent on Sonnet, with a seven-phase protocol that audits docs/guide/** for drift (broken examples, stale references, workflow drift) and coverage gaps against the current code. Respects strict ownership — never touches ARCHITECTURE.md, CONTRIBUTING.md, BEST_PRACTICES.md, project-brief.md, or rfcs/. Use after a feature lands, when /sync reports the docs-agent has improved, or any time the user-facing docs may be out of step with the code. Triggered by "/docs-review [scope-hint]".
+description: Run a scoped documentation review against the codebase. The skill instructs the main agent to spawn the docs-agent subagent on Sonnet, with a seven-phase protocol that audits docs/guide/** and README.md for drift (broken examples, stale references, workflow drift) and coverage gaps against the current code. Respects strict ownership — never touches ARCHITECTURE.md, CONTRIBUTING.md, BEST_PRACTICES.md, project-brief.md, or rfcs/. Use after a feature lands, when /sync reports the docs-agent has improved, or any time the user-facing docs may be out of step with the code. Triggered by "/docs-review [scope-hint]".
 argument-hint: "[scope-hint]"
 ---
 
@@ -178,7 +178,7 @@ Do not edit the report after returning it. The parent decides what to do with th
 
 ## Constraints (inherited from the agent definition; restated here for clarity)
 
-- **Ownership boundary first.** Never edit `docs/ARCHITECTURE.md`, `docs/CONTRIBUTING.md`, `docs/BEST_PRACTICES.md`, `docs/project-brief.md`, `docs/rfcs/**`, `docs/rfc-process.md`, `docs/rfc-braindump.md`, or `README.md`. If a finding seems to require editing one of these, surface the boundary violation in the plan with a suggested split.
+- **Ownership boundary first.** Never edit `docs/ARCHITECTURE.md`, `docs/CONTRIBUTING.md`, `docs/BEST_PRACTICES.md`, `docs/project-brief.md`, `docs/rfcs/**`, `docs/rfc-process.md`, or `docs/rfc-braindump.md`. `README.md` **is** in scope — it is bootstrap-once (written by `/sync` at project creation, then project-owned) and may drift as the plugin evolves. If a finding seems to require editing one of the off-limits files, surface the boundary violation in the plan with a suggested split.
 - **Trust the codebase.** When code and docs disagree, the code is the spec; the doc gets updated. Never edit code from this skill.
 - **One commit per finding.** Bundling unrelated findings into one commit destroys reviewability.
 - **Respect the scope.** Do not audit files outside the resolved scope. Mention adjacent-scope drift in recommended follow-ups.
@@ -191,4 +191,4 @@ Do not edit the report after returning it. The parent decides what to do with th
 - Capturing a session learning — use `/best-practices-extract` (writes to `docs/BEST_PRACTICES.md`).
 - Creating or updating an RFC — use `/rfc-new`, `/rfc-read-feedback`, `/rfc-implement`.
 - Updating project identity (name, description, problem) — use `/sync` Step 2.
-- General-purpose docs writing outside `docs/guide/**` — use the `documentation-writer` agent directly.
+- General-purpose docs writing outside `docs/guide/**` and `README.md` — use the `documentation-writer` agent directly.

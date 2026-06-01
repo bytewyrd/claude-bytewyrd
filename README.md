@@ -1,4 +1,5 @@
 <div align="center">
+<!-- bootstrap-content-version: bytewyrd/README.md@v1:7cc82158eace -->
   <h1>
     <img src="docs/icon.svg" alt="" width="56" height="56" align="absmiddle"/>
     &nbsp;claude-bytewyrd
@@ -19,7 +20,7 @@ Install once. Run `/sync`. Everything else follows.
 
 ## What you get
 
-**15 slash-command skills** covering the full development lifecycle — from project bootstrap to design review to deliberate refactoring.
+**14 slash-command skills** covering the full development lifecycle — from project bootstrap to design review to deliberate refactoring.
 
 **48 specialist agents** — each with a focused role, curated tool list, and right-sized model. Backend, frontend, DevOps, database, security, and architecture. Claude delegates to the right one automatically.
 
@@ -72,6 +73,8 @@ claude plugin install bytewyrd@bytewyrd
 claude plugin install bytewyrd@bytewyrd --scope project
 ```
 
+See [docs/guide/installation.md](docs/guide/installation.md) for team-wide enforcement options.
+
 Then in any Claude Code session:
 
 ```
@@ -89,15 +92,14 @@ RFC docs, best-practices file, agent delegation table, and CI are set up in one 
 | `/rfc-braindump` | Capture a quick RFC candidate without full authoring |
 | `/rfc-approve` | Mark an RFC Approved and commit |
 | `/rfc-implement` | Implement an Approved RFC via a `feature-engineer` agent |
-| `/rfc-update` | Update a Draft RFC with new findings |
 | `/rfc-read-feedback` | Incorporate inline `FEEDBACK:` comments from reviewers |
 | `/rfc-consensus-review` | Run independent critic agents, surface gaps |
 | `/rfc-summary` | List active RFCs (Draft and Approved) at a glance |
 | `/rfc-drop` | Drop an RFC and record the reason |
 | `/best-practices-record` | Capture a session learning |
 | `/best-practices-extract` | Extract all non-obvious learnings from a session |
-| `/refactor` | Deliberate phased refactor (Opus, with approval gate) |
 | `/docs-review` | Audit `docs/guide/**` and `README.md` for drift |
+| `/refactor` | Deliberate phased refactor (Opus, with approval gate) |
 | `/git-branch-cleanup` | Prune stale branches and associated worktrees |
 
 ## Agents

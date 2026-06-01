@@ -48,13 +48,25 @@ Current plugin-local skills:
 **Purpose:** Defines the plugin's identity. This is the entrypoint the Claude Code plugin system reads; skills and agents are auto-discovered from their respective root directories.
 **Location:** `.claude-plugin/plugin.json`
 
+### Hooks (`hooks/`, `scripts/`)
+
+**Purpose:** Shell-level automation that Claude Code executes in response to session lifecycle events. The plugin currently ships one hook: a `SessionStart` probe that runs once per session in every project where the plugin is enabled.
+**Location:** `hooks/hooks.json` (hook declarations) + `scripts/check-requirements.sh` (probe logic)
+**Key behavior:** The hook is silent when all requirements are met. It emits a warning bundle for soft-dependency gaps (companion plugins not enabled, MCP servers not configured, optional CLI tools absent, installed plugin older than the version that last ran `/sync` on the project) and exits with status 2 only for hard failures (`git` missing, or a stale `claude-plugins-official` reference that Claude Code would error on later). Individual warnings can be suppressed via `BYTEWYRD_SKIP_WARN=<id>` in the user's shell environment.
+
 ## Data Flow
 
 Skills → executed by Claude Code in-session. No persistent side effects unless the skill writes files.
 
 Agents → spawned as subtask processes. Receive a goal and a tool allow-list from the calling skill; return a result message.
 
-`best-practices-record` (skill) → `~/.claude/BEST_PRACTICES.md` (user-global file) → `best-practices-sync` (plugin-local skill) → `skills/sync/SKILL.md` → future `/sync` runs in consumer projects.
+`SessionStart` hook → `scripts/check-requirements.sh` → warns or blocks when companion plugins, MCP servers, or required CLI tools are missing.
+
+`best-practices-extract` (skill) → `docs/BEST_PRACTICES.md` (project file); entries the user marks as generalizable → optional Promotion Step → `~/.claude/BEST_PRACTICES.md` (user-global file).
+
+`best-practices-record` (skill) → `~/.claude/BEST_PRACTICES.md` (user-global file).
+
+`~/.claude/BEST_PRACTICES.md` → `best-practices-sync` (plugin-local skill) → `skills/sync/SKILL.md` → future `/sync` runs in consumer projects.
 
 `/sync` (skill) → `$CLAUDE_PLUGIN_ROOT/rfc-process.md` (canonical template) → `docs/rfc-process.md` in consumer project (created or updated with upstream sync markers).
 
@@ -67,6 +79,28 @@ Agents → spawned as subtask processes. Receive a goal and a tool allow-list fr
 | Plugin-local vs exported skills | Plugin-local in `.claude/skills/`, exported in `skills/` | Keeps maintenance tools out of consumer installs; plugin.json is the explicit export declaration |
 | Best-practices flow | Record → global file → manual sync to `/sync` content | Puts human review between personal capture and distribution; prevents one user's project-specific notes from polluting the sync content of every future project |
 | RFC process distribution | Canonical template at plugin root; `/sync` creates/updates `docs/rfc-process.md` with upstream sync markers | Eliminates separate `/rfc-install` step; RFC setup is idempotent and automatic on every `/sync` run |
+| Sync marker `upstream_key` | `bytewyrd/<target>@<sha256[:8] of strategy+config>` — computed by `build-manifest.sh`, never manually set | Encodes ownership semantics in the key so changing `extension_strategy` or strategy config (owned_paths/sections/boundaries) automatically invalidates consumer markers and forces a legacy re-classification on the next `/sync`. Template content is deliberately excluded: content changes are tracked by the sha12 in the marker; the key only needs to change when the canonicalization method changes, making old sha12 values incompatible. |
+| Plugin installation scope | User scope only (`~/.claude/settings.json`); `/sync` does not write `enabledPlugins` or `extraKnownMarketplaces` to project settings | See note below |
+
+### Plugin installation scope — extended note
+
+The plugin is installed once per developer at user scope. `/sync` explicitly does not write `bytewyrd@bytewyrd` to `enabledPlugins` or `bytewyrd` to `extraKnownMarketplaces` in the project's `.claude/settings.json`.
+
+**Why not project scope?**
+
+The motivation for user-scope-first is maintenance. If every `/sync`-bootstrapped project carries `enabledPlugins` + `extraKnownMarketplaces` entries, those entries become per-project artifacts that must be updated whenever the plugin's name, marketplace identifier, or GitHub path changes. The entries are also redundant for developers who already have the plugin installed: they get the plugin twice (user + project scope) with no benefit.
+
+**Why not use the `SessionStart` hook to warn collaborators?**
+
+The `check-requirements.sh` hook is a natural place to surface a "plugin not installed" warning for new collaborators who open a project that has been bootstrapped with `/sync`. The problem is circular: the hook is shipped by the plugin and is registered in `hooks/hooks.json`, so it only runs in sessions where the plugin is already loaded. A developer who does not have the plugin installed will see none of the hook's output — the hook simply does not execute for them.
+
+**What covers new collaborators instead?**
+
+`/sync` adds an explicit install hint to the consumer project's `CONTRIBUTING.md` (see the CONTRIBUTING.md rendering section in `skills/sync/SKILL.md`). A developer who clones the repo, reads the contributing guide, and follows the one-line install command gets the plugin and all its session-start validation from that point on.
+
+**Optional project-scope enforcement**
+
+Teams that want Claude Code to auto-install the plugin for any collaborator who opens the repo — bypassing the CONTRIBUTING.md manual step — can add both `enabledPlugins` and `extraKnownMarketplaces` entries to `.claude/settings.json` and commit them. Both entries are required: `enabledPlugins` alone is not enough because Claude Code needs `extraKnownMarketplaces` to resolve the marketplace source before it can prompt the install. Teams that choose this path own the maintenance of those entries. See `docs/guide/installation.md` for the exact JSON.
 
 ## Dependencies
 

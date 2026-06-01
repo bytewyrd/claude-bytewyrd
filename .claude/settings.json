@@ -76,14 +76,13 @@
   "enabledPlugins": {
     "github@claude-plugins-official": true,
     "context7@claude-plugins-official": true,
-    "code-review@claude-plugins-official": true,
-    "bytewyrd@bytewyrd": true
+    "code-review@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
     "bytewyrd": {
       "source": {
-        "source": "github",
-        "repo": "bytewyrd/claude-bytewyrd"
+        "source": "directory",
+        "path": "/home/divoxx/code/bytewyrd/claude-bytewyrd"
       }
     }
   }

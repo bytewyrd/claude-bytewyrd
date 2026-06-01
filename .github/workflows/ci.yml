@@ -1,0 +1,10 @@
+# bootstrap-content-version: bytewyrd/.github/workflows/ci.yml@bc393baf:e3b0c44298fc
+
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+jobs:
+  # No language-specific jobs detected — add source code and re-run /sync to populate.

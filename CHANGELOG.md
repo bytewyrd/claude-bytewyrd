@@ -32,7 +32,7 @@ Two new specialist agents ship with this release: `claude-agent-author` (authors
 
 ### Skill improvements
 
-- **`/sync`** — renamed from `/bootstrap`; RFC setup integrated (dropped separate `/rfc-install`); rewrote artifact application as a 3-way diff + interactive confirmation instead of skip-if-exists; `project-brief.md` now the single source of truth for project identity; Security and Workflow sections added to the installed CLAUDE.md template; fixed a bug where writes went to the main repo root instead of the active worktree
+- **`/sync`** — renamed from `/bootstrap`; RFC setup integrated (dropped separate `/rfc-install`); rewrote artifact application as a 3-way diff + interactive confirmation instead of skip-if-exists; `project-brief.md` now the single source of truth for project identity; Security and Workflow sections added to the installed CLAUDE.md template; fixed a bug where writes went to the main repo root instead of the active worktree; now strips legacy `bytewyrd@bytewyrd` entries from `enabledPlugins` (and `bytewyrd` from `extraKnownMarketplaces`) on each run — 0.1.x projects had these entries; current projects rely on user-scope install instead
 - **`/best-practices-extract`** — now auto-triggers on the `PreCompact` hook so learnings are captured before context windows compact; full triage-and-lift discipline applied (non-obvious, cross-project guidance only)
 - **`/best-practices-record`** and **`/best-practices-extract`** — unified destination: both write to the same global pool; rationale headers added
 - **`/best-practices-sync`** — Opus-powered conflict resolution when a candidate entry overlaps an existing one; auto-creates missing sections rather than failing
@@ -56,6 +56,40 @@ Two new specialist agents ship with this release: `claude-agent-author` (authors
 - Plugin directory structure aligned to the standard Claude Code plugin layout
 - README redesigned with icon, cleaner install instructions, and generic-audience messaging
 - Model selection guidance, evidence-based development principles, and sandbox container compatibility notes baked into the plugin `CLAUDE.md`
+
+### Upgrading from 0.1.0
+
+The plugin was renamed from `bytewyrd-workflow` to `bytewyrd`, and the recommended install scope changed from project to user. The steps depend on how you installed 0.1.0.
+
+**If you followed the 0.1.0 recommendation (project scope):**
+
+The old plugin is registered separately in each project's `.claude/settings.json`. Uninstall it once per project, then install the new name once globally.
+
+```bash
+# Run inside each project where you installed 0.1.0
+cd /path/to/your/project
+claude plugin uninstall bytewyrd-workflow --scope project
+
+# Run once from anywhere — installs at user scope (the new default)
+claude plugin install bytewyrd/claude-bytewyrd
+```
+
+**If you installed at user scope (`--scope user`):**
+
+The old plugin is registered once in `~/.claude/settings.json`. One uninstall, one install — both from anywhere.
+
+```bash
+claude plugin uninstall bytewyrd-workflow --scope user
+claude plugin install bytewyrd/claude-bytewyrd
+```
+
+If your team wants to *require* the plugin in a specific repo (so collaborators are prompted on first open), see [docs/guide/installation.md](docs/guide/installation.md#team-wide-enforcement-optional).
+
+**`/bootstrap` → `/sync`.** The bootstrap skill was renamed to `/sync`. Update any notes or scripts that reference `/bootstrap` (or `/bytewyrd:bootstrap`).
+
+**Re-run `/sync` in each project.** The installed CLAUDE.md template, RFC process file, and BEST_PRACTICES.md all gained new sections in 0.2.0. Run `/sync` in each project to pick up the updated content.
+
+**SessionStart warnings are expected on first run.** After installing, the new requirement-check hook will warn about any missing companion plugins or MCP servers. Follow the fix commands shown — or suppress individual warnings with `export BYTEWYRD_SKIP_WARN=<id>` if a dependency doesn't apply to your setup.
 
 ---
 

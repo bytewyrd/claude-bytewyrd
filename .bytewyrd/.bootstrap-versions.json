@@ -1,0 +1,16 @@
+{
+  "bytewyrd/.claude/settings.json@v1": "17bd3279f0c6",
+  "bytewyrd/.claude/settings.local.json@v1": "db9f929253fe",
+  ".claude/settings.json": {
+    "upstream_key": "bytewyrd/.claude/settings.json@632b4c58",
+    "sha12": "17bd3279f0c6"
+  },
+  ".github/PULL_REQUEST_TEMPLATE.md": {
+    "upstream_key": "bytewyrd/.github/PULL_REQUEST_TEMPLATE.md@bc393baf",
+    "sha12": "e3b0c44298fc"
+  },
+  ".github/workflows/ci.yml": {
+    "upstream_key": "bytewyrd/.github/workflows/ci.yml@bc393baf",
+    "sha12": "e3b0c44298fc"
+  }
+}

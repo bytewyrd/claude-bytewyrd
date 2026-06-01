@@ -31,14 +31,26 @@ In both cases the error message includes the exact command to fix the condition.
 
 ## Team-wide enforcement (optional)
 
-The default posture is user-scope-first: the plugin is installed once per developer, and projects do not assert plugin enablement in their `.claude/settings.json`. If your team wants to *require* every collaborator to have the plugin installed (e.g., for a strict code-review or RFC-discipline policy), add the following to your project's `.claude/settings.json` under `enabledPlugins`:
+The default posture is user-scope-first: install once per machine, available in every project. `/sync` does not write plugin enablement entries to the project's `.claude/settings.json` — adding per-project entries would recreate the maintenance burden (name, marketplace URL, version) that user-scope was designed to eliminate.
+
+New collaborators who don't have the plugin are covered by the install hint `/sync` adds to every project's `CONTRIBUTING.md`.
+
+If your team wants Claude Code to auto-install the plugin for any collaborator who opens the repo (bypassing the CONTRIBUTING.md manual step), you can add both entries manually and commit them to source control. Both are required — `enabledPlugins` alone is insufficient because Claude Code needs `extraKnownMarketplaces` to resolve the marketplace source:
 
 ```json
 {
   "enabledPlugins": {
     "bytewyrd@bytewyrd": true
+  },
+  "extraKnownMarketplaces": {
+    "bytewyrd": {
+      "source": {
+        "source": "github",
+        "repo": "bytewyrd/claude-bytewyrd"
+      }
+    }
   }
 }
 ```
 
-Per Claude Code's settings precedence rules, project settings override user settings — so a collaborator who hasn't installed the plugin yet will get an install prompt when they open the project. `/sync` does not write this entry by default; teams that want it must add it manually and check it into source control.
+This is not the default — and if you choose it, these entries become project-owned and must be kept current if the plugin's marketplace or name ever changes.
