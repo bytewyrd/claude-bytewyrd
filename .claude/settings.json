@@ -78,12 +78,5 @@
     "context7@claude-plugins-official": true,
     "code-review@claude-plugins-official": true
   },
-  "extraKnownMarketplaces": {
-    "bytewyrd": {
-      "source": {
-        "source": "directory",
-        "path": "/home/divoxx/code/bytewyrd/claude-bytewyrd"
-      }
-    }
-  }
+  "extraKnownMarketplaces": {}
 }
