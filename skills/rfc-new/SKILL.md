@@ -16,7 +16,7 @@ If an argument is provided, use it as the description and proceed to Step 2.
 If no argument is provided:
 
 ```bash
-result="$(bash scripts/rfc-braindump-list.sh)"
+result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-braindump-list.sh")"
 entries_count="$(printf '%s' "$result" | jq '.entries | length')"
 ```
 
@@ -105,7 +105,7 @@ git config user.name
 If the description came from a `docs/rfc-braindump.md` entry (the user selected a number in Step 1), remove that bullet:
 
 ```bash
-result="$(bash scripts/rfc-braindump-remove.sh "$SELECTED_ENTRY_BODY")"
+result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-braindump-remove.sh" "$SELECTED_ENTRY_BODY")"
 removed="$(printf '%s' "$result" | jq -r .removed)"
 ```
 

@@ -14,7 +14,7 @@ Marks an RFC as Dropped with a recorded reason. Dropped RFCs are permanent histo
 Resolve the target RFC. `$ARG` is the user-supplied identifier from the skill's argument, if any; omit it to let the script use the heuristic fallbacks.
 
 ```bash
-result="$(bash scripts/rfc-resolve.sh "${ARG:-}")"
+result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-resolve.sh" "${ARG:-}")"
 RFC_PATH="$(printf '%s' "$result" | jq -r .path)"
 label="$(printf '%s' "$result" | jq -r .label)"
 ```
@@ -26,7 +26,7 @@ If the drop reason is not provided, ask: "Why is this RFC being dropped? (one se
 ### 2. Read and verify status
 
 ```bash
-fm="$(bash scripts/rfc-frontmatter.sh "$RFC_PATH")"
+fm="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-frontmatter.sh" "$RFC_PATH")"
 status="$(printf '%s' "$fm" | jq -r .status)"
 drop_reason="$(printf '%s' "$fm" | jq -r .drop_reason)"
 ```
@@ -49,7 +49,7 @@ Wait for confirmation.
 ### 4. Update frontmatter
 
 ```bash
-result="$(bash scripts/rfc-set-status.sh "$RFC_PATH" Dropped "$REASON")"
+result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-set-status.sh" "$RFC_PATH" Dropped "$REASON")"
 ```
 
 The script writes `status: "Dropped"` and `drop_reason: "<REASON>"` atomically. If `$REASON` is empty the script exits 2 with `{"error":"..."}` on stdout — extract via `jq -r .error` and re-prompt for a reason.

@@ -26,7 +26,7 @@ Stop.
 ### 2. Enumerate, parse, and sort
 
 ```bash
-result="$(bash scripts/rfc-summary.sh)"
+result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-summary.sh")"
 ```
 
 `$result` is a JSON object `{"rfcs": [...], "warnings": [...]}`. Extract:

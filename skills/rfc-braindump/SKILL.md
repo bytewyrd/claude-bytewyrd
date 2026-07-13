@@ -37,7 +37,7 @@ Instruct the agent to return **only** the `* **Title.** paragraph` bullet — no
 ### 4. Append to `docs/rfc-braindump.md`
 
 ```bash
-result="$(bash scripts/rfc-braindump-append.sh "$ENTRY_BODY")"
+result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-braindump-append.sh" "$ENTRY_BODY")"
 created_file="$(printf '%s' "$result" | jq -r .created_file)"
 ```
 

@@ -31,7 +31,7 @@ Spawns five independent reviewer agents, synthesizes findings by consensus, veri
 Resolve the target RFC using the helper script. `$ARG` is the user-supplied identifier from the skill's argument, if any; omit it to let the script use the heuristic fallbacks.
 
 ```bash
-result="$(bash scripts/rfc-resolve.sh "${ARG:-}")"
+result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-resolve.sh" "${ARG:-}")"
 RFC_PATH="$(printf '%s' "$result" | jq -r .path)"
 label="$(printf '%s' "$result" | jq -r .label)"
 ```
