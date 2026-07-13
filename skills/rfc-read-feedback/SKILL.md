@@ -24,7 +24,7 @@ A marker applies to the content immediately above it in the same section. Marker
 Resolve the target RFC using the helper script. `$ARG` is the user-supplied identifier from the skill's argument, if any; omit it to let the script use the heuristic fallbacks.
 
 ```bash
-result="$(bash scripts/rfc-resolve.sh "${ARG:-}")"
+result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-resolve.sh" "${ARG:-}")"
 RFC_PATH="$(printf '%s' "$result" | jq -r .path)"
 label="$(printf '%s' "$result" | jq -r .label)"
 ```
@@ -36,7 +36,7 @@ Read the matching RFC file.
 ### 2. Find all FEEDBACK: markers
 
 ```bash
-result="$(bash scripts/rfc-feedback-list.sh "$RFC_PATH")"
+result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-feedback-list.sh" "$RFC_PATH")"
 count="$(printf '%s' "$result" | jq '.markers | length')"
 ```
 

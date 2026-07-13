@@ -28,7 +28,7 @@ Log: `Running /sync analysis…`
 Run the consolidated deterministic-phase script **exactly once** and write its output to a session file:
 
 ```bash
-bash scripts/sync-run.sh > $TMPDIR/bytewyrd-sync-data.json && \
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/sync-run.sh" > $TMPDIR/bytewyrd-sync-data.json && \
 jq -r '
   "REPO_ROOT="          + .preflight.repo_root,
   "GIT_USER="           + .preflight.git_user,
@@ -291,7 +291,7 @@ If `ALL_UNCHANGED=false`, ask one AskUserQuestion:
 All artifacts except `additive_merge_with_diff_apply` are applied in a single script call immediately after the user clicks Proceed:
 
 ```bash
-BATCH_RESULT="$(bash scripts/sync-apply-batch.sh $TMPDIR/bytewyrd-sync-data.json)"
+BATCH_RESULT="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/sync-apply-batch.sh" $TMPDIR/bytewyrd-sync-data.json)"
 ```
 
 `sync-apply-batch.sh` detects the session file, extracts `plugin_root`, builds the project-inputs object from `preflight` + `brief_name`/`brief_description`, and filters out `additive_merge_with_diff_apply`, `unchanged`, and `local_only` items internally.
@@ -330,7 +330,7 @@ Applies only to `additive_merge_with_diff_apply` artifacts (currently: `.github/
 **`additive_merge_with_diff_apply` (additive-merge-with-diff strategy).** Run the per-section merge, run Pass 1 of the soundness review (auto-apply all fix types). Generate the unified diff between the local file and the (merged + Pass 1 result) by running:
 
 ```bash
-bash scripts/sync-unified-diff.sh <local-file> <merged-content-file>
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/sync-unified-diff.sh" <local-file> <merged-content-file>
 ```
 
 Parse the JSON output. Use `.diff` as the human-readable diff to print. Use `.hunks` (an array of `{id, label, diff}` records) to build the `Accept with exclusions` multiSelect checkbox list — each hunk becomes one option labeled by `.hunks[].label`. Then present the four-option diff-review prompt:
@@ -362,18 +362,18 @@ This step applies the actions determined by Steps 4a and 4b. For each artifact i
 **Template rendering rule:** for each templated artifact, run:
 
 ```bash
-bash scripts/sync-render-template.sh <template-path> <inputs-json-path>
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/sync-render-template.sh" <template-path> <inputs-json-path>
 ```
 
 The script emits the rendered content on stdout. Internally it substitutes `<placeholder>` tokens from the inputs JSON (lowercased keys), and includes or strips `<!--lang:NAME-start-->...<!--lang:NAME-end-->` blocks based on the inputs `languages` array or `has_NAME` truthy keys. See the script header for the exact contract.
 
 **Marker insertion rule:** after writing content for a new or updated file, compute the canonical SHA via `sync-canonical.sh`, then stamp the marker according to file type:
 
-- Markdown (`.md`): `bash scripts/sync-write-header.sh <file> <upstream_key> <sha12> bootstrap` (or `authoritative` for plugin-owned files). The script handles both fresh-write and replace.
+- Markdown (`.md`): `bash "${CLAUDE_PLUGIN_ROOT}/scripts/sync-write-header.sh" <file> <upstream_key> <sha12> bootstrap` (or `authoritative` for plugin-owned files). The script handles both fresh-write and replace.
 - TOML / YAML / `.gitignore`: insert `# bootstrap-content-version: <upstream_key>:<sha12>` as line 1, followed by a blank line, then the file content. (No header-writer script — these inline `#` markers do not have the two-line tagline form.)
 - JSON files: do **not** embed a marker in the file. The marker is stored in the sidecar (Step 5.5).
 
-To read an existing marker from a file (for diff classification or any other lookup), run `bash scripts/sync-marker-read.sh <file>` and parse `.sha12` (or branch on `.found == false` when no marker is present).
+To read an existing marker from a file (for diff classification or any other lookup), run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/sync-marker-read.sh" <file>` and parse `.sha12` (or branch on `.found == false` when no marker is present).
 
 Step 4a runs the batch apply for all deterministic items. The `BATCH_RESULT` JSON array is the source of truth for Step 8 tracking. Items with `"result": "needs-agent"` in the batch result are additive-merge-with-diff items that were deferred to Step 4c.
 
@@ -382,7 +382,7 @@ Step 4a runs the batch apply for all deterministic items. The `BATCH_RESULT` JSO
 1. **`add`** — Render the template via `sync-render-template.sh` with `project_inputs`. Compute the canonical SHA via `sync-canonical.sh` for the artifact's strategy. Write the file, then stamp the marker per the "Marker insertion rule" above. Track as `added`.
 
 2. **`fast_forward`** — Apply the extension strategy:
-   - `owned-regions`: run `bash scripts/sync-owned-regions-apply.sh <local> <plugin-source> '<owned_boundaries-json>'` and write the result to the target. Stamp the marker.
+   - `owned-regions`: run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/sync-owned-regions-apply.sh" <local> <plugin-source> '<owned_boundaries-json>'` and write the result to the target. Stamp the marker.
    - `structured` (JSON, dot-path): for each path in `owned_paths`, overwrite the local value with the plugin value via `jq`. All other keys are preserved. JSON files: flag `sidecar_update_needed` (Step 5.5). `.gitignore`: replace each tagged block; stamp the inline marker.
    Track as `fast-forward applied`.
 
@@ -399,7 +399,7 @@ Step 4a runs the batch apply for all deterministic items. The `BATCH_RESULT` JSO
 8. **`bootstrap_create`** (bootstrap strategy, confirmed in Step 4b) — Render the template with `project_inputs` via `sync-render-template.sh`. Write the rendered content to disk, then stamp the two-line header in place:
 
    ```bash
-   bash scripts/sync-write-header.sh <target> <upstream_key> <sha12> bootstrap
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/sync-write-header.sh" <target> <upstream_key> <sha12> bootstrap
    ```
 
    `<sha12>` is the canonical SHA from `sync-canonical.sh` (here, the canonical for a freshly-written file is just the rendered content). The script handles both prepend (no existing header) and replace (existing recognized header).
@@ -409,7 +409,7 @@ Step 4a runs the batch apply for all deterministic items. The `BATCH_RESULT` JSO
 9. **`authoritative_add`** / **`authoritative_update`** (authoritative strategy — applied automatically in Step 4a) — Read the plugin source. Write it to the target, then stamp the two-line header:
 
    ```bash
-   bash scripts/sync-write-header.sh <target> <upstream_key> <sha12> authoritative
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/sync-write-header.sh" <target> <upstream_key> <sha12> authoritative
    ```
 
    Local edits in the body are replaced without confirmation. Track as `authoritative-overwritten`. `unchanged` → no action.
@@ -417,7 +417,7 @@ Step 4a runs the batch apply for all deterministic items. The `BATCH_RESULT` JSO
 10. **`owned-regions`** apply — run:
 
     ```bash
-    bash scripts/sync-owned-regions-apply.sh <local-file> <plugin-source> '<owned_boundaries-json>'
+    bash "${CLAUDE_PLUGIN_ROOT}/scripts/sync-owned-regions-apply.sh" <local-file> <plugin-source> '<owned_boundaries-json>'
     ```
 
     The script writes the merged content to stdout — the caller writes it back to the target and then stamps the marker on line 2. See the script for the exact merge semantics (replace owned headings in place, preserve user-owned content, insert absent plugin-owned headings after the last preceding present heading).
@@ -429,7 +429,7 @@ For every owned section in `owned_sections` of an `additive-merge` or `additive-
 **Step A — Extract items.** For each owned section, run:
 
 ```bash
-bash scripts/sync-item-parser.sh markdown --section '<heading>' < <file>
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/sync-item-parser.sh" markdown --section '<heading>' < <file>
 ```
 
 (For `.github/workflows/ci.yml`, use `yaml` instead of `markdown` and pass the file directly with no `--section`.) Parse the JSON output: `.items[]` is the list of discrete items, each with `index`, `text`, and `type` (one of `bullet`, `paragraph`, `codeblock`, `yaml-key`). Top-level bullets carry their sub-bullets; paragraphs are one item; code blocks are one item.

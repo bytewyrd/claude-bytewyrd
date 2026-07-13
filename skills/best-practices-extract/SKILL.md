@@ -10,7 +10,7 @@ description: Use at the end of a meaningful session to extract non-obvious learn
 This skill optionally enriches its output with PR context from the GitHub CLI. The CLI is a soft dependency:
 
 ```bash
-result="$(bash scripts/tool-probe.sh gh)"; gh_status=$?
+result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/tool-probe.sh" gh)"; gh_status=$?
 gh_result="$(printf '%s' "$result" | jq -r .result)"
 ```
 

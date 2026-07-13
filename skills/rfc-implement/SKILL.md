@@ -10,8 +10,8 @@ description: Use to begin implementing an Approved RFC. Spawns a feature-enginee
 This skill creates a pull request at the end of implementation. PR creation uses the GitHub MCP when available, falling back to the `gh` CLI:
 
 ```bash
-mcp_out="$(bash scripts/tool-probe.sh github-mcp)"; mcp_status=$?
-gh_out="$(bash scripts/tool-probe.sh gh)";           gh_status=$?
+mcp_out="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/tool-probe.sh" github-mcp)"; mcp_status=$?
+gh_out="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/tool-probe.sh" gh)";           gh_status=$?
 mcp_result="$(printf '%s' "$mcp_out" | jq -r .result)"
 gh_result="$(printf '%s' "$gh_out"  | jq -r .result)"
 ```
@@ -31,7 +31,7 @@ Implements an Approved RFC by spawning a `feature-engineer` agent and marking th
 Resolve the target RFC using the helper script. `$ARG` is the user-supplied identifier from the skill's argument, if any; omit it to let the script use the heuristic fallbacks.
 
 ```bash
-result="$(bash scripts/rfc-resolve.sh "${ARG:-}")"
+result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-resolve.sh" "${ARG:-}")"
 RFC_PATH="$(printf '%s' "$result" | jq -r .path)"
 label="$(printf '%s' "$result" | jq -r .label)"
 ```
@@ -69,7 +69,7 @@ Do **not** start implementation if the spec has gaps. Fix the RFC first.
 After the PR is merged:
 
 ```bash
-result="$(bash scripts/rfc-set-status.sh "$RFC_PATH" Done)"
+result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-set-status.sh" "$RFC_PATH" Done)"
 git add "$RFC_PATH"
 git commit -m "rfc: mark $(basename "${RFC_PATH%.md}") done"
 ```

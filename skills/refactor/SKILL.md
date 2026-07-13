@@ -11,7 +11,7 @@ argument-hint: "[scope-hint]"
 This skill optionally invokes the `/review` slash command (from the `code-review@claude-plugins-official` plugin) for a pre-pass before refactoring:
 
 ```bash
-result="$(bash scripts/tool-probe.sh code-review-mcp)"; status=$?
+result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/tool-probe.sh" code-review-mcp)"; status=$?
 cr_result="$(printf '%s' "$result" | jq -r .result)"
 ```
 

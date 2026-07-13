@@ -14,7 +14,7 @@ Approves a Draft RFC. Only humans invoke this skill — agents write and review,
 Resolve the target RFC using the helper script. The script handles the argument-vs-heuristic logic; the agent surfaces the candidate label to the user. `$ARG` is the user-supplied identifier from the skill's argument, if any; omit it to let the script use the heuristic fallbacks.
 
 ```bash
-result="$(bash scripts/rfc-resolve.sh "${ARG:-}")"
+result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-resolve.sh" "${ARG:-}")"
 RFC_PATH="$(printf '%s' "$result" | jq -r .path)"
 label="$(printf '%s' "$result" | jq -r .label)"
 ```
@@ -26,7 +26,7 @@ label="$(printf '%s' "$result" | jq -r .label)"
 Read the frontmatter:
 
 ```bash
-fm="$(bash scripts/rfc-frontmatter.sh "$RFC_PATH")"
+fm="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-frontmatter.sh" "$RFC_PATH")"
 status="$(printf '%s' "$fm" | jq -r .status)"
 drop_reason="$(printf '%s' "$fm" | jq -r .drop_reason)"
 ```
@@ -57,7 +57,7 @@ Wait for explicit confirmation.
 ### 4. Update status
 
 ```bash
-result="$(bash scripts/rfc-set-status.sh "$RFC_PATH" Approved)"
+result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-set-status.sh" "$RFC_PATH" Approved)"
 old="$(printf '%s' "$result" | jq -r .old_status)"
 new="$(printf '%s' "$result" | jq -r .new_status)"
 ```
