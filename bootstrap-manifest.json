@@ -19,19 +19,28 @@
       ]
     },
     {
-      "upstream_key": "bytewyrd/.github/PULL_REQUEST_TEMPLATE.md@bc393baf",
+      "upstream_key": "bytewyrd/.github/PULL_REQUEST_TEMPLATE.md@016f98ca",
       "source": "templates/PULL_REQUEST_TEMPLATE.md.tpl",
       "target": ".github/PULL_REQUEST_TEMPLATE.md",
       "sha256": "250662b840027cd82490e597996cebf9ce77055014c0bb54dd3bbb1e6db42ac8",
       "extension_strategy": "additive-merge-with-diff",
+      "owned_sections": [
+        "## Summary",
+        "## Changes",
+        "## Testing",
+        "## Notes for Reviewers"
+      ],
       "templated": false
     },
     {
-      "upstream_key": "bytewyrd/.github/workflows/ci.yml@bc393baf",
+      "upstream_key": "bytewyrd/.github/workflows/ci.yml@e81b4e34",
       "source": "templates/ci.yml.tpl",
       "target": ".github/workflows/ci.yml",
       "template_sha": "cdd7c920475280a2134dd186a732f229fe0230084ba0b2ee6ec45186229f93b2",
       "extension_strategy": "additive-merge-with-diff",
+      "owned_paths": [
+        "*"
+      ],
       "templated": true,
       "template_inputs": [
         "languages",

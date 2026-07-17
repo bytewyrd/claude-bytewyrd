@@ -37,6 +37,12 @@
 #     next H2/H1 or EOF, trimmed>\n` and concatenate. Hash the concatenation.
 #     (Identical body-extraction rule as owned-regions; what changes is which
 #     manifest field provides the heading list.)
+#     YAML whole-file special case: when the file is *.yml/*.yaml (e.g.
+#     .github/workflows/ci.yml), markdown owned_sections do not apply — a CI
+#     workflow has no `## ` headings and the item-level merge parses the whole
+#     file as YAML. Hash the entire file with the leading one-line version
+#     marker stripped. owned_paths:["*"] in the manifest declares this
+#     whole-file ownership.
 #
 # Args:
 #   $1  Required. Strategy name. One of:
@@ -77,6 +83,7 @@ shift 2 2>/dev/null || true
 owned_sections_json="[]"
 owned_boundaries_json="[]"
 owned_paths_json="[]"
+target=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -92,6 +99,10 @@ while [ $# -gt 0 ]; do
       [ "${2:-}" = "" ] && { emit_error "sync-canonical: --owned-paths requires a value"; exit 2; }
       owned_paths_json="$2"; shift 2
       ;;
+    --target)
+      [ "${2:-}" = "" ] && { emit_error "sync-canonical: --target requires a value"; exit 2; }
+      target="$2"; shift 2
+      ;;
     *)
       emit_error "sync-canonical: unknown argument: $1"
       exit 2
@@ -100,7 +111,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ -z "$strategy" ] || [ -z "$file" ]; then
-  emit_error "usage: sync-canonical.sh <strategy> <file> [--owned-sections JSON | --owned-boundaries JSON | --owned-paths JSON]"
+  emit_error "usage: sync-canonical.sh <strategy> <file> [--owned-sections JSON | --owned-boundaries JSON | --owned-paths JSON] [--target PATH]"
   exit 2
 fi
 
@@ -108,6 +119,16 @@ if [ ! -f "$file" ]; then
   emit_error "sync-canonical: file not found: $file"
   exit 1
 fi
+
+# Type dispatch (markdown-vs-YAML for additive-merge, JSON-vs-gitignore-vs-TOML
+# for structured) must key off the artifact's *declared target*, not the
+# incoming file's own name. In the classify/apply pipeline the file being hashed
+# is often the raw `.tpl` source or an extension-less `mktemp` render of the
+# plugin template — so keying off "$file" would take the wrong branch on the
+# plugin side and make the two sides of a comparison incomparable. Callers pass
+# --target <manifest target>; fall back to "$file" for standalone/test use where
+# the file is already correctly named.
+type_hint="${target:-$file}"
 
 # -------- helper: sha12 of stdin --------
 sha12_of_stdin() {
@@ -203,6 +224,26 @@ extract_gitignore_block() {
   '
 }
 
+# -------- helper: whole-file YAML canonicalization --------
+# For additive-merge YAML artifacts (.github/workflows/ci.yml — the whole-file
+# YAML special case), markdown owned_sections extraction does not apply: a CI
+# workflow has no `## ` headings, and the item-level merge parses the whole file
+# as YAML. Hash the entire file with the leading one-line `# bootstrap-content-
+# version:` marker stripped (plus one immediately following blank line) so the
+# marker's own value does not perturb the canonical — mirroring how the
+# `authoritative` strategy strips its header before hashing.
+whole_file_yaml_canonical() {
+  awk '
+    BEGIN { in_header = 1 }
+    in_header == 1 {
+      if ($0 ~ /^# bootstrap-content-version:/) { next }
+      in_header = 0
+      if ($0 == "") next
+    }
+    { print }
+  ' "$file"
+}
+
 # -------- helper: structured JSON canonicalization --------
 # args: json array of path strings.
 structured_json_canonical() {
@@ -295,16 +336,24 @@ case "$strategy" in
     emit_sha "$sha"
     ;;
   additive-merge|additive-merge-with-diff)
-    if [ "$(echo "$owned_sections_json" | jq -r 'type')" != "array" ]; then
-      emit_error "sync-canonical: --owned-sections must be a JSON array"; exit 2
-    fi
-    count="$(echo "$owned_sections_json" | jq -r 'length')"
-    out=""
-    for ((i = 0; i < count; i++)); do
-      heading="$(echo "$owned_sections_json" | jq -r ".[$i]")"
-      piece="$(extract_section "$heading" < "$file")"
-      out="${out}${piece}"
-    done
+    case "$type_hint" in
+      *.yml|*.yaml)
+        # Whole-file YAML special case (e.g. .github/workflows/ci.yml).
+        out="$(whole_file_yaml_canonical)"
+        ;;
+      *)
+        if [ "$(echo "$owned_sections_json" | jq -r 'type')" != "array" ]; then
+          emit_error "sync-canonical: --owned-sections must be a JSON array"; exit 2
+        fi
+        count="$(echo "$owned_sections_json" | jq -r 'length')"
+        out=""
+        for ((i = 0; i < count; i++)); do
+          heading="$(echo "$owned_sections_json" | jq -r ".[$i]")"
+          piece="$(extract_section "$heading" < "$file")"
+          out="${out}${piece}"
+        done
+        ;;
+    esac
     sha="$(printf '%s' "$out" | sha12_of_stdin)"
     emit_sha "$sha"
     ;;
