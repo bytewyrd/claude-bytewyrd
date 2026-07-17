@@ -24,23 +24,37 @@ fi
 inputs="$1"
 
 # --- enabled_plugins_entries ---
-# Expands to the body of the enabledPlugins object:
+# Expands to the body of the enabledPlugins object, restricted to the three
+# companion plugins the plugin manages:
+#   github@claude-plugins-official, context7@claude-plugins-official,
+#   code-review@claude-plugins-official
+# Each is emitted only when it appears in installed_plugins; nothing else is
+# ever emitted — in particular never bytewyrd@bytewyrd (user-scoped) or any
+# other plugin the user happens to have installed. This mirrors the allowlist
+# rule in skills/sync/SKILL.md ("Add ... only when the identifier appears in
+# INSTALLED_PLUGINS"); dumping the full installed-plugins list would leak the
+# user's local plugin set into a committed settings.json.
+#
+# Output shape (leading newline, no trailing comma on last entry, empty string
+# when none of the companions are installed):
 #   \n    "id1": true,
 #   \n    "id2": true
-# (leading newline, no trailing comma on last entry, empty string if no plugins)
-#
 # The leading \n is intentional: the template has `"enabledPlugins": {<VAR>` on
 # one line, so the newline opens the next indented line.
 enabled_plugins_entries="$(jq -r '
-  .installed_plugins // [] |
-  if length == 0 then ""
+  [
+    "github@claude-plugins-official",
+    "context7@claude-plugins-official",
+    "code-review@claude-plugins-official"
+  ] as $companions |
+  (.installed_plugins // []) as $installed |
+  [ $companions[] | select(. as $id | $installed | index($id)) ] as $enabled |
+  if ($enabled | length) == 0 then ""
   else
-    length as $n |
-    to_entries |
-    map(
-      "\n    \"" + .value + "\": true" +
-      if .key < $n - 1 then "," else "" end
-    ) |
+    ($enabled | length) as $n |
+    [ $enabled | to_entries[] |
+      "\n    \"" + .value + "\": true" + (if .key < $n - 1 then "," else "" end)
+    ] |
     join("")
   end
 ' "$inputs")"

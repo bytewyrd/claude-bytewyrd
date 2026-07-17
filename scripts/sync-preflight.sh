@@ -106,20 +106,46 @@ source "$SCRIPT_DIR/_lib/plugin.bash"
 source "$SCRIPT_DIR/_lib/detect-languages.bash"
 require_jq
 
-# --- Hard check 3: python3 must be on PATH (used for TOML parsing). ---
+# --- Hard check 3: python3 >= 3.11 must be on PATH (used for TOML parsing). ---
+# TOML canonicalization (mise.toml) decodes via the stdlib `tomllib` module,
+# which only exists in Python 3.11+. Checking only for `python3` would let an
+# older interpreter (e.g. 3.10 on Ubuntu 22.04 LTS) through, and the tomllib
+# ImportError would then be swallowed downstream — silently degrading the
+# mise.toml canonical to a wrong/empty hash. Fail fast and loudly here instead.
 if ! command -v python3 >/dev/null 2>&1; then
   # emit_error writes JSON to stdout; we redirect it to stderr because the
   # success JSON is the script's stdout contract — error envelopes go to
   # stderr so the caller can still safely consume stdout as JSON.
-  emit_error "/sync requires python3 for TOML parsing. Install with: brew install python3 (macOS) or apt install python3 (Debian/Ubuntu)" >&2
+  emit_error "/sync requires python3 (>= 3.11) for TOML parsing. Install with: brew install python3 (macOS) or apt install python3 (Debian/Ubuntu)" >&2
+  exit 1
+fi
+if ! python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then
+  py_ver="$(python3 -c 'import sys; print("%d.%d.%d" % sys.version_info[:3])' 2>/dev/null || echo "unknown")"
+  emit_error "/sync requires python3 >= 3.11 for TOML parsing (stdlib tomllib); found python3 $py_ver. Upgrade python3 (e.g. brew upgrade python3, a newer distro, or pyenv/mise)." >&2
   exit 1
 fi
 
 # --- Data collection ---
 
+# repo_root is the *write target*: every file /sync creates or updates lands
+# here. It must stay the current checkout — the worktree when /sync runs inside
+# one — so writes flow through the worktree's branch and PR. See SKILL.md Step 1
+# "Write target". Never redirect this to the main repo via --git-common-dir.
 repo_root="$(git rev-parse --show-toplevel)"
 git_user="$(git config user.name 2>/dev/null || echo "")"
-project_slug="$(basename "$repo_root")"
+
+# project_slug names the *project*, not the checkout. When /sync runs inside a
+# worktree, --show-toplevel points at the worktree directory, so basename of
+# repo_root would yield the worktree name (e.g. a branch-derived directory)
+# instead of the real project name. The shared git-common-dir always resolves to
+# the main repository regardless of which worktree we are in, so its parent
+# directory is the true project root. Resolve it robustly: --git-common-dir may
+# print a relative path (e.g. ".git") depending on git version and cwd, so cd
+# into "<common-dir>/.." and let the shell canonicalize to an absolute path.
+# Fall back to repo_root if resolution fails for any reason.
+project_root="$(cd "$(git rev-parse --git-common-dir)/.." 2>/dev/null && pwd)"
+[ -n "$project_root" ] || project_root="$repo_root"
+project_slug="$(basename "$project_root")"
 
 # Substantial content: any committed file other than LICENSE, README, or .gitignore.
 # Use the `|| true` guard because grep -c returning 0 with -v can exit non-zero

@@ -105,6 +105,61 @@ EOF
   refute [ "$sha_a" = "$sha_b" ]
 }
 
+# --- additive-merge: --target-driven type dispatch (Fix 3 / round-1 regression) ---
+
+@test "additive-merge — --target routes a .tpl source through the YAML whole-file canonical" {
+  # A YAML workflow stored in a .tpl-named source, exactly as the plugin ships
+  # it. Keying the type dispatch off the incoming filename (".tpl") would miss
+  # the YAML branch and hash empty owned_sections -> the degenerate empty SHA.
+  cat > src.tpl <<'EOF'
+name: CI
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+EOF
+  # No --target: ".tpl" is not "*.yml" and owned_sections is empty -> degenerate.
+  no_target="$(bash "$SCRIPT" additive-merge-with-diff src.tpl --owned-sections '[]' | jq -r .sha12)"
+  assert_equal "$no_target" "e3b0c44298fc"
+  # With --target=<*.yml>: routed through the whole-file YAML canonical.
+  with_target="$(bash "$SCRIPT" additive-merge-with-diff src.tpl --owned-sections '[]' --target .github/workflows/ci.yml | jq -r .sha12)"
+  [[ "$with_target" =~ ^[0-9a-f]{12}$ ]] || fail "expected 12 hex chars, got: $with_target"
+  refute [ "$with_target" = "e3b0c44298fc" ]
+}
+
+@test "additive-merge — target-routed canonical agrees across a .tpl source and a .yml file" {
+  # The whole point of keying off --target: the plugin side (a .tpl) and the
+  # local side (a real .yml) must hash identically when content agrees,
+  # otherwise plugin_sha and local_sha can never be compared.
+  content='name: CI
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+'
+  printf '%s' "$content" > plugin.tpl
+  printf '%s' "$content" > local.yml
+  plug="$(bash "$SCRIPT" additive-merge-with-diff plugin.tpl --owned-sections '[]' --target x.yml | jq -r .sha12)"
+  loc="$(bash "$SCRIPT" additive-merge-with-diff local.yml  --owned-sections '[]' --target x.yml | jq -r .sha12)"
+  assert_equal "$plug" "$loc"
+  refute [ "$plug" = "e3b0c44298fc" ]
+}
+
+@test "additive-merge — YAML whole-file canonical (target-routed) is content-sensitive and marker-stable" {
+  # Sources named .tpl (as the plugin ships them) but routed as YAML via --target.
+  printf '# bootstrap-content-version: k@v1:000000000000\nname: CI\njobs:\n  a:\n    runs-on: x\n' > a.tpl
+  # Same body, different marker line only -> canonical unchanged (marker stripped).
+  printf '# bootstrap-content-version: k@v1:ffffffffffff\nname: CI\njobs:\n  a:\n    runs-on: x\n' > a2.tpl
+  # Different body -> canonical changes.
+  printf '# bootstrap-content-version: k@v1:000000000000\nname: CI\njobs:\n  a:\n    runs-on: x\n  b:\n    runs-on: y\n' > b.tpl
+  sha_a="$(bash "$SCRIPT" additive-merge-with-diff a.tpl --owned-sections '[]' --target ci.yml | jq -r .sha12)"
+  sha_a2="$(bash "$SCRIPT" additive-merge-with-diff a2.tpl --owned-sections '[]' --target ci.yml | jq -r .sha12)"
+  sha_b="$(bash "$SCRIPT" additive-merge-with-diff b.tpl --owned-sections '[]' --target ci.yml | jq -r .sha12)"
+  assert_equal "$sha_a" "$sha_a2"
+  refute [ "$sha_a" = "$sha_b" ]
+  refute [ "$sha_a" = "e3b0c44298fc" ]
+}
+
 # --- owned-regions ---
 
 @test "owned-regions — boundary heading body hashed in order" {
@@ -168,6 +223,71 @@ EOF
   run bash "$SCRIPT" structured .gitignore --owned-paths '["bytewyrd:base"]'
   sha_b="$(echo "$output" | jq -r .sha12)"
   assert_equal "$sha_a" "$sha_b"
+}
+
+# --- structured TOML (mise.toml tools[]:union, Fix 6) ---
+
+@test "structured TOML — a real [tools] table is parsed, not degenerate" {
+  cat > mise.toml <<'EOF'
+[tools]
+node = "20"
+bun = "1.1"
+EOF
+  sha="$(bash "$SCRIPT" structured mise.toml --owned-paths '["tools[]:union"]' | jq -r .sha12)"
+  [[ "$sha" =~ ^[0-9a-f]{12}$ ]] || fail "expected 12 hex, got: $sha"
+  # Pre-fix jq-on-TOML silently produced the empty-string SHA.
+  refute [ "$sha" = "e3b0c44298fc" ]
+}
+
+@test "structured TOML — canonical is content-sensitive and order-independent" {
+  cat > two.toml <<'EOF'
+[tools]
+node = "20"
+bun = "1.1"
+EOF
+  cat > two_reordered.toml <<'EOF'
+[tools]
+bun = "1.1"
+node = "20"
+EOF
+  cat > three.toml <<'EOF'
+[tools]
+node = "20"
+bun = "1.1"
+python = "3.12"
+EOF
+  cat > changed.toml <<'EOF'
+[tools]
+node = "22"
+bun = "1.1"
+EOF
+  sha_two="$(bash "$SCRIPT" structured two.toml --owned-paths '["tools[]:union"]' | jq -r .sha12)"
+  sha_reord="$(bash "$SCRIPT" structured two_reordered.toml --owned-paths '["tools[]:union"]' | jq -r .sha12)"
+  sha_three="$(bash "$SCRIPT" structured three.toml --owned-paths '["tools[]:union"]' | jq -r .sha12)"
+  sha_changed="$(bash "$SCRIPT" structured changed.toml --owned-paths '["tools[]:union"]' | jq -r .sha12)"
+  assert_equal "$sha_two" "$sha_reord"     # order-independent
+  refute [ "$sha_two" = "$sha_three" ]      # adding a tool changes it
+  refute [ "$sha_two" = "$sha_changed" ]    # changing a version changes it
+}
+
+@test "structured TOML — unfilled <TOOLS_SECTION> placeholder is stripped, not crashed" {
+  # The deterministically-rendered plugin template carries the LLM-filled
+  # placeholder; it must decode to an empty [tools] table, not fail to parse.
+  cat > placeholder.toml <<'EOF'
+[tools]
+<TOOLS_SECTION>
+EOF
+  cat > empty.toml <<'EOF'
+[tools]
+EOF
+  run bash "$SCRIPT" structured placeholder.toml --owned-paths '["tools[]:union"]'
+  assert_success
+  ph_sha="$(echo "$output" | jq -r .sha12)"
+  empty_sha="$(bash "$SCRIPT" structured empty.toml --owned-paths '["tools[]:union"]' | jq -r .sha12)"
+  # Placeholder strips to an empty table -> same canonical as a real empty [tools].
+  assert_equal "$ph_sha" "$empty_sha"
+  # And that empty-table canonical is a real parse, not the degenerate empty SHA.
+  refute [ "$empty_sha" = "e3b0c44298fc" ]
 }
 
 # --- error paths ---

@@ -318,6 +318,17 @@ is_gitignore_target() {
   esac
 }
 
+# Detect whether a structured target is a TOML file (e.g. mise.toml). TOML
+# targets carry an inline `#` marker (like .gitignore, not the JSON sidecar), and
+# their set-union owned paths cannot be merged deterministically — see
+# apply_toml_union_preserve.
+is_toml_target() {
+  case "$1" in
+    *.toml) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 # Replace a tagged block in a local .gitignore with the matching block from
 # the plugin source. If the tag does not exist in the local file, the plugin
 # block is appended. Tag format: `# bytewyrd:base` etc. A block runs from the
@@ -514,6 +525,29 @@ apply_json_dotpath_merge() {
     || { printf 'apply_json_dotpath_merge: failed to compute sha for %s' "$target"; return 1; }
 
   printf '%s' "$sha"
+}
+
+# Apply a structured TOML target whose owned paths are set-union paths (e.g.
+# mise.toml's "tools[]:union"). Such targets cannot be merged deterministically:
+# mise.toml is TOML (no stdlib writer), and the plugin template ships an empty
+# [tools] table (templates/mise.toml.tpl) — there is no plugin-side tool list
+# to union in. Feeding a "[]:union" path to `jq ".${path}"` is also a syntax
+# error. Preserve the local file verbatim and stamp the inline `#` marker with
+# the plugin canonical from the classification, so the artifact converges to
+# `unchanged` on the next /sync instead of re-flagging (and never runs the
+# invalid jq). Consumers maintain their own tool list; see SKILL.md's
+# tools[]:union note for why this is convergent, not propagating.
+apply_toml_union_preserve() {
+  local item="$1" target="$2" upstream_key="$3"
+  local plugin_sha
+  [ -f "$target" ] \
+    || { printf 'apply_toml_union_preserve: target missing: %s' "$target"; return 1; }
+  plugin_sha="$(printf '%s' "$item" | jq -r '.plugin_sha // ""')"
+  [ -n "$plugin_sha" ] \
+    || { printf 'apply_toml_union_preserve: missing plugin_sha for %s' "$target"; return 1; }
+  stamp_hash_marker "$target" "$upstream_key" "$plugin_sha" 2>/dev/null \
+    || { printf 'apply_toml_union_preserve: failed to stamp marker on %s' "$target"; return 1; }
+  printf '%s' "$plugin_sha"
 }
 
 # Collect results as newline-delimited JSON, wrap into an array at the end.
@@ -714,6 +748,12 @@ while IFS= read -r item; do
             else
               err_out="fast_forward: $result_sha"
             fi
+          elif is_toml_target "$target"; then
+            if result_sha="$(apply_toml_union_preserve "$item" "$target" "$upstream_key" 2>/dev/null)"; then
+              apply_result="applied"; apply_sha="$result_sha"
+            else
+              err_out="fast_forward: $result_sha"
+            fi
           else
             if result_sha="$(apply_json_dotpath_merge "$item" "$target" "$upstream_key" 2>/dev/null)"; then
               apply_result="applied"; apply_sha="$result_sha"
@@ -784,6 +824,12 @@ while IFS= read -r item; do
         structured)
           if is_gitignore_target "$target"; then
             if result_sha="$(apply_gitignore_blocks "$item" "$target" "$upstream_key" 2>/dev/null)"; then
+              apply_result="applied"; apply_sha="$result_sha"
+            else
+              err_out="${classification}: $result_sha"
+            fi
+          elif is_toml_target "$target"; then
+            if result_sha="$(apply_toml_union_preserve "$item" "$target" "$upstream_key" 2>/dev/null)"; then
               apply_result="applied"; apply_sha="$result_sha"
             else
               err_out="${classification}: $result_sha"

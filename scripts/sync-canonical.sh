@@ -37,6 +37,12 @@
 #     next H2/H1 or EOF, trimmed>\n` and concatenate. Hash the concatenation.
 #     (Identical body-extraction rule as owned-regions; what changes is which
 #     manifest field provides the heading list.)
+#     YAML whole-file special case: when the file is *.yml/*.yaml (e.g.
+#     .github/workflows/ci.yml), markdown owned_sections do not apply — a CI
+#     workflow has no `## ` headings and the item-level merge parses the whole
+#     file as YAML. Hash the entire file with the leading one-line version
+#     marker stripped. owned_paths:["*"] in the manifest declares this
+#     whole-file ownership.
 #
 # Args:
 #   $1  Required. Strategy name. One of:
@@ -77,6 +83,7 @@ shift 2 2>/dev/null || true
 owned_sections_json="[]"
 owned_boundaries_json="[]"
 owned_paths_json="[]"
+target=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -92,6 +99,10 @@ while [ $# -gt 0 ]; do
       [ "${2:-}" = "" ] && { emit_error "sync-canonical: --owned-paths requires a value"; exit 2; }
       owned_paths_json="$2"; shift 2
       ;;
+    --target)
+      [ "${2:-}" = "" ] && { emit_error "sync-canonical: --target requires a value"; exit 2; }
+      target="$2"; shift 2
+      ;;
     *)
       emit_error "sync-canonical: unknown argument: $1"
       exit 2
@@ -100,7 +111,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ -z "$strategy" ] || [ -z "$file" ]; then
-  emit_error "usage: sync-canonical.sh <strategy> <file> [--owned-sections JSON | --owned-boundaries JSON | --owned-paths JSON]"
+  emit_error "usage: sync-canonical.sh <strategy> <file> [--owned-sections JSON | --owned-boundaries JSON | --owned-paths JSON] [--target PATH]"
   exit 2
 fi
 
@@ -108,6 +119,16 @@ if [ ! -f "$file" ]; then
   emit_error "sync-canonical: file not found: $file"
   exit 1
 fi
+
+# Type dispatch (markdown-vs-YAML for additive-merge, JSON-vs-gitignore-vs-TOML
+# for structured) must key off the artifact's *declared target*, not the
+# incoming file's own name. In the classify/apply pipeline the file being hashed
+# is often the raw `.tpl` source or an extension-less `mktemp` render of the
+# plugin template — so keying off "$file" would take the wrong branch on the
+# plugin side and make the two sides of a comparison incomparable. Callers pass
+# --target <manifest target>; fall back to "$file" for standalone/test use where
+# the file is already correctly named.
+type_hint="${target:-$file}"
 
 # -------- helper: sha12 of stdin --------
 sha12_of_stdin() {
@@ -203,10 +224,35 @@ extract_gitignore_block() {
   '
 }
 
+# -------- helper: whole-file YAML canonicalization --------
+# For additive-merge YAML artifacts (.github/workflows/ci.yml — the whole-file
+# YAML special case), markdown owned_sections extraction does not apply: a CI
+# workflow has no `## ` headings, and the item-level merge parses the whole file
+# as YAML. Hash the entire file with the leading one-line `# bootstrap-content-
+# version:` marker stripped (plus one immediately following blank line) so the
+# marker's own value does not perturb the canonical — mirroring how the
+# `authoritative` strategy strips its header before hashing.
+whole_file_yaml_canonical() {
+  awk '
+    BEGIN { in_header = 1 }
+    in_header == 1 {
+      if ($0 ~ /^# bootstrap-content-version:/) { next }
+      in_header = 0
+      if ($0 == "") next
+    }
+    { print }
+  ' "$file"
+}
+
 # -------- helper: structured JSON canonicalization --------
-# args: json array of path strings.
+# args:
+#   $1  json array of path strings.
+#   $2  optional source file to read (defaults to the global $file). Callers
+#       pass a converted temp file for non-JSON inputs (e.g. TOML → JSON) so the
+#       jq extraction below always operates on valid JSON.
 structured_json_canonical() {
   local paths_json="$1"
+  local src="${2:-$file}"
   local count
   count="$(echo "$paths_json" | jq -r 'length')"
   if [ "$count" -eq 0 ]; then
@@ -219,7 +265,7 @@ structured_json_canonical() {
     path="$(echo "$paths_json" | jq -r ".[$i]")"
     if [ "$path" = "*" ]; then
       # Whole-document mode.
-      piece="$(jq -S '.' < "$file")"
+      piece="$(jq -S '.' < "$src")"
       printf '%s\n' "$piece"
       continue
     fi
@@ -228,11 +274,17 @@ structured_json_canonical() {
       local base="${BASH_REMATCH[1]}"
       local id_key="${BASH_REMATCH[2]}"
       if [ "$id_key" = "union" ]; then
-        # set-union — plugin side is not derivable from the local file alone;
-        # to make local and plugin SHAs comparable we serialize the whole
-        # array sorted by stringified entry. This is the closest deterministic
-        # canonical that does not require side information.
-        piece="$(jq -S "(.${base} // []) | sort" < "$file")"
+        # set-union — the plugin side is not derivable from the local file
+        # alone, so serialize the whole collection in a deterministic,
+        # order-independent form. `-S` sorts object keys recursively; arrays are
+        # sorted explicitly. mise's [tools] table decodes to a JSON *object*
+        # (tool -> version), so an array `sort` would error — handle both types.
+        piece="$(jq -S '
+          (.'"$base"' // null) as $v
+          | if   ($v | type) == "array"  then ($v | sort)
+            elif ($v | type) == "object" then $v
+            else ($v // []) end
+        ' < "$src")"
         printf '%s\n' "$piece"
       else
         # Serialize entries with a non-empty id field, sorted by id.
@@ -240,13 +292,13 @@ structured_json_canonical() {
           (.'"$base"' // [])
           | map(select(.[$key] != null and .[$key] != ""))
           | sort_by(.[$key])
-        ' < "$file")"
+        ' < "$src")"
         printf '%s\n' "$piece"
       fi
       continue
     fi
     # Dot-path. Use jq getpath via a tiny eval helper.
-    piece="$(jq -S ".${path}" < "$file" 2>/dev/null || printf 'null')"
+    piece="$(jq -S ".${path}" < "$src" 2>/dev/null || printf 'null')"
     printf '%s\n' "$piece"
   done
 }
@@ -295,16 +347,24 @@ case "$strategy" in
     emit_sha "$sha"
     ;;
   additive-merge|additive-merge-with-diff)
-    if [ "$(echo "$owned_sections_json" | jq -r 'type')" != "array" ]; then
-      emit_error "sync-canonical: --owned-sections must be a JSON array"; exit 2
-    fi
-    count="$(echo "$owned_sections_json" | jq -r 'length')"
-    out=""
-    for ((i = 0; i < count; i++)); do
-      heading="$(echo "$owned_sections_json" | jq -r ".[$i]")"
-      piece="$(extract_section "$heading" < "$file")"
-      out="${out}${piece}"
-    done
+    case "$type_hint" in
+      *.yml|*.yaml)
+        # Whole-file YAML special case (e.g. .github/workflows/ci.yml).
+        out="$(whole_file_yaml_canonical)"
+        ;;
+      *)
+        if [ "$(echo "$owned_sections_json" | jq -r 'type')" != "array" ]; then
+          emit_error "sync-canonical: --owned-sections must be a JSON array"; exit 2
+        fi
+        count="$(echo "$owned_sections_json" | jq -r 'length')"
+        out=""
+        for ((i = 0; i < count; i++)); do
+          heading="$(echo "$owned_sections_json" | jq -r ".[$i]")"
+          piece="$(extract_section "$heading" < "$file")"
+          out="${out}${piece}"
+        done
+        ;;
+    esac
     sha="$(printf '%s' "$out" | sha12_of_stdin)"
     emit_sha "$sha"
     ;;
@@ -312,9 +372,37 @@ case "$strategy" in
     if [ "$(echo "$owned_paths_json" | jq -r 'type')" != "array" ]; then
       emit_error "sync-canonical: --owned-paths must be a JSON array"; exit 2
     fi
-    case "$file" in
+    case "$type_hint" in
       *.gitignore)
         canonical="$(gitignore_canonical "$owned_paths_json")"
+        ;;
+      *.toml)
+        # TOML inputs (e.g. mise.toml) must be decoded to JSON before the
+        # structured jq extraction — jq cannot parse TOML, so without this the
+        # canonical silently degenerated to the empty-string SHA and drift in the
+        # tools table was invisible to the classify pipeline. Decode with the
+        # stdlib tomllib (preflight guarantees python3 >= 3.11).
+        #
+        # The plugin-side approximation is the deterministically-rendered
+        # template. templates/mise.toml.tpl now ships an empty [tools] table
+        # (no placeholder token) — but strip any bare "<PLACEHOLDER>"-style
+        # line before decoding anyway, defensively: a consumer bootstrapped
+        # before this fix may still carry the old unfilled <TOOLS_SECTION>
+        # token in their committed mise.toml, and this keeps that case
+        # decoding to an empty [tools] table rather than failing to parse.
+        toml_json="$(mktemp)"
+        if ! python3 -c '
+import tomllib, json, sys, re
+raw = open(sys.argv[1], "rb").read().decode("utf-8", "replace")
+cleaned = "\n".join("" if re.match(r"^\s*<[A-Za-z0-9_]+>\s*$", ln) else ln for ln in raw.splitlines())
+json.dump(tomllib.loads(cleaned), sys.stdout)
+' "$file" > "$toml_json" 2>/dev/null; then
+          rm -f "$toml_json"
+          emit_error "sync-canonical: failed to parse TOML: $file"
+          exit 2
+        fi
+        canonical="$(structured_json_canonical "$owned_paths_json" "$toml_json")"
+        rm -f "$toml_json"
         ;;
       *)
         canonical="$(structured_json_canonical "$owned_paths_json")"

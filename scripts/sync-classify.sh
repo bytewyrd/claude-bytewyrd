@@ -172,25 +172,33 @@ read_marker_sha() {
 
 # Helper: compute canonical SHA via the sister script. Forwards strategy-
 # specific args from the manifest entry.
+#
+# Always forwards --target with the artifact's target path so sync-canonical
+# dispatches its type-specific canonicalization (YAML whole-file, TOML parsing,
+# .gitignore blocks) off the declared target rather than the incoming file's own
+# name. This matters because the plugin-side "$f" is either the raw ".tpl"
+# source or an extension-less mktemp render — keying off "$f" would take the
+# wrong branch on the plugin side and make plugin_sha and local_sha
+# incomparable.
 canonical_sha() {
   local strat="$1"
   local f="$2"
-  local args=()
+  local args=( --target "$target" )
   case "$strat" in
     additive-merge|additive-merge-with-diff)
       local sections
       sections="$(echo "$manifest_json" | jq -c '.owned_sections // []')"
-      args=( --owned-sections "$sections" )
+      args+=( --owned-sections "$sections" )
       ;;
     owned-regions|section)
       local boundaries
       boundaries="$(echo "$manifest_json" | jq -c '.owned_boundaries // []')"
-      args=( --owned-boundaries "$boundaries" )
+      args+=( --owned-boundaries "$boundaries" )
       ;;
     structured)
       local paths
       paths="$(echo "$manifest_json" | jq -c '.owned_paths // []')"
-      args=( --owned-paths "$paths" )
+      args+=( --owned-paths "$paths" )
       ;;
   esac
   local out

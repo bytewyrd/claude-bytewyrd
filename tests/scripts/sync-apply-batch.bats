@@ -592,3 +592,47 @@ EOF
   sidecar_flag="$(echo "$output" | jq -r '.[0].sidecar_update_needed')"
   assert_equal "$sidecar_flag" "true"
 }
+
+# ---- structured TOML union apply (mise.toml, Fix 6) ----
+
+@test "structured mise.toml union conflict applies safely, preserves tools, converges" {
+  # Plugin template renders to an (effectively empty) [tools] table — the
+  # deterministic render leaves the LLM-filled <TOOLS_SECTION> placeholder.
+  cat > "$PLUGIN_ROOT/templates/mise.toml.tpl" <<'EOF'
+[tools]
+<TOOLS_SECTION>
+EOF
+  m_base='{"source":"templates/mise.toml.tpl","target":"mise.toml","extension_strategy":"structured","owned_paths":["tools[]:union"],"templated":true,"template_inputs":["languages"],"owned_boundaries":[],"owned_sections":[]}'
+  expected_key="$(compute_upstream_key "$m_base")"
+  m="$(printf '%s' "$m_base" | jq --arg k "$expected_key" '. + {upstream_key: $k}')"
+  # Local mise.toml: real tool pins + a stale marker -> drift vs the empty plugin.
+  printf '# bootstrap-content-version: %s:%s\n\n[tools]\nbun = "1.1.0"\nnode = "20.0.0"\n' "$expected_key" "aaaaaaaaaaaa" > mise.toml
+
+  cls="$(bash "$SCRIPT_ROOT/scripts/sync-classify.sh" "$m" mise.toml "$PLUGIN_ROOT")"
+  cls_name="$(echo "$cls" | jq -r .classification)"
+  { [ "$cls_name" = "conflict" ] || [ "$cls_name" = "fast_forward" ]; } \
+    || fail "expected conflict/fast_forward, got: $cls_name"
+  plugin_sha="$(echo "$cls" | jq -r .plugin_sha)"
+
+  # Apply through the real apply-batch. Pre-fix this routed to
+  # apply_json_dotpath_merge and ran the invalid `jq ".tools[]:union"` (a syntax
+  # error), reporting result=error.
+  item="$(jq -cn --argjson a "$m" --argjson b "$cls" '$a + $b')"
+  run bash "$SCRIPT" "[$item]" "$PLUGIN_ROOT" inputs.json
+  assert_success
+  assert_equal "$(echo "$output" | jq -r '.[0].result')" "applied"
+  assert_equal "$(echo "$output" | jq -r '.[0].error')" "null"
+
+  # Local tool pins preserved verbatim (union can't be merged deterministically).
+  grep -q 'bun = "1.1.0"' mise.toml || fail "bun pin not preserved"
+  grep -q 'node = "20.0.0"' mise.toml || fail "node pin not preserved"
+
+  # The inline `#` marker (not the JSON sidecar) is stamped with the plugin
+  # canonical, so the artifact converges to unchanged.
+  marker_line="$(head -1 mise.toml)"
+  [ "$marker_line" = "# bootstrap-content-version: ${expected_key}:${plugin_sha}" ] \
+    || fail "inline marker not stamped with plugin_sha; got: $marker_line"
+
+  cls2="$(bash "$SCRIPT_ROOT/scripts/sync-classify.sh" "$m" mise.toml "$PLUGIN_ROOT")"
+  assert_equal "$(echo "$cls2" | jq -r .classification)" "unchanged"
+}

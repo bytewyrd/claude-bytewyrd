@@ -19,19 +19,28 @@
       ]
     },
     {
-      "upstream_key": "bytewyrd/.github/PULL_REQUEST_TEMPLATE.md@bc393baf",
+      "upstream_key": "bytewyrd/.github/PULL_REQUEST_TEMPLATE.md@016f98ca",
       "source": "templates/PULL_REQUEST_TEMPLATE.md.tpl",
       "target": ".github/PULL_REQUEST_TEMPLATE.md",
       "sha256": "250662b840027cd82490e597996cebf9ce77055014c0bb54dd3bbb1e6db42ac8",
       "extension_strategy": "additive-merge-with-diff",
+      "owned_sections": [
+        "## Summary",
+        "## Changes",
+        "## Testing",
+        "## Notes for Reviewers"
+      ],
       "templated": false
     },
     {
-      "upstream_key": "bytewyrd/.github/workflows/ci.yml@bc393baf",
+      "upstream_key": "bytewyrd/.github/workflows/ci.yml@e81b4e34",
       "source": "templates/ci.yml.tpl",
       "target": ".github/workflows/ci.yml",
       "template_sha": "cdd7c920475280a2134dd186a732f229fe0230084ba0b2ee6ec45186229f93b2",
       "extension_strategy": "additive-merge-with-diff",
+      "owned_paths": [
+        "*"
+      ],
       "templated": true,
       "template_inputs": [
         "languages",
@@ -50,20 +59,26 @@
       "templated": false
     },
     {
-      "upstream_key": "bytewyrd/CLAUDE.md@6cbeb80b",
+      "upstream_key": "bytewyrd/CLAUDE.md@977c4da4",
       "source": "templates/CLAUDE.md.tpl",
       "target": "CLAUDE.md",
       "template_sha": "5d8026aea7afb156097ce5b7909572e8c1c1917626a38cf99e9ea88d2367ea66",
       "extension_strategy": "additive-merge",
       "owned_sections": [
         "## Agent delegation",
+        "## Auto Mode",
         "## Tool Usage",
         "## RFC Process",
         "## Evidence-Based Development",
         "## Model Usage Optimization",
         "## Claude Code Sandbox — Container Tool Compatibility",
         "## Security",
+        "## Git",
         "## Conventions"
+      ],
+      "project_owned_sections": [
+        "## Toolchain",
+        "## File structure"
       ],
       "templated": true,
       "template_inputs": [
@@ -209,7 +224,7 @@
       "upstream_key": "bytewyrd/mise.toml@ebf354bf",
       "source": "templates/mise.toml.tpl",
       "target": "mise.toml",
-      "template_sha": "8ae46e038f0fd4d80c30849b4710a60ceeb3493916b3c525d98885c60cb9f599",
+      "template_sha": "93a96eafa63d105912e2af9b20cf8266ba3a9aa5732a46c90b6faed864dd8520",
       "extension_strategy": "structured",
       "owned_paths": [
         "tools[]:union"

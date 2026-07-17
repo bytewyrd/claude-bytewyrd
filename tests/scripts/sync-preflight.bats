@@ -72,6 +72,53 @@ teardown() {
   [[ "$output" == *"git repository"* ]] || fail "Expected git-repo error, got: $output"
 }
 
+# --- python3 >= 3.11 gate (tomllib is stdlib only from 3.11) -----------------
+
+# Write a fake `python3` onto PATH that reports the given version, so the
+# preflight version gate can be exercised without a second interpreter.
+_fake_python3() {
+  local ver="$1" ge311="$2"   # ge311: "0" (satisfies >=3.11) or "1" (does not)
+  local fakebin="$TEST_TMPDIR/fakebin"
+  mkdir -p "$fakebin"
+  cat > "$fakebin/python3" <<PYEOF
+#!/usr/bin/env bash
+case "\$*" in
+  *"version_info >= (3, 11)"*) exit $ge311 ;;
+  *"sys.version_info[:3]"*) echo "$ver"; exit 0 ;;
+  *) exit 0 ;;
+esac
+PYEOF
+  chmod +x "$fakebin/python3"
+  printf '%s' "$fakebin"
+}
+
+@test "python3 3.9 is rejected by the version gate" {
+  fakebin="$(_fake_python3 "3.9.18" 1)"
+  run env PATH="$fakebin:$PATH" bash "$SCRIPT"
+  assert_failure 1
+  [[ "$output" == *"python3 >= 3.11"* ]] || fail "expected 3.11 requirement message, got: $output"
+  [[ "$output" == *"3.9.18"* ]] || fail "expected the found version in the message, got: $output"
+}
+
+@test "python3 3.10 is rejected by the version gate" {
+  fakebin="$(_fake_python3 "3.10.12" 1)"
+  run env PATH="$fakebin:$PATH" bash "$SCRIPT"
+  assert_failure 1
+  [[ "$output" == *"python3 >= 3.11"* ]] || fail "expected 3.11 requirement message, got: $output"
+}
+
+@test "python3 3.11 is accepted by the version gate" {
+  fakebin="$(_fake_python3 "3.11.0" 0)"
+  run env PATH="$fakebin:$PATH" bash "$SCRIPT"
+  assert_success
+}
+
+@test "python3 4.0 is accepted by the version gate" {
+  fakebin="$(_fake_python3 "4.0.1" 0)"
+  run env PATH="$fakebin:$PATH" bash "$SCRIPT"
+  assert_success
+}
+
 # --- Happy path -------------------------------------------------------------
 
 @test "happy path emits expected JSON shape" {
@@ -116,6 +163,32 @@ teardown() {
   slug="$(echo "$output" | jq -r .project_slug)"
   root="$(echo "$output" | jq -r .repo_root)"
   assert_equal "$slug" "$(basename "$root")"
+}
+
+@test "project_slug resolves to the main repo name when run inside a worktree" {
+  # Regression guard: when /sync runs inside a git worktree,
+  # `git rev-parse --show-toplevel` returns the worktree dir, so deriving the
+  # slug from it would name the project after the worktree (e.g. a branch dir)
+  # instead of the real repository. project_slug must be derived from the shared
+  # git-common-dir (the main repo), while repo_root stays the worktree (the write
+  # target).
+  local main_slug worktree_dir
+  main_slug="$(basename "$TEST_TMPDIR")"
+  worktree_dir="$TEST_TMPDIR/wt-feature-branch"
+
+  git worktree add -q "$worktree_dir" -b wt-feature-branch >/dev/null 2>&1
+  cd "$worktree_dir"
+
+  run bash "$SCRIPT"
+  assert_success
+  slug="$(echo "$output" | jq -r .project_slug)"
+  root="$(echo "$output" | jq -r .repo_root)"
+
+  # slug is the MAIN repo's basename, NOT the worktree directory name.
+  assert_equal "$slug" "$main_slug"
+  refute [ "$slug" = "wt-feature-branch" ]
+  # repo_root stays the worktree — writes must land in the current checkout.
+  assert_equal "$(basename "$root")" "wt-feature-branch"
 }
 
 @test "has_substantial_content false on empty repo" {
