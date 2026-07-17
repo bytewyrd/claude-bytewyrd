@@ -1,5 +1,5 @@
 <!-- bootstrap-content-version: bytewyrd/CLAUDE.md@6cbeb80b:61f9b5c01dba -->
-<!-- Bootstrapped by the Bytewyrd plugin. This file is now owned by this project — /sync will not update it. Maintain it as part of your codebase. -->
+<!-- Managed by the Bytewyrd plugin. /sync refreshes the plugin-owned sections (see owned_sections in bootstrap-manifest.json) on each run and merges in updates; the rest of this file is project-owned — maintain it as part of your codebase. -->
 
 # Bytewyrd's Claude Plugin
 
