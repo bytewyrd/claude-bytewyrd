@@ -117,9 +117,25 @@ fi
 
 # --- Data collection ---
 
+# repo_root is the *write target*: every file /sync creates or updates lands
+# here. It must stay the current checkout — the worktree when /sync runs inside
+# one — so writes flow through the worktree's branch and PR. See SKILL.md Step 1
+# "Write target". Never redirect this to the main repo via --git-common-dir.
 repo_root="$(git rev-parse --show-toplevel)"
 git_user="$(git config user.name 2>/dev/null || echo "")"
-project_slug="$(basename "$repo_root")"
+
+# project_slug names the *project*, not the checkout. When /sync runs inside a
+# worktree, --show-toplevel points at the worktree directory, so basename of
+# repo_root would yield the worktree name (e.g. a branch-derived directory)
+# instead of the real project name. The shared git-common-dir always resolves to
+# the main repository regardless of which worktree we are in, so its parent
+# directory is the true project root. Resolve it robustly: --git-common-dir may
+# print a relative path (e.g. ".git") depending on git version and cwd, so cd
+# into "<common-dir>/.." and let the shell canonicalize to an absolute path.
+# Fall back to repo_root if resolution fails for any reason.
+project_root="$(cd "$(git rev-parse --git-common-dir)/.." 2>/dev/null && pwd)"
+[ -n "$project_root" ] || project_root="$repo_root"
+project_slug="$(basename "$project_root")"
 
 # Substantial content: any committed file other than LICENSE, README, or .gitignore.
 # Use the `|| true` guard because grep -c returning 0 with -v can exit non-zero
