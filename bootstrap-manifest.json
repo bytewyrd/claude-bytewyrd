@@ -59,13 +59,14 @@
       "templated": false
     },
     {
-      "upstream_key": "bytewyrd/CLAUDE.md@6cbeb80b",
+      "upstream_key": "bytewyrd/CLAUDE.md@29ee425f",
       "source": "templates/CLAUDE.md.tpl",
       "target": "CLAUDE.md",
       "template_sha": "5d8026aea7afb156097ce5b7909572e8c1c1917626a38cf99e9ea88d2367ea66",
       "extension_strategy": "additive-merge",
       "owned_sections": [
         "## Agent delegation",
+        "## Auto Mode",
         "## Tool Usage",
         "## RFC Process",
         "## Evidence-Based Development",
