@@ -225,6 +225,71 @@ EOF
   assert_equal "$sha_a" "$sha_b"
 }
 
+# --- structured TOML (mise.toml tools[]:union, Fix 6) ---
+
+@test "structured TOML — a real [tools] table is parsed, not degenerate" {
+  cat > mise.toml <<'EOF'
+[tools]
+node = "20"
+bun = "1.1"
+EOF
+  sha="$(bash "$SCRIPT" structured mise.toml --owned-paths '["tools[]:union"]' | jq -r .sha12)"
+  [[ "$sha" =~ ^[0-9a-f]{12}$ ]] || fail "expected 12 hex, got: $sha"
+  # Pre-fix jq-on-TOML silently produced the empty-string SHA.
+  refute [ "$sha" = "e3b0c44298fc" ]
+}
+
+@test "structured TOML — canonical is content-sensitive and order-independent" {
+  cat > two.toml <<'EOF'
+[tools]
+node = "20"
+bun = "1.1"
+EOF
+  cat > two_reordered.toml <<'EOF'
+[tools]
+bun = "1.1"
+node = "20"
+EOF
+  cat > three.toml <<'EOF'
+[tools]
+node = "20"
+bun = "1.1"
+python = "3.12"
+EOF
+  cat > changed.toml <<'EOF'
+[tools]
+node = "22"
+bun = "1.1"
+EOF
+  sha_two="$(bash "$SCRIPT" structured two.toml --owned-paths '["tools[]:union"]' | jq -r .sha12)"
+  sha_reord="$(bash "$SCRIPT" structured two_reordered.toml --owned-paths '["tools[]:union"]' | jq -r .sha12)"
+  sha_three="$(bash "$SCRIPT" structured three.toml --owned-paths '["tools[]:union"]' | jq -r .sha12)"
+  sha_changed="$(bash "$SCRIPT" structured changed.toml --owned-paths '["tools[]:union"]' | jq -r .sha12)"
+  assert_equal "$sha_two" "$sha_reord"     # order-independent
+  refute [ "$sha_two" = "$sha_three" ]      # adding a tool changes it
+  refute [ "$sha_two" = "$sha_changed" ]    # changing a version changes it
+}
+
+@test "structured TOML — unfilled <TOOLS_SECTION> placeholder is stripped, not crashed" {
+  # The deterministically-rendered plugin template carries the LLM-filled
+  # placeholder; it must decode to an empty [tools] table, not fail to parse.
+  cat > placeholder.toml <<'EOF'
+[tools]
+<TOOLS_SECTION>
+EOF
+  cat > empty.toml <<'EOF'
+[tools]
+EOF
+  run bash "$SCRIPT" structured placeholder.toml --owned-paths '["tools[]:union"]'
+  assert_success
+  ph_sha="$(echo "$output" | jq -r .sha12)"
+  empty_sha="$(bash "$SCRIPT" structured empty.toml --owned-paths '["tools[]:union"]' | jq -r .sha12)"
+  # Placeholder strips to an empty table -> same canonical as a real empty [tools].
+  assert_equal "$ph_sha" "$empty_sha"
+  # And that empty-table canonical is a real parse, not the degenerate empty SHA.
+  refute [ "$empty_sha" = "e3b0c44298fc" ]
+}
+
 # --- error paths ---
 
 @test "missing file exits 1" {
