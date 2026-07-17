@@ -224,7 +224,7 @@
       "upstream_key": "bytewyrd/mise.toml@ebf354bf",
       "source": "templates/mise.toml.tpl",
       "target": "mise.toml",
-      "template_sha": "8ae46e038f0fd4d80c30849b4710a60ceeb3493916b3c525d98885c60cb9f599",
+      "template_sha": "93a96eafa63d105912e2af9b20cf8266ba3a9aa5732a46c90b6faed864dd8520",
       "extension_strategy": "structured",
       "owned_paths": [
         "tools[]:union"

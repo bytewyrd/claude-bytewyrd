@@ -170,3 +170,24 @@ EOF
   run bash "$SCRIPT"
   assert_failure 2
 }
+
+@test "shipped mise.toml.tpl renders to valid TOML with no unresolved placeholder" {
+  # Regression guard: the mechanical `add`/apply path renders mise.toml via this
+  # script with project_inputs that carry no tools_section. If the template holds
+  # a named-section placeholder like <TOOLS_SECTION>, a fresh consumer would commit
+  # a literal token — invalid TOML. Tool versions need `mise latest` (network) and
+  # cannot be filled deterministically, so the [tools] table must render empty.
+  cat > inputs.json <<'EOF'
+{"project_name":"demo","description":"d","project_slug":"demo","languages":["js"],"has_js":true,"component_roots":[]}
+EOF
+  run bash "$SCRIPT" "$SCRIPT_ROOT/templates/mise.toml.tpl" inputs.json
+  assert_success
+  # No unresolved named-section placeholder (an <UPPERCASE_UNDERSCORE> token).
+  if echo "$output" | grep -qE '<[A-Z][A-Z_]+>'; then
+    fail "unresolved named-section placeholder in rendered mise.toml: $output"
+  fi
+  # Rendered output must be valid TOML.
+  printf '%s' "$output" > rendered.toml
+  python3 -c 'import tomllib; tomllib.load(open("rendered.toml","rb"))' \
+    || fail "rendered mise.toml is not valid TOML: $output"
+}

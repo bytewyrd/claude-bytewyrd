@@ -643,13 +643,25 @@ Add entries for every detected language (union of all, append-only):
 
 **`mise.toml.tpl` tools section:**
 
-Run `mise latest <tool>` to resolve the current stable version. Never write `"latest"`. Append only non-Rust languages:
-- JS/TS: `bun = "<version>"`
-- Go: `go = "<version>"`
-- Python: `python = "<version>"`
-- Shell/Infra: `terraform`, `kubectl`, `helm` (only tools actually used)
+`mise.toml` is created with an **empty `[tools]` table** and the `[tools]` table
+is project-owned. The template carries no placeholder to fill: /sync's mechanical
+`add`/apply cannot resolve tool versions (that needs `mise latest`, a network
+call, and is not deterministic), so a fresh consumer always gets a valid, empty
+`mise.toml` they then maintain. Populate `[tools]` per detected non-Rust
+languages as a manual/project step — e.g. `bun = "1.1.0"`, `go = "1.22.0"`,
+`python = "3.12.0"` (resolve versions with `mise latest <tool>`; never write
+`"latest"`). Rust uses `rust-toolchain.toml` + rustup, not mise.
 
-If `mise` is unavailable, write a reasonable placeholder and note it in the Step 8 report.
+**`tools[]:union` is safe-and-convergent, NOT a real propagation guarantee.**
+The manifest lists `owned_paths: ["tools[]:union"]` for `mise.toml`, but the
+plugin's tool set is not available to the deterministic pipeline (it would be
+LLM/`mise`-resolved, and there is no stdlib TOML writer). So the union-apply
+(`apply_toml_union_preserve`) **preserves the consumer's local `[tools]`
+verbatim and converges the marker** — it never overwrites the consumer's pins
+and never truly merges plugin tools into their file. Do not read `tools[]:union`
+as "the plugin keeps consumer tool pins in sync"; it does not. Building real
+deterministic TOML-writing or LLM-mediated tool union is deliberately out of
+scope.
 
 **`.gitignore.tpl` language entries:**
 
