@@ -384,11 +384,12 @@ case "$strategy" in
         # stdlib tomllib (preflight guarantees python3 >= 3.11).
         #
         # The plugin-side approximation is the deterministically-rendered
-        # template, which still contains unfilled named-section placeholders such
-        # as <TOOLS_SECTION> (those are LLM-filled at apply time, per SKILL.md).
-        # A bare "<TOOLS_SECTION>" line is not valid TOML, so strip such
-        # placeholder lines before decoding; the plugin side then decodes to an
-        # empty [tools] table rather than failing to parse.
+        # template. templates/mise.toml.tpl now ships an empty [tools] table
+        # (no placeholder token) — but strip any bare "<PLACEHOLDER>"-style
+        # line before decoding anyway, defensively: a consumer bootstrapped
+        # before this fix may still carry the old unfilled <TOOLS_SECTION>
+        # token in their committed mise.toml, and this keeps that case
+        # decoding to an empty [tools] table rather than failing to parse.
         toml_json="$(mktemp)"
         if ! python3 -c '
 import tomllib, json, sys, re

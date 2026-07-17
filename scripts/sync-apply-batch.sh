@@ -529,14 +529,14 @@ apply_json_dotpath_merge() {
 
 # Apply a structured TOML target whose owned paths are set-union paths (e.g.
 # mise.toml's "tools[]:union"). Such targets cannot be merged deterministically:
-# mise.toml is TOML (no stdlib writer) and the plugin's tool set is rendered by
-# the LLM at apply time (the deterministic template render leaves <TOOLS_SECTION>
-# unfilled), so it is absent from the plugin content the batch can see. Feeding a
-# "[]:union" path to `jq ".${path}"` is also a syntax error. Preserve the local
-# file verbatim and stamp the inline `#` marker with the plugin canonical from the
-# classification, so the artifact converges to `unchanged` on the next /sync
-# instead of re-flagging (and never runs the invalid jq). The LLM reconciles the
-# actual tool list during /sync per SKILL.md.
+# mise.toml is TOML (no stdlib writer), and the plugin template ships an empty
+# [tools] table (templates/mise.toml.tpl) — there is no plugin-side tool list
+# to union in. Feeding a "[]:union" path to `jq ".${path}"` is also a syntax
+# error. Preserve the local file verbatim and stamp the inline `#` marker with
+# the plugin canonical from the classification, so the artifact converges to
+# `unchanged` on the next /sync instead of re-flagging (and never runs the
+# invalid jq). Consumers maintain their own tool list; see SKILL.md's
+# tools[]:union note for why this is convergent, not propagating.
 apply_toml_union_preserve() {
   local item="$1" target="$2" upstream_key="$3"
   local plugin_sha
