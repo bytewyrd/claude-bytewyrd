@@ -106,12 +106,22 @@ source "$SCRIPT_DIR/_lib/plugin.bash"
 source "$SCRIPT_DIR/_lib/detect-languages.bash"
 require_jq
 
-# --- Hard check 3: python3 must be on PATH (used for TOML parsing). ---
+# --- Hard check 3: python3 >= 3.11 must be on PATH (used for TOML parsing). ---
+# TOML canonicalization (mise.toml) decodes via the stdlib `tomllib` module,
+# which only exists in Python 3.11+. Checking only for `python3` would let an
+# older interpreter (e.g. 3.10 on Ubuntu 22.04 LTS) through, and the tomllib
+# ImportError would then be swallowed downstream — silently degrading the
+# mise.toml canonical to a wrong/empty hash. Fail fast and loudly here instead.
 if ! command -v python3 >/dev/null 2>&1; then
   # emit_error writes JSON to stdout; we redirect it to stderr because the
   # success JSON is the script's stdout contract — error envelopes go to
   # stderr so the caller can still safely consume stdout as JSON.
-  emit_error "/sync requires python3 for TOML parsing. Install with: brew install python3 (macOS) or apt install python3 (Debian/Ubuntu)" >&2
+  emit_error "/sync requires python3 (>= 3.11) for TOML parsing. Install with: brew install python3 (macOS) or apt install python3 (Debian/Ubuntu)" >&2
+  exit 1
+fi
+if ! python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then
+  py_ver="$(python3 -c 'import sys; print("%d.%d.%d" % sys.version_info[:3])' 2>/dev/null || echo "unknown")"
+  emit_error "/sync requires python3 >= 3.11 for TOML parsing (stdlib tomllib); found python3 $py_ver. Upgrade python3 (e.g. brew upgrade python3, a newer distro, or pyenv/mise)." >&2
   exit 1
 fi
 

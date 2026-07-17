@@ -245,9 +245,14 @@ whole_file_yaml_canonical() {
 }
 
 # -------- helper: structured JSON canonicalization --------
-# args: json array of path strings.
+# args:
+#   $1  json array of path strings.
+#   $2  optional source file to read (defaults to the global $file). Callers
+#       pass a converted temp file for non-JSON inputs (e.g. TOML → JSON) so the
+#       jq extraction below always operates on valid JSON.
 structured_json_canonical() {
   local paths_json="$1"
+  local src="${2:-$file}"
   local count
   count="$(echo "$paths_json" | jq -r 'length')"
   if [ "$count" -eq 0 ]; then
@@ -260,7 +265,7 @@ structured_json_canonical() {
     path="$(echo "$paths_json" | jq -r ".[$i]")"
     if [ "$path" = "*" ]; then
       # Whole-document mode.
-      piece="$(jq -S '.' < "$file")"
+      piece="$(jq -S '.' < "$src")"
       printf '%s\n' "$piece"
       continue
     fi
@@ -269,11 +274,17 @@ structured_json_canonical() {
       local base="${BASH_REMATCH[1]}"
       local id_key="${BASH_REMATCH[2]}"
       if [ "$id_key" = "union" ]; then
-        # set-union — plugin side is not derivable from the local file alone;
-        # to make local and plugin SHAs comparable we serialize the whole
-        # array sorted by stringified entry. This is the closest deterministic
-        # canonical that does not require side information.
-        piece="$(jq -S "(.${base} // []) | sort" < "$file")"
+        # set-union — the plugin side is not derivable from the local file
+        # alone, so serialize the whole collection in a deterministic,
+        # order-independent form. `-S` sorts object keys recursively; arrays are
+        # sorted explicitly. mise's [tools] table decodes to a JSON *object*
+        # (tool -> version), so an array `sort` would error — handle both types.
+        piece="$(jq -S '
+          (.'"$base"' // null) as $v
+          | if   ($v | type) == "array"  then ($v | sort)
+            elif ($v | type) == "object" then $v
+            else ($v // []) end
+        ' < "$src")"
         printf '%s\n' "$piece"
       else
         # Serialize entries with a non-empty id field, sorted by id.
@@ -281,13 +292,13 @@ structured_json_canonical() {
           (.'"$base"' // [])
           | map(select(.[$key] != null and .[$key] != ""))
           | sort_by(.[$key])
-        ' < "$file")"
+        ' < "$src")"
         printf '%s\n' "$piece"
       fi
       continue
     fi
     # Dot-path. Use jq getpath via a tiny eval helper.
-    piece="$(jq -S ".${path}" < "$file" 2>/dev/null || printf 'null')"
+    piece="$(jq -S ".${path}" < "$src" 2>/dev/null || printf 'null')"
     printf '%s\n' "$piece"
   done
 }
@@ -361,9 +372,36 @@ case "$strategy" in
     if [ "$(echo "$owned_paths_json" | jq -r 'type')" != "array" ]; then
       emit_error "sync-canonical: --owned-paths must be a JSON array"; exit 2
     fi
-    case "$file" in
+    case "$type_hint" in
       *.gitignore)
         canonical="$(gitignore_canonical "$owned_paths_json")"
+        ;;
+      *.toml)
+        # TOML inputs (e.g. mise.toml) must be decoded to JSON before the
+        # structured jq extraction — jq cannot parse TOML, so without this the
+        # canonical silently degenerated to the empty-string SHA and drift in the
+        # tools table was invisible to the classify pipeline. Decode with the
+        # stdlib tomllib (preflight guarantees python3 >= 3.11).
+        #
+        # The plugin-side approximation is the deterministically-rendered
+        # template, which still contains unfilled named-section placeholders such
+        # as <TOOLS_SECTION> (those are LLM-filled at apply time, per SKILL.md).
+        # A bare "<TOOLS_SECTION>" line is not valid TOML, so strip such
+        # placeholder lines before decoding; the plugin side then decodes to an
+        # empty [tools] table rather than failing to parse.
+        toml_json="$(mktemp)"
+        if ! python3 -c '
+import tomllib, json, sys, re
+raw = open(sys.argv[1], "rb").read().decode("utf-8", "replace")
+cleaned = "\n".join("" if re.match(r"^\s*<[A-Za-z0-9_]+>\s*$", ln) else ln for ln in raw.splitlines())
+json.dump(tomllib.loads(cleaned), sys.stdout)
+' "$file" > "$toml_json" 2>/dev/null; then
+          rm -f "$toml_json"
+          emit_error "sync-canonical: failed to parse TOML: $file"
+          exit 2
+        fi
+        canonical="$(structured_json_canonical "$owned_paths_json" "$toml_json")"
+        rm -f "$toml_json"
         ;;
       *)
         canonical="$(structured_json_canonical "$owned_paths_json")"
