@@ -133,13 +133,13 @@ When the spec includes commands, include the exact command string and the expect
 
 **Always use specialized agents** when working with RFCs. Never write, review, update, or implement RFC content as the main agent (inline).
 
-**Model:** All RFC-related agent tasks must use `model: "opus"` — the highest available model. RFC quality depends on deep reasoning. Never downgrade to a cheaper model for RFC work.
+**Model:** All RFC-related agent tasks default to `model: "opus"`. RFC quality depends on deep reasoning — never downgrade to a cheaper model (sonnet, haiku) for RFC work. `/rfc-new` asks the human whether to draft with Opus (default) or Claude Fable 5 — Anthropic's most capable model, priced and behaving differently from Opus (always-on extended thinking, longer-running turns, safety-classifier refusals that need explicit handling, and a mandatory 30-day data-retention requirement). Fable is opt-in only; no agent selects it automatically. Review agents and `/rfc-consensus-review` always run at `model: "opus"` regardless of which model drafted the RFC.
 
 ### Writing a new RFC
 
 Use `/rfc-new` to create a new RFC. The skill handles numbering, template creation, and agent dispatch. The agent flow is:
 
-1. `rfc-architect` agent (`model: "opus"`) fills in the RFC template from the provided description and context.
+1. `rfc-architect` agent (`model: "opus"`, or `"fable"` if the human chose Claude Fable 5 for this RFC in `/rfc-new`) fills in the RFC template from the provided description and context.
 2. **Immediately** after writing, `rfc-architect` spawns the appropriate review agents in parallel — do not wait for human input.
 3. `rfc-architect` incorporates review feedback and resolves conflicts by reasoning about the RFC's stated goals.
 4. `rfc-architect` runs the **self-review checklist**:

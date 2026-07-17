@@ -31,7 +31,16 @@ If the description covers multiple clearly independent subsystems, say:
 
 Wait for the user's answer before proceeding.
 
-### 3. Generate RFC identifier
+### 3. Choose model tier
+
+Ask the human which model should draft this RFC, via `AskUserQuestion`:
+
+- **Opus (Recommended)** — the default for RFC work. Deep reasoning at standard cost and latency.
+- **Fable** — Claude Fable 5, Anthropic's most capable model. Reach for this only on unusually hard or high-stakes RFCs — it costs more, runs longer (extended thinking is always on), can occasionally decline a request outright (`stop_reason: "refusal"`), and requires the organization to have 30-day data retention configured.
+
+Record the answer as the model for step 8's `rfc-architect` spawn (`"opus"` or `"fable"`). This choice affects only the RFC-drafting step — review agents and `/rfc-consensus-review` (step 9) always run at `model: "opus"`, regardless of what drafted the RFC.
+
+### 4. Generate RFC identifier
 
 The RFC identifier is today's date: `YYYY-MM-DD`. Same-day collisions are avoided in practice by topics being different.
 
@@ -39,13 +48,13 @@ The RFC identifier is today's date: `YYYY-MM-DD`. Same-day collisions are avoide
 date +%Y-%m-%d
 ```
 
-### 4. Derive filename
+### 5. Derive filename
 
 Convert the description to kebab-case (lowercase, spaces → hyphens, remove punctuation). Truncate to ~40 characters at a word boundary if needed.
 
 Filename: `docs/rfcs/YYYY-MM-DD-<kebab-title>.md`
 
-### 5. Write the template file
+### 6. Write the template file
 
 Create `docs/rfcs/YYYY-MM-DD-<kebab-title>.md` with today's date and the RFC identifier filled in:
 
@@ -100,7 +109,7 @@ Get the author name:
 git config user.name
 ```
 
-### 6. Remove promoted braindump entry
+### 7. Remove promoted braindump entry
 
 If the description came from a `docs/rfc-braindump.md` entry (the user selected a number in Step 1), remove that bullet:
 
@@ -111,9 +120,9 @@ removed="$(printf '%s' "$result" | jq -r .removed)"
 
 Where `$SELECTED_ENTRY_BODY` is the full bullet text *excluding* the leading `* ` marker (e.g., `**Foo.** First entry.`). If `$removed` is `false` (script exited 1), treat as a warning, not an error — the entry may have been removed already. If the description was typed directly by the user (not selected from the braindump list), skip this step.
 
-### 7. Spawn bytewyrd:rfc-architect to fill in the RFC
+### 8. Spawn bytewyrd:rfc-architect to fill in the RFC
 
-Spawn a `bytewyrd:rfc-architect` agent (`model: "opus"`) with:
+Spawn a `bytewyrd:rfc-architect` agent (`model: "$RFC_MODEL"`, the choice recorded in step 3) with:
 - The user's description
 - The path to the created RFC file
 - The full project context (relevant code, existing RFCs, docs)
@@ -124,20 +133,20 @@ The `bytewyrd:rfc-architect` agent must **immediately** after writing dispatch t
 2. **Placeholder scan** — any prohibited patterns present?
 3. **Consistency** — type names, signatures, paths match across sections?
 
-### 8. Consensus review and fix loop
+### 9. Consensus review and fix loop
 
-After `bytewyrd:rfc-architect` completes step 7, invoke the `/rfc-consensus-review` skill on the new RFC.
+After `bytewyrd:rfc-architect` completes step 8, invoke the `/rfc-consensus-review` skill on the new RFC. This runs its own reviewer agents at `model: "opus"` regardless of which model drafted the RFC in step 3.
 
-The consensus review skill runs to completion: it auto-fixes all verified bugs, walks through any design opinions interactively with the human, and reports. Wait for it to finish — including the interactive walk-through — before proceeding to step 9.
+The consensus review skill runs to completion: it auto-fixes all verified bugs, walks through any design opinions interactively with the human, and reports. Wait for it to finish — including the interactive walk-through — before proceeding to step 10.
 
 **If verified bugs were found and fixed:**
 
 1. Invoke `/rfc-consensus-review` a second time on the updated RFC.
-2. If verified bugs still remain after the second pass, do **not** loop further — surface them to the human in step 9.
+2. If verified bugs still remain after the second pass, do **not** loop further — surface them to the human in step 10.
 
-**If no verified bugs remain:** proceed directly to step 9.
+**If no verified bugs remain:** proceed directly to step 10.
 
-### 9. Present to human
+### 10. Present to human
 
 Present the RFC to the human. The RFC stays `status: Draft`. Tell the user:
 - Path to the RFC file
