@@ -149,6 +149,80 @@ EOF
   assert_equal "$(echo "$output" | jq -r .classification)" "additive_merge_with_diff_apply"
 }
 
+# ---------- ci.yml target-aware canonical through the real pipeline (Fix 3) ----------
+# These go through sync-classify with a .tpl plugin source and a .yml target, so
+# they catch the round-1 regression: if the type dispatch keyed off the incoming
+# file (the .tpl) instead of the target (the .yml), plugin_sha would collapse to
+# the degenerate empty SHA and ci.yml would be inert end to end.
+
+@test "ci.yml — classify computes a non-degenerate plugin_sha from the .tpl source" {
+  cat > "$PLUGIN_ROOT/templates/ci.yml.tpl" <<'EOF'
+name: CI
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+EOF
+  mkdir -p .github/workflows
+  m='{"upstream_key":"ci@v1","source":"templates/ci.yml.tpl","target":".github/workflows/ci.yml","extension_strategy":"additive-merge-with-diff","owned_paths":["*"],"templated":true}'
+  run bash "$SCRIPT" "$m" ".github/workflows/ci.yml" "$PLUGIN_ROOT"
+  assert_success
+  plug="$(echo "$output" | jq -r .plugin_sha)"
+  [[ "$plug" =~ ^[0-9a-f]{12}$ ]] || fail "plugin_sha not 12 hex: $plug"
+  refute [ "$plug" = "e3b0c44298fc" ]
+}
+
+@test "ci.yml — an in-sync consumer classifies unchanged" {
+  cat > "$PLUGIN_ROOT/templates/ci.yml.tpl" <<'EOF'
+name: CI
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+EOF
+  m_base='{"source":"templates/ci.yml.tpl","target":".github/workflows/ci.yml","extension_strategy":"additive-merge-with-diff","owned_paths":["*"],"templated":true}'
+  expected_key="$(compute_upstream_key "$m_base")"
+  m="$(printf '%s' "$m_base" | jq --arg k "$expected_key" '. + {upstream_key: $k}')"
+  # The recorded marker == the target-aware plugin canonical.
+  plug="$(bash "$SCRIPT_ROOT/scripts/sync-canonical.sh" additive-merge-with-diff "$PLUGIN_ROOT/templates/ci.yml.tpl" --owned-sections '[]' --target .github/workflows/ci.yml | jq -r .sha12)"
+  mkdir -p .github/workflows
+  printf '# bootstrap-content-version: %s:%s\n\nname: CI\njobs:\n  local:\n    runs-on: whatever\n' "$expected_key" "$plug" > .github/workflows/ci.yml
+  run bash "$SCRIPT" "$m" ".github/workflows/ci.yml" "$PLUGIN_ROOT"
+  assert_success
+  assert_equal "$(echo "$output" | jq -r .classification)" "unchanged"
+}
+
+@test "ci.yml — a plugin-template content change is flagged as drift" {
+  cat > "$PLUGIN_ROOT/templates/ci.yml.tpl" <<'EOF'
+name: CI
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+EOF
+  m_base='{"source":"templates/ci.yml.tpl","target":".github/workflows/ci.yml","extension_strategy":"additive-merge-with-diff","owned_paths":["*"],"templated":true}'
+  expected_key="$(compute_upstream_key "$m_base")"
+  m="$(printf '%s' "$m_base" | jq --arg k "$expected_key" '. + {upstream_key: $k}')"
+  plug_old="$(bash "$SCRIPT_ROOT/scripts/sync-canonical.sh" additive-merge-with-diff "$PLUGIN_ROOT/templates/ci.yml.tpl" --owned-sections '[]' --target .github/workflows/ci.yml | jq -r .sha12)"
+  mkdir -p .github/workflows
+  printf '# bootstrap-content-version: %s:%s\n\nname: CI\n' "$expected_key" "$plug_old" > .github/workflows/ci.yml
+  # Plugin template changes materially.
+  cat > "$PLUGIN_ROOT/templates/ci.yml.tpl" <<'EOF'
+name: CI
+on: [push, pull_request]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+  lint:
+    runs-on: ubuntu-latest
+EOF
+  run bash "$SCRIPT" "$m" ".github/workflows/ci.yml" "$PLUGIN_ROOT"
+  assert_success
+  assert_equal "$(echo "$output" | jq -r .classification)" "additive_merge_with_diff_apply"
+}
+
 # ---------- structured ----------
 
 @test "structured — target absent -> add" {

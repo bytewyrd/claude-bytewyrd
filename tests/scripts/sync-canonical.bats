@@ -105,6 +105,61 @@ EOF
   refute [ "$sha_a" = "$sha_b" ]
 }
 
+# --- additive-merge: --target-driven type dispatch (Fix 3 / round-1 regression) ---
+
+@test "additive-merge — --target routes a .tpl source through the YAML whole-file canonical" {
+  # A YAML workflow stored in a .tpl-named source, exactly as the plugin ships
+  # it. Keying the type dispatch off the incoming filename (".tpl") would miss
+  # the YAML branch and hash empty owned_sections -> the degenerate empty SHA.
+  cat > src.tpl <<'EOF'
+name: CI
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+EOF
+  # No --target: ".tpl" is not "*.yml" and owned_sections is empty -> degenerate.
+  no_target="$(bash "$SCRIPT" additive-merge-with-diff src.tpl --owned-sections '[]' | jq -r .sha12)"
+  assert_equal "$no_target" "e3b0c44298fc"
+  # With --target=<*.yml>: routed through the whole-file YAML canonical.
+  with_target="$(bash "$SCRIPT" additive-merge-with-diff src.tpl --owned-sections '[]' --target .github/workflows/ci.yml | jq -r .sha12)"
+  [[ "$with_target" =~ ^[0-9a-f]{12}$ ]] || fail "expected 12 hex chars, got: $with_target"
+  refute [ "$with_target" = "e3b0c44298fc" ]
+}
+
+@test "additive-merge — target-routed canonical agrees across a .tpl source and a .yml file" {
+  # The whole point of keying off --target: the plugin side (a .tpl) and the
+  # local side (a real .yml) must hash identically when content agrees,
+  # otherwise plugin_sha and local_sha can never be compared.
+  content='name: CI
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+'
+  printf '%s' "$content" > plugin.tpl
+  printf '%s' "$content" > local.yml
+  plug="$(bash "$SCRIPT" additive-merge-with-diff plugin.tpl --owned-sections '[]' --target x.yml | jq -r .sha12)"
+  loc="$(bash "$SCRIPT" additive-merge-with-diff local.yml  --owned-sections '[]' --target x.yml | jq -r .sha12)"
+  assert_equal "$plug" "$loc"
+  refute [ "$plug" = "e3b0c44298fc" ]
+}
+
+@test "additive-merge — YAML whole-file canonical (target-routed) is content-sensitive and marker-stable" {
+  # Sources named .tpl (as the plugin ships them) but routed as YAML via --target.
+  printf '# bootstrap-content-version: k@v1:000000000000\nname: CI\njobs:\n  a:\n    runs-on: x\n' > a.tpl
+  # Same body, different marker line only -> canonical unchanged (marker stripped).
+  printf '# bootstrap-content-version: k@v1:ffffffffffff\nname: CI\njobs:\n  a:\n    runs-on: x\n' > a2.tpl
+  # Different body -> canonical changes.
+  printf '# bootstrap-content-version: k@v1:000000000000\nname: CI\njobs:\n  a:\n    runs-on: x\n  b:\n    runs-on: y\n' > b.tpl
+  sha_a="$(bash "$SCRIPT" additive-merge-with-diff a.tpl --owned-sections '[]' --target ci.yml | jq -r .sha12)"
+  sha_a2="$(bash "$SCRIPT" additive-merge-with-diff a2.tpl --owned-sections '[]' --target ci.yml | jq -r .sha12)"
+  sha_b="$(bash "$SCRIPT" additive-merge-with-diff b.tpl --owned-sections '[]' --target ci.yml | jq -r .sha12)"
+  assert_equal "$sha_a" "$sha_a2"
+  refute [ "$sha_a" = "$sha_b" ]
+  refute [ "$sha_a" = "e3b0c44298fc" ]
+}
+
 # --- owned-regions ---
 
 @test "owned-regions — boundary heading body hashed in order" {
