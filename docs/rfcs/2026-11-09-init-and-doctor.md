@@ -14,42 +14,45 @@ Tags `[R#]`/`[E#]` cite Appendix A; Appendix D records the review.
 
 ## Summary
 
-`/sync` is about 5.75K lines that merge plugin content into consumer files on every run [R6]. It is replaced by:
+`/sync`, about 5.75K lines, merges plugin content into consumer files on every run [R6]. It is replaced by:
 
 - **init** seeds at most four small, stamped files, once.
-- **By-reference content:** the RFC process, the best-practices library and five always-on rules stay in the plugin.
-- **doctor** is a read-only drift check that reports through CI exit codes.
+- **By-reference content:** the RFC process, best-practices library and five always-on rules stay in the plugin.
+- **doctor** is a read-only drift check with CI exit codes.
+
+Scripts and hooks move to Python ≥ 3.11.
 
 ## Should we do this?
 
-Yes. `/sync` has seven verified defects:
+Yes. `/sync` has seven verified defects: it crashes on fresh repos [R1], writes relative to its subdirectory [R3], deletes user lines in "owned" regions [R19b], writes before consent [R19c], LLM-merges CLAUDE.md unchecked [R19d], commits hooks into consumer repos [R4], and left this repo's CI without jobs [R5].
 
-- Crashes on fresh repos [R1].
-- Writes relative to its subdirectory [R3].
-- Deletes user lines in "owned" regions [R19b].
-- Writes before consent [R19c].
-- LLM-merges CLAUDE.md with no check [R19d].
-- Commits hooks into consumer repos [R4].
-- Left this repo's CI without jobs [R5].
-
-The evidence favours a small always-on context [E5, E11, E12]. Skills alone often go uninvoked [E13], so a seeded pointer stays.
+Evidence favours a small always-on context [E5, E11, E12], and skills alone often go uninvoked [E13], so a seeded pointer stays.
 
 ## Current state
 
 - Scripts need bash 4 or later [R2], but macOS ships 3.2 [E16].
-- 11 skills rely on `${CLAUDE_PLUGIN_ROOT}`, which the Bash tool leaves unset [R14, E7]. None declares `compatibility:`, and ten `mcp__` IDs ship [R14].
+- 11 skills rely on `${CLAUDE_PLUGIN_ROOT}`, unset in the Bash tool [R14, E7]. None declares `compatibility:`, and ten `mcp__` IDs ship [R14].
 - Each repo keeps its own copy of `docs/rfc-process.md` [R16].
 
 ## Options
 
-Rejected alternatives:
+Rejected:
 
 - **Fix `/sync`.** Merging into user files is the fault itself [R6].
-- **Guarded copies** [E17, E20]. Copies drift [E22].
-- **Tool-rewritten marker blocks** [E15]. They still write user files; OpenSpec dropped them [E19].
+- **Guarded copies** [E17, E20] drift [E22].
+- **Tool-rewritten marker blocks** [E15] still write user files; OpenSpec dropped them [E19].
 - **Pure by-reference.** A plugin can't ship CLAUDE.md context [E1], skills go uninvoked [E13], and checkout-only users get nothing [E18].
 
 Chosen: seed once [E21], reference at runtime [E22b], and check.
+
+## Language policy
+
+Decided by the user on 2026-11-13; reverses dee771e [R46].
+
+- **Rules:** Python ≥ 3.11 with the standard library and a vendored pure-Python PyYAML 6.0.3 [E54]. Nothing installs at runtime: Claude Code installs only npm and Bun packages, into cached copies [E50]. bats stays the black-box CLI contract suite and port-parity harness; pytest covers Python internals.
+- **Why:** `/sync` already requires python3 ≥ 3.11 for `tomllib` [R47, E51], while the bash scripts need bash 4, jq and GNU/BSD workarounds [R2, R48].
+- **Cost:** the default python3 is too old on macOS [E52], Ubuntu 22.04 and RHEL 9; Ubuntu 24.04+ and Debian 12+ pass [E53].
+- **Failure:** without python3 ≥ 3.11, scripts exit 1 with a one-line message; hooks exit 0, and the rules hook needs no Python.
 
 ## Design
 
@@ -60,141 +63,101 @@ Chosen: seed once [E21], reference at runtime [E22b], and check.
 - `AGENTS.md`: at most 100 lines of tool-neutral facts plus a workflow pointer.
 - `CLAUDE.md`: `@AGENTS.md` plus Claude-only lines. Without the import, Claude ignores AGENTS.md [E4].
 - `.github/PULL_REQUEST_TEMPLATE.md`, unless GitHub finds a template [E47].
-- `ci.yml`, unless a workflow exists. It is a no-op job [E30], or a caller when root manifests are tracked (OQ-1).
+- `ci.yml`, unless a workflow exists: a no-op job [E30], or a caller when root manifests are tracked (OQ-1).
 
-**Safety:**
+**Safety:** dry run unless `--apply`; never overwrites or follows symlinks; a symlinked parent directory exits 1. A dirty tree [E33] exits 3 unless `--allow-dirty`. Writes go to the top level [E32], never `.claude/` (OQ-4).
 
-- Dry run unless `--apply`.
-- Never overwrites or follows symlinks; a symlinked directory on a target's path exits 1.
-- A dirty tree [E33] exits 3 unless `--allow-dirty`.
-- Writes at the top level [E32], never under `.claude/` (OQ-4).
-
-**Stamp.** Line 1 of each file is `bytewyrd:init v1 tpl=<template>:<sha12> plugin=<sha12|unknown>`.
-
-- The hash covers the CR-stripped template, so edits never move it [R19a].
-- `plugin=` is the installed commit [E42].
+**Stamp:** line 1 is `bytewyrd:init v1 tpl=<template>:<sha12> plugin=<sha12|unknown>`. The hash covers the CR-stripped template, so edits never move it [R19a]; `plugin=` is the installed commit [E42].
 
 ### By-reference content
 
-- **Docs:** `skills/rfc-process/references/` and `skills/best-practices/references/<stack>.md` replace the copies. A `docs/rfcs/` directory opts a repo in to RFCs.
-- **Always-on rules:** five factual statements [E40] in `hooks/always-on-rules.json`. SessionStart emits them as `additionalContext` on `startup|clear|compact` [E14]. They persist across `resume` and `fork` [E25].
-- **Budget:** ≤ 2,000 characters [E3], ≈ 740 tokens [E26]; exact cap per OQ-3.
+- **Docs:** `skills/rfc-process/references/` and `skills/best-practices/references/<stack>.md` replace the copies; `docs/rfcs/` opts a repo in to RFCs.
+- **Always-on rules:** five factual statements [E40] in `hooks/always-on-rules.json`, emitted as SessionStart `additionalContext` on `startup|clear|compact` [E14] and kept across `resume` and `fork` [E25], within 2,000 characters [E3] (≈ 740 tokens [E26]; cap per OQ-3).
 - **Companions:** declared as `dependencies` (OQ-6), with `allowCrossMarketplaceDependenciesOn: ["claude-plugins-official"]`. Install instructions add the official marketplace first, since `claude plugin` never registers it [E41].
-- **`check-requirements.sh` goes:**
-  - Exa and Firefox are MCP servers [R10] and degrade at the point of use [R21].
-  - Without git, init and doctor exit 1.
 
 ### doctor
 
-Deterministic and read-only, with no LLM.
-
-- **Exit codes:** 0 clean, 2 drift, 1 cannot run (crashes included). `--strict` counts warnings as drift.
-- **Drift findings:**
-  - `template-changed`, which prints a diff and the new stamp.
-  - `bad-stamp`.
-  - `no-import`.
-  - One `legacy-*` finding per known 0.2.x path.
-- Full table: B2.
+Deterministic, read-only and LLM-free. Exits: 0 clean, 2 drift, 1 cannot run (crashes included); `--strict` counts warnings. Drift: `template-changed` (prints a diff and the new stamp), `bad-stamp`, `no-import`, and one `legacy-*` per known 0.2.x path (B2).
 
 ### Portability
 
-- Agent Skills layout [E6].
-- `${CLAUDE_PLUGIN_ROOT}` uses document a fallback.
-- Scripts self-locate via `BASH_SOURCE` [E7] and run on bash 3.2 [R2].
-- No `mcp__` IDs.
-- Claude-only skills declare `compatibility:` [R22].
+Skills keep the Agent Skills layout [E6], document a `${CLAUDE_PLUGIN_ROOT}` fallback, ship no `mcp__` IDs, and declare `compatibility:` when Claude-only [R22]. Scripts self-locate via `__file__` [E7].
 
 ## Drawbacks
 
 - Contributors, CI and cloud agents without the plugin lose the process and library [E18]. AGENTS.md links both.
-- A missing or disabled dependency silently unloads bytewyrd, rules and doctor with it [R31, E41]. Hard dependencies can't be disabled [E2].
-- Template changes need human edits. Consumer CI running doctor must pin the plugin ref.
+- A missing or disabled dependency silently unloads bytewyrd, rules and doctor with it [R31, E41].
+- Template changes need human edits; consumer CI running doctor must pin the plugin ref.
 
 ## Migration
 
-1. **Add (PR 1):** init, doctor, the rules hook, both skills, dependencies and the plugin CI. Delete `check-requirements.sh`. `/sync` still works.
-2. **Migrate (one PR per repo: three installs, then this repo):**
-   1. Run doctor, apply the `legacy-*` fixes (B3), and commit.
-   2. Run `init --apply`.
-   3. Port the non-owned CLAUDE.md sections, then commit.
-   4. Confirm doctor exits 0.
+1. **Add (PR 1):** init, doctor, the hooks, both skills, dependencies and CI. Delete `check-requirements.sh`. `/sync` still works.
+2. **Migrate (one PR per repo: three installs, then this repo):** run doctor, commit the `legacy-*` fixes (B3), run `init --apply`, port the non-owned CLAUDE.md sections and commit; doctor then exits 0.
 3. **Delete (PR 3):** remove `/sync`, its scripts, manifest, templates and tests.
-   - **Keep:** `common.bash` [R8, R26], `tool-probe.sh` [R9], and the guarded sentinel write, until doctor finds no `legacy-settings-hooks`.
-   - **Shrink:** `detect-languages` and preflight become about 30 lines [R27, R28].
+   - **Keep:** `common.bash` and `tool-probe.sh` until Phase 4 [R8, R9, R26]; the guarded sentinel write until doctor finds no `legacy-settings-hooks`.
+4. **Port (PR 4, after PR 3 and #113):** the nine `rfc-*` helpers, `tool-probe.sh` and `common.bash` become Python under the same names, one commit each [R51]. bats passes at every commit, and no port edits its tests.
 
 ## Acceptance criteria
 
 Each is automated; B5 maps it to its check.
 
 - **AC-1** `init` exits 0 and writes nothing.
-- **AC-2** `--apply` in a fresh, even commit-less, repo creates exactly the missing targets, each stamped, and nothing else (nothing under `.claude/`).
-- **AC-3** Existing targets are skipped and never followed: files, case variants, directories, dangling symlinks, recognised PR templates, any workflow.
+- **AC-2** `--apply` in a fresh, even commit-less, repo creates exactly the missing targets, each stamped, and nothing under `.claude/`.
+- **AC-3** Existing targets are skipped, never followed: files, case variants, directories, dangling symlinks, recognised PR templates, any workflow.
 - **AC-4** A symlinked directory on a target's path exits 1 and writes nothing.
 - **AC-5** On a dirty tree, `--apply` exits 3 unless `--allow-dirty`.
 - **AC-6** Runs from subdirectories write at the top level; outside a work tree, both scripts exit 1.
 - **AC-7** A mid-apply failure exits 1 and leaves none of its files.
 - **AC-8** The no-language caller equals `init-noop-fixture.yml` from line 2, and that workflow passes on GitHub.
 - **AC-9** Language callers pin every `uses:` to a 40-hex SHA, request only `contents: read`, and contain no `secrets:` or `pull_request_target` (OQ-1).
-- **AC-10** Apply, commit, apply → `0 created`, a clean tree, and doctor exit 0.
+- **AC-10** Apply, commit, apply → `0 created`, a clean tree, doctor exit 0.
 - **AC-11** doctor leaves fixtures unchanged and exits 0, 2 or 1 as specified (1 on crashes). `--strict` makes warnings exit 2.
 - **AC-12** A template edit → `template-changed`, exit 2. The printed stamp restores 0.
 - **AC-13** Legacy fixtures yield exactly their `legacy-*` findings. After Phase 2, doctor exits 0.
 - **AC-14** CRLF files pass, and CRLF and LF templates hash the same.
-- **AC-15** consumer-sim passes with `CLAUDE_PLUGIN_ROOT` unset or `/nonexistent`, and under macOS `/bin/bash` 3.2.
+- **AC-15** consumer-sim passes with `CLAUDE_PLUGIN_ROOT` unset or `/nonexistent`, on Python 3.11 and the latest 3.x, on Linux and macOS.
 - **AC-16** `.bytewyrd/` writes never go through symlinks.
 - **AC-17** The `startup|clear|compact` hook emits `always-on-rules.json` within the cap. No hook calls `check-requirements`.
 - **AC-18** `claude plugin validate .` exits 0 [E9], and a temp-HOME install shows no load errors.
 - **AC-19** `agents/`, `skills/`, `hooks/` and `templates/` contain no `mcp__` IDs, `docs/rfc-process.md` or `/sync`. Claude-only skills declare `compatibility:`.
+- **AC-20** Without python3, or below 3.11, every script exits 1 with a one-line message; every hook exits 0.
+- **AC-21** Vendored PyYAML imports from `scripts/_vendor` with `__with_libyaml__` false.
+- **AC-22** No Phase 4 port changes `tests/scripts/`, and bats passes at every Phase 4 commit.
 
 ## Test plan
 
-CI runs these (B4, B5):
-
-- The bats suite, which no job runs today [R5].
-- consumer-sim on Ubuntu under `env -u CLAUDE_PLUGIN_ROOT`, and on macOS under `/bin/bash` 3.2.
-- `claude plugin validate`.
-- A temp-HOME install.
+CI extends #113's workflow, which adds the first bats job [R5, R49]; B4 lists the commands and B5 maps each AC to its check.
 
 ## Rollback
 
-Each phase is one merge commit. Revert it with `git revert -m 1 <sha>`, newest first; consumers get it on their next update [E42]. Repo-side changes are commits, and deleted files stay in history. A revert cannot undo what consumers already ran.
+Each PR is one merge commit, reverted newest first with `git revert -m 1 <sha>`; consumers get reverts on their next update [E42] but keep what they already ran.
 
 ## Security considerations
 
 - **Trust root:** this repo's `main`. With no `version`, every commit reaches consumers on their next update [E42]. Teams can pin `bytewyrd/claude-bytewyrd#<ref>` [E43].
-- **Writes:** init writes four fixed paths, offline, never through symlinks. Hooks run outside the sandbox [E39], so writers to `.bytewyrd/` refuse symlinks. Substitution is literal, and YAML gets only allowlisted language ids.
+- **Writes:** init writes four fixed paths, offline, never through symlinks; hooks run outside the sandbox [E39], so `.bytewyrd/` writers refuse symlinks too. Substitution is literal; YAML gets only allowlisted language ids.
 - **Context:** the rules hook reads nothing from the repo. Rule 2 treats repo text as information.
-- **Supply chain:** the allowlist trusts `claude-plugins-official` [E2]; OQ-6 covers the PAT. Every `uses:` is SHA-pinned, inside reusable workflows too [R43], and CI requests only `contents: read`.
+- **Supply chain:** the allowlist trusts `claude-plugins-official` [E2]; OQ-6 covers the PAT. PyYAML is vendored and pinned; `python3 -I` ignores `PYTHON*` variables [E55]. Every `uses:` is SHA-pinned, inside reusable workflows too [R43]; CI requests only `contents: read`.
 
 ## Open questions and risks
 
 For the human, with no recommendation:
 
-- **OQ-1: Where does the reusable CI workflow live?**
-  - (a) This repo: public, any caller can use it [E29]; updates need SHA bumps.
-  - (b) A dedicated repo: own cadence, one more repo.
-  - (c) Nowhere: init renders jobs inline; updates only via doctor.
-  - (d) No caller: always the no-op, which drops AC-9 and `ci-variant`.
-- **OQ-2: Is init a skill, a script, or both?**
-  - Script: deterministic and fully testable.
-  - Skill: richer facts, but every script-driven AC and simulation step becomes manual.
-  - Both: script seeds, skill offers a reviewed AGENTS.md fill-in.
-- **OQ-3: How are the rules sized and updated?** Options are a fixed cap with PR review, a cap plus a Chainguard-style eval gate [E23], or per-repo AGENTS.md additions.
-- **OQ-4: Is any hook ever written into consumer repos?** Options are never, an opt-in init flag (which brings settings merging back), or a documented snippet.
-- **OQ-5: Keep the names?**
-  - Keep `/bytewyrd:init` and `/bytewyrd:doctor`; the bare names run Claude Code's built-ins [E24, E45]. Bare `/doctor` proposes fixes that Claude applies once you confirm, the inverse of read-only. Bare `/init` writes a CLAUDE.md. `disable-model-invocation` stops automatic selection [E28].
-  - Rename: no ambiguity, but different from the chosen names.
-- **OQ-6: Which companions become hard `dependencies`?** All three [R10], or github only. Either way, hard dependencies can't be disabled [E2]. github also pushes adopters toward a PAT that every shell command inherits [E46, E39], and keeps tools like `delete_repository` enabled [R41].
+- **OQ-1: Where does the reusable CI workflow live?** (a) This repo: public, any caller can use it [E29]; updates need SHA bumps. (b) A dedicated repo: own cadence, one more repo. (c) Nowhere: init renders jobs inline; updates only via doctor. (d) No caller: always the no-op, which drops AC-9 and `ci-variant`.
+- **OQ-2: Is init a skill, a script, or both?** Script: deterministic Python, fully testable. Skill: richer facts, but every script-driven AC and simulation step becomes manual. Both: script seeds, skill offers a reviewed AGENTS.md fill-in.
+- **OQ-3: How are the rules sized and updated?** A fixed cap with PR review, a cap plus a Chainguard-style eval gate [E23], or per-repo AGENTS.md additions.
+- **OQ-4: Is any hook ever written into consumer repos?** Never, an opt-in init flag (which brings settings merging back), or a documented snippet.
+- **OQ-5: Keep the names?** Keep `/bytewyrd:init` and `/bytewyrd:doctor`; the bare names run Claude Code's built-ins [E24, E45]: `/doctor` applies the fixes Claude proposes once you confirm, the inverse of read-only, and `/init` writes a CLAUDE.md. `disable-model-invocation` stops automatic selection [E28]. Rename: no ambiguity, but different from the chosen names.
+- **OQ-6: Which companions become hard `dependencies`?** All three [R10], or github only. Hard dependencies can't be disabled [E2]. github also pushes adopters toward a PAT that every shell command inherits [E46, E39], and keeps tools like `delete_repository` enabled [R41].
 
-Risks and mitigations:
+Risks:
 
 - **Uninvoked skills** [E13]: the rules and AGENTS.md name them.
-- **Unreliable strict validation** [E36, R24]: CI runs non-strict and AC-19 greps instead.
-- **Unknown adopters still on the 0.2.x PreCompact hook** [R35]: the sentinel write stays, and the hook's message documents a bypass.
+- **Unknown repos on the 0.2.x PreCompact hook** [R35]: the sentinel write stays; the hook's message documents a bypass.
 
 ## Relationship to other RFCs
 
-This RFC removes mechanisms from six Done RFCs, makes two Approved ones moot, and touches PRs #100, #102 and #107 [R18]. Appendix E has the details.
+Appendix E lists them, including open PR #113, which this RFC builds on [R49].
 
 ## Appendix A — Evidence Audit
 
@@ -203,6 +166,8 @@ Status values:
 - **Verified (pack):** confirmed by the orchestrator's brief pack on 2026-11-13.
 - **Verified (ledger):** confirmed by the orchestrator while checking review findings on 2026-11-13.
 - **Verified (session):** re-checked while drafting on 2026-11-13.
+
+Repo `path:Lnnn` citations are against main@531de96. Re-check them after #113 merges, since it reformats the shell scripts with shfmt and adds `.editorconfig` [R49].
 
 Repo facts and local reproductions:
 
@@ -248,7 +213,7 @@ Repo facts and local reproductions:
 | R35 | The 0.2.x PreCompact hook blocks while the sentinel is absent. Its message documents "bypass with: touch .bytewyrd/precompact-extraction-done then re-run /compact" | `templates/settings.json.tpl:L15-L24,L20` | 2026-11-13 | Verified (session) |
 | R36 | 0.2.x CI set `working-directory` for non-root components | `skills/sync/SKILL.md:L703` | 2026-11-13 | Verified (session) |
 | R37 | `docs/guide/reference/hooks.md` mentions `/sync` | `docs/guide/reference/hooks.md:L3,L65` | 2026-11-13 | Verified (session) |
-| R38 | `exit` inside an EXIT trap overrides the status, including after a syntax error later in the script. noclobber refuses to write through a symlink | local tests, bash 5.3.20; bash 3.2 is exercised by the macOS CI job | 2026-11-13 | Verified (session) |
+| R38 | `exit` inside an EXIT trap overrides the status, including after a syntax error later in the script. noclobber refuses to write through a symlink | local tests, bash 5.3.20 | 2026-11-13 | Verified (session). The basis of the bash design that Appendix D's post-review revision replaces with R52 |
 | R39 | A committed symlink at `.bytewyrd` or its target redirects or truncates writes (F1). A symlinked `.github` lets `mkdir -p` and `>` write outside the repo while porcelain stays empty (F2) | SEC reproductions, git 2.56 | 2026-11-13 | Verified (ledger) |
 | R40 | A nested `go.mod` makes root `go test ./...` exit 1, and a nested `Cargo.toml` makes `cargo build` exit 101 | OPS reproductions | 2026-11-13 | Verified (ledger) |
 | R41 | The GitHub MCP server exposes `merge_pull_request` and `delete_repository` | tool list observed in this drafting session | 2026-11-13 | Verified (session) |
@@ -256,6 +221,13 @@ Repo facts and local reproductions:
 | R43 | A SHA-pinned reusable workflow still resolves the tag refs inside it at run time | review finding F11(b), SEC-3 | 2026-11-13 | Verified (ledger) |
 | R44 | Release-tag commits: checkout v7.0.1 `3d3c42e5aac5ba805825da76410c181273ba90b1`, setup-go v7.0.0 `b7ad1dad31e06c5925ef5d2fc7ad053ef454303e`, setup-bun v2.2.0 `0c5077e51419868618aeaa5fe8019c62421857d6`, setup-uv v10.3.3 `68559e99cc807c1eb7e9238fd43a15bba460eec2`, rust-toolchain master `683b588c487a69d01f6c6ddf40f036ff682cc2c8`. All are lightweight tags | `git ls-remote` | 2026-11-13 | Verified (session). The checkout and setup-uv SHAs also appear in uv's and setup-uv's docs |
 | R45 | `git -C ROOT ls-files -- go.mod …` lists tracked root manifests only, ignoring nested and untracked ones | local test, git 2.56.0 | 2026-11-13 | Verified (session) |
+| R46 | Commit dee771e (2026-05-16), "fix(sync): replace sync-summary.py with bash implementation (no Python dependency)", gave as its reason: "Python is not installed by default on macOS 12.3+ and is not a safe hard dependency for a Claude Code plugin" | `git show -s dee771e` | 2026-11-13 | Verified (session) |
+| R47 | `/sync` already hard-requires python3 ≥ 3.11 and exits 1 without it, because `tomllib` canonicalizes `mise.toml`; the check's comment names "3.10 on Ubuntu 22.04 LTS" as too old. `sync-canonical.sh` and `detect-languages.bash` import `tomllib` | `scripts/sync-preflight.sh:L109-L126`; `scripts/sync-canonical.sh:L384-L398`; `scripts/_lib/detect-languages.bash:L35-L38` | 2026-11-13 | Verified (session) |
+| R48 | Bash-side dependencies and workarounds: `require_jq` exits 2 without jq; `hash_string` falls back from `sha256sum` to `shasum -a 256`; the `compact` hook falls back from GNU `stat -c %Y` to BSD `stat -f %m`; all ten surviving scripts call jq | `scripts/_lib/common.bash:L12-L17,L40-L46`; `hooks/hooks.json:L24`; `grep -w jq scripts/rfc-*.sh scripts/tool-probe.sh` | 2026-11-13 | Verified (session) |
+| R49 | Open PR #113 (`chore/ship-it-properly`, head 52185c4) adds `require_bash_major` to `common.bash` and calls `require_bash_major 4` in `rfc-frontmatter.sh:L28`, `rfc-summary.sh:L29`, `sync-owned-regions-apply.sh:L36`, `sync-preflight.sh:L113` and `sync-render-template.sh:L39`. It reformats the shell files with shfmt under a new `.editorconfig`. It adds an Apache-2.0 `LICENSE`; `THIRD_PARTY_NOTICES.md` (an intro, then per project **Source**, **License**, **Used in** and the full license text); `.github/scripts/{check-links,lint-frontmatter}.py`; and the bats files `ci-lint`, `plugin-version` (two `check-requirements` tests, then `sync-preflight` and sync-skill tests) and `rfc-skill-errors` (runs the rfc-approve and rfc-drop frontmatter snippets, including against a stand-in that fails like the bash-4 guard). It removes plugin.json's `version`. Its CI has jobs `lint`, `validate` and `test` (which runs the bats suite) on `ubuntu-26.04`, named in a comment as the required checks, with `PYTHON_VERSION` 3.13, `PYYAML_VERSION` 6.0.3 (pip-installed in `lint` and `test`), `CLAUDE_CODE_VERSION` 2.1.323 via npm, setup-python v7.1.0 `6d4fd22b20465ccc0f7354476588e8df7c9ca0e0` and setup-node v7.1.0 `949feb2413d6458794dcd2491c4babbbce0c15c1`. `lint` also parses `bootstrap-manifest.json` and runs `build-manifest.sh --check` | `git show origin/chore/ship-it-properly:<path>`; `git diff --name-status origin/main...origin/chore/ship-it-properly`; `git ls-remote` for the setup-python tag | 2026-11-13 | Verified (session) |
+| R50 | The braindump entry "Audit skills for deterministic-script consolidation; settle Python dependency policy" | `docs/rfc-braindump.md:L15` | 2026-11-13 | Verified (session) |
+| R51 | After Phase 3 the remaining bash is the nine `rfc-*` helpers, `tool-probe.sh` and `_lib/common.bash`. Each script's bats file sets `SCRIPT="$SCRIPT_ROOT/scripts/<name>.sh"` and runs `bash "$SCRIPT"`; `rfc-set-status.bats` also runs `rfc-frontmatter.sh` directly, and `common.bats` sources the library. Ten skills call the scripts as `bash "${CLAUDE_PLUGIN_ROOT}/scripts/<name>.sh"` (19 calls) and parse their JSON output with jq | `ls scripts`; grep over `tests/scripts/*.bats` and `skills/*/SKILL.md` | 2026-11-13 | Verified (session) |
+| R52 | On Python 3.14.10: `open(p, "x")` raises `FileExistsError` for a dangling symlink, a live symlink and a directory, creating nothing at the target; `os.path.lexists` is true for a dangling symlink; an uncaught exception exits 1, as does a syntax error in the script or in a module it imports; a `sys.version_info < (3, 11)` gate that writes to stderr and calls `sys.exit(1)` exits 1; argparse usage errors exit 2, or 1 with `error()` overridden; `difflib.unified_diff` prints `---`, `+++` and `@@` headers, then lines prefixed `-`, `+` or a space | local tests | 2026-11-13 | Verified (session) |
 
 External sources:
 
@@ -297,7 +269,7 @@ External sources:
 | E35 | Native installer: `curl -fsSL https://claude.ai/install.sh \| bash`. The binary goes in `$HOME/.local/bin` | https://code.claude.com/docs/en/setup; https://learn.microsoft.com/en-us/azure/foundry/foundry-models/how-to/configure-claude-code | 2026-11-13 | Verified (session) |
 | E36 | `validate --strict --json` reported success while skipping malformed skill and agent frontmatter. No auth is needed | https://github.com/anthropics/claude-code/issues/100078 | 2026-10-06 | Verified (session); fix status unknown |
 | E37 | `git ls-files` lists the files in the index (`--cached` is the default) that match the given pathspecs | https://git-scm.com/docs/git-ls-files; R45 | 2026-11-13 | Verified (session) |
-| E38 | GNU `env -u NAME` removes NAME | local test: GNU coreutils 9.12 | 2026-11-13 | Verified (session) |
+| E38 | GNU `env -u NAME` removes NAME | local test: GNU coreutils 9.12 | 2026-11-13 | Verified (session). No longer used: consumer-sim builds each child environment itself (Appendix D) |
 | E39 | "The sandbox covers shell commands only. Claude's file tools, MCP servers, and hooks run outside it". Shell commands inherit Claude Code's environment, "including any secrets in its environment" | https://code.claude.com/docs/en/sandboxing (L11) | 2026-11-13 | Verified (session) |
 | E40 | "Write the text as factual statements rather than imperative system instructions… can trigger Claude's prompt-injection defenses" (L1192). Plain stdout and `additionalContext` are each "injected as a system reminder" (L1565). The `hookSpecificOutput.additionalContext` JSON shape | https://code.claude.com/docs/en/hooks | 2026-11-13 | Verified (session) |
 | E41 | "The official marketplace isn't registered on this machine yet. Claude Code normally registers it on its own the first time you start an interactive terminal session". "The `claude plugin` shell commands never register it for you". `claude plugin list --json` reports problems in `errors` | https://code.claude.com/docs/en/plugins/troubleshooting (L109) | 2026-11-13 | Verified (session) |
@@ -309,92 +281,138 @@ External sources:
 | E47 | PR templates are recognised at the root, in `docs/` and in `.github/`, plus `PULL_REQUEST_TEMPLATE/` subdirectories in those folders. File names are not case-sensitive | https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/creating-a-pull-request-template-for-your-repository; https://docs.github.com/en/enterprise-server@3.14/communities/using-templates-to-encourage-useful-issues-and-pull-requests/manually-creating-a-single-issue-template-for-your-repository | 2026-11-13 | Verified (session) |
 | E48 | The Actions runner trims leading whitespace before parsing workflow commands (`ActionCommand.cs` `TryParseV2`: `message.TrimStart()`) | actions/runner source | 2026-11-13 | Verified (ledger); used in Appendix D |
 | E49 | Usage: `actions/setup-go` (`go-version-file: go.mod`); `oven-sh/setup-bun`; `astral-sh/setup-uv` (SHA-pinned examples); `dtolnay/rust-toolchain` (pass `toolchain:` when the rev isn't a toolchain name) | https://github.com/actions/setup-go; https://github.com/oven-sh/setup-bun; https://github.com/astral-sh/setup-uv; https://github.com/dtolnay/rust-toolchain | 2026-11-13 | Verified (session) |
+| E50 | "When Claude Code copies a plugin into the cache, it also installs the plugin's Node.js package dependencies there". The section "covers the npm and Bun packages a plugin declares in its own `package.json`". For "a relative-path plugin loaded in place … Claude Code doesn't install the dependencies". Dependencies the install can't provide, "Python dependencies" among them, are installed "from a hook into the persistent data directory" | https://code.claude.com/docs/en/plugins/loading (Node.js package dependencies) | 2026-11-13 | Verified (session) |
+| E51 | `tomllib`: "Added in version 3.11" | https://docs.python.org/3/library/tomllib.html | 2026-11-13 | Verified (session) |
+| E52 | "Recent versions of macOS include a python3 command in `/usr/bin/python3` that links to a usually older and incomplete version of Python provided by and for use by the Apple development tools, Xcode or the Command Line Tools for Xcode." Secondary sources put that interpreter at 3.9.6, including on macOS 26.2 | https://docs.python.org/3/using/mac.html; https://pydevtools.com/handbook/explanation/should-i-use-homebrew-to-install-python/; https://news.ycombinator.com/item?id=46570041 | 2026-11-13 | Verified (session); the 3.9.6 figure comes from secondary sources |
+| E53 | Default `python3`: Ubuntu 22.04 LTS 3.10 (3.11 also available), 24.04 LTS 3.12, 26.04 LTS 3.14.3; Debian 12 3.11.2, Debian 13 3.13.5; RHEL 9 3.9, with 3.11 (since 9.2) and 3.12 (since 9.4) installable alongside | https://ubuntu.com/developers/docs/reference/availability/python/; https://packages.ubuntu.com/python3; https://qa.debian.org/madison.php?package=python3; https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/9/html-single/installing_and_using_dynamic_programming_languages/index | 2026-11-13 | Verified (session) |
+| E54 | PyYAML 6.0.3 is MIT-licensed ("Copyright (c) 2017-2021 Ingy döt Net", "Copyright (c) 2006-2016 Kirill Simonov") and needs Python ≥ 3.8. The package is `lib/yaml/`; the optional `yaml._yaml` extension is built from `yaml/_yaml.pyx`, "falling back to pure Python" if that fails. `yaml/__init__.py` sets `__with_libyaml__ = False` when importing `cyaml`, which imports `yaml._yaml`, fails | https://pypi.org/project/PyYAML/6.0.3/; https://github.com/yaml/pyyaml/blob/6.0.3/setup.py; https://raw.githubusercontent.com/yaml/pyyaml/6.0.3/lib/yaml/__init__.py; https://raw.githubusercontent.com/yaml/pyyaml/6.0.3/lib/yaml/cyaml.py; https://raw.githubusercontent.com/yaml/pyyaml/6.0.3/LICENSE | 2026-11-13 | Verified (session) |
+| E55 | `-I`: "Run Python in isolated mode. This also implies `-E`, `-P` and `-s` options." Isolated mode "ignores all `PYTHON*` environment variables, e.g. `PYTHONPATH` and `PYTHONHOME`". Added in 3.4 | https://docs.python.org/3/using/cmdline.html#cmdoption-I | 2026-11-13 | Verified (session) |
+| E56 | `ArgumentParser.error()` "prints a usage message, including the message, to `sys.stderr` and terminates the program with a status code of 2" | https://docs.python.org/3/library/argparse.html | 2026-11-13 | Verified (session); reproduced in R52 |
+| E57 | setup-python's x-range `'3.x'` selects "the latest stable version of Python (for the specified major version)" | https://github.com/actions/setup-python/blob/main/docs/advanced-usage.md | 2026-11-13 | Verified (session) |
+| E58 | pytest 9.2.0 was released on 2026-10-27; it requires Python ≥ 3.10 and is MIT-licensed | https://pypi.org/project/pytest/; https://github.com/pytest-dev/pytest/releases | 2026-11-13 | Verified (session) |
 
 ## Appendix B — Implementation spec
 
 ### B1. File structure
 
-The phase number is the PR in which the change lands.
+The phase number is the PR in which the change lands. Rows marked "#113" touch files that exist once open PR #113 merges [R49].
 
 | Phase | Action | Path | Responsibility |
 |---|---|---|---|
-| 1 | Create | `scripts/_lib/scaffold.bash` | Shared functions (B2) |
-| 1 | Create | `scripts/init.sh` | Seeds the four files (B2). Created when OQ-2 is "script" or "both". If it is "skill", `skills/init/SKILL.md` carries this contract as prose |
-| 1 | Create | `scripts/doctor.sh` | Read-only drift check (B2) |
-| 1 | Create | `scripts/state-touch.sh` | The only writer into `.bytewyrd/`, and it refuses symlinks (B2) |
+| 1 | Create | `scripts/bw` | POSIX-sh launcher (B2). Skills, hooks, tests and CI run every script through it |
+| 1 | Create | `scripts/_lib/bw.py` | Shared functions (B2) |
+| 1 | Create | `scripts/init.py`, `scripts/_lib/bw_init.py` | Seeds the four files (B2). Created when OQ-2 is "script" or "both". If it is "skill", `skills/init/SKILL.md` carries this contract as prose |
+| 1 | Create | `scripts/doctor.py`, `scripts/_lib/bw_doctor.py` | Read-only drift check (B2) |
+| 1 | Create | `scripts/state-touch.py`, `scripts/_lib/bw_state_touch.py` | The only writer into `.bytewyrd/`; it refuses symlinks (B2) |
+| 1 | Create | `scripts/compact-reminder.py`, `scripts/_lib/bw_compact_reminder.py` | The SessionStart `compact` reminder, replacing the inline `stat` command at `hooks/hooks.json:L24` [R48] (B2) |
 | 1 | Create | `templates/init/{AGENTS.md,CLAUDE.md,PULL_REQUEST_TEMPLATE.md,ci-noop.yml}.tpl` | Seed templates (Appendix C). The PR template is copied from `templates/PULL_REQUEST_TEMPLATE.md.tpl` |
 | 1 | Create | `templates/init/ci-caller.yml.tpl`; with OQ-1 (a) also `.github/workflows/lang-ci.yml` | The language caller (Appendix C). Omitted with OQ-1 (d) |
-| 1 | Create | `skills/doctor/SKILL.md`; `skills/init/SKILL.md` | Wrappers that print script output verbatim. Names follow OQ-5; `skills/init` follows OQ-2 |
+| 1 | Create | `skills/doctor/SKILL.md`; `skills/init/SKILL.md` | Wrappers that run `sh "${CLAUDE_PLUGIN_ROOT}/scripts/bw" <name>` and print its output verbatim. Names follow OQ-5; `skills/init` follows OQ-2 |
 | 1 | Create | `skills/rfc-process/SKILL.md`, `skills/rfc-process/references/rfc-process.md` | Copy of root `rfc-process.md` with L3 and L196-L219 rewritten: no per-repo copy, opt-in through `docs/rfcs/`, and the `/sync` row replaced by init and doctor |
 | 1 | Create | `skills/best-practices/SKILL.md`, `skills/best-practices/references/{general,rust,js-ts,python,go,svelte,ruby,rails,k8s-cue,terraform}.md` | `BEST_PRACTICES.md.tpl` split by H2, with `general.md` holding `## Pitfall` through `## Error Handling` and the `<!--lang:*-->` lines dropped. `SKILL.md` carries template L3-L27, with its L21 row repointed to `references/` |
 | 1 | Create | `hooks/always-on-rules.json` | The rules as `additionalContext` (Appendix C) |
 | 1 | Create | `.github/workflows/init-noop-fixture.yml` | Committed output of the no-op caller (AC-8) |
-| 1 | Create | `tests/scripts/{scaffold,init,doctor,hooks,state-touch}.bats`, `tests/e2e/consumer-sim.sh`, `tests/fixtures/legacy-0.2/<case>/` | Tests (B4, B5). There is one legacy case per `legacy-*` code |
-| 1 | Modify | `hooks/hooks.json` | Today it has three entries [R11]: add the rules entry, remove check-requirements, and route the SubagentStop write through `state-touch.sh` (Appendix C) |
+| 1 | Create | `tests/scripts/{bw,init,doctor,hooks,state-touch}.bats`; `tests/py/test_bw.py`; `tests/e2e/test_consumer_sim.py`; `tests/fixtures/legacy-0.2/<case>/` | Tests (B4, B5): bats for the CLI contracts, pytest for `scripts/_lib/` and consumer-sim. There is one legacy case per `legacy-*` code |
+| 1 | Modify | `hooks/hooks.json` | Today it has three entries [R11]: add the rules entry, remove check-requirements, and route the SubagentStop write and the `compact` reminder through the launcher (Appendix C) |
 | 1 | Modify | `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` | `dependencies` per OQ-6 (versioned entries where the dependency publishes versions) and `allowCrossMarketplaceDependenciesOn: ["claude-plugins-official"]` |
-| 1 | Modify | `.github/workflows/ci.yml` | The plugin's CI (Appendix C) |
-| 1 | Modify | `scripts/rfc-frontmatter.sh` | L64-L65: comment `# Split parsed output into fields (read loop; bash 3.2)` and `fields=(); while IFS= read -r l; do fields+=("$l"); done <<< "$parsed"` |
-| 1 | Modify | `skills/best-practices-extract/SKILL.md` | L272 becomes `bash "${CLAUDE_PLUGIN_ROOT}/scripts/state-touch.sh" precompact-extraction-done` |
-| 1 | Modify | `skills/docs-review/SKILL.md` | L53 becomes `bash "${CLAUDE_PLUGIN_ROOT}/scripts/state-touch.sh" --rm last-feature-engineer-stop` |
-| 1 | Modify | `README.md:L9-L10`, `docs/guide/installation.md:L6-L7` | Install sequence from Appendix C, plus the optional `#<ref>` pin |
+| 1 | Modify | `.github/workflows/ci.yml` (#113) | Extends #113's workflow (Appendix C) |
+| 1 | Modify | `tests/scripts/plugin-version.bats` (#113) | Delete its two `check-requirements` tests |
+| 1 | Modify | `skills/best-practices-extract/SKILL.md` | L272 becomes `sh "${CLAUDE_PLUGIN_ROOT}/scripts/bw" state-touch precompact-extraction-done` |
+| 1 | Modify | `skills/docs-review/SKILL.md` | L53 becomes `sh "${CLAUDE_PLUGIN_ROOT}/scripts/bw" state-touch --rm last-feature-engineer-stop` |
+| 1 | Modify | `README.md:L9-L10`, `docs/guide/installation.md:L6-L7` | The install sequence from Appendix C, the optional `#<ref>` pin, and `python3` 3.11 or later on `PATH` as a prerequisite |
+| 1 | Modify | `docs/rfc-braindump.md` | Delete the L15 entry "Audit skills for deterministic-script consolidation; settle Python dependency policy" [R50]: this RFC's Language policy settles it |
 | 1 | Modify | Rule M1 files: `agents/{ai-engineer,claude-agent-author,code-reviewer,docs-agent,documentation-writer,feature-engineer,llm-architect,mcp-developer,penetration-tester,refactoring-specialist,rfc-architect,security-engineer}.md`, `skills/{docs-review,rfc-new,rfc-summary}/SKILL.md`, `docs/agent-audit-criteria.md` | B3 |
 | 1 | Modify | Rule M3 files: `skills/rfc-implement/SKILL.md:L19`, `agents/claude-agent-author.md:L46,L89,L250`, `agents/rfc-architect.md:L129-L130` | B3 |
 | 1 | Modify | Rule M4 files: `skills/{best-practices-extract,best-practices-record,docs-review,refactor,rfc-braindump,rfc-consensus-review,rfc-implement,rfc-new,rfc-read-feedback}/SKILL.md` | B3 |
 | 1 | Modify | Rule M5 files: `skills/{best-practices-extract,refactor,rfc-approve,rfc-braindump,rfc-consensus-review,rfc-drop,rfc-implement,rfc-new,rfc-read-feedback,rfc-summary}/SKILL.md` | B3 |
-| 1 | Modify | `CLAUDE.md`, `docs/guide/reference/hooks.md`, `CHANGELOG.md` | Hook docs and changelog. `docs/guide/**` changes go through `/docs-review` |
-| 1 | Delete | `scripts/check-requirements.sh` | Superseded |
+| 1 | Modify | `CLAUDE.md`, `docs/guide/reference/hooks.md`, `CHANGELOG.md` | Hook docs, the Python requirement and the changelog. `docs/guide/**` changes go through `/docs-review` |
+| 1 | Delete | `scripts/check-requirements.sh` | Superseded: Exa and Firefox are MCP servers [R10] that degrade at point of use [R21], and init and doctor exit 1 without git |
 | 2 | Create/Modify/Delete | This repo's legacy artifacts [R25]; create `AGENTS.md` | Phase 2 procedure (B4) |
 | 3 | Delete | `skills/sync/SKILL.md`; `scripts/sync-{apply-batch,canonical,classify-all,classify,compute-template-vars,detect-languages,find-plugin-root,item-parser,marker-read,owned-regions-apply,preflight,render-template,rfc-process-check,run,sidecar-migrate,summary,unified-diff,write-header}.sh` | `/sync` and its 18 scripts |
-| 3 | Delete | `scripts/_lib/{chunks,detect-languages,plugin}.bash`, `scripts/build-manifest.sh`, `hooks/pre-commit/manifest-check.sh`, `bootstrap-manifest.json`, `rfc-process.md`, `templates/*.tpl` (the 11 0.2.x templates; `templates/init/` stays), `tests/scripts/sync-*.bats` (17), `tests/scripts/bootstrap-manifest.bats` | Sync-only code and tests |
+| 3 | Delete | `scripts/_lib/{chunks,detect-languages,plugin}.bash`, `scripts/build-manifest.sh`, `hooks/pre-commit/manifest-check.sh`, `bootstrap-manifest.json`, `rfc-process.md`, `templates/*.tpl` (the 11 0.2.x templates; `templates/init/` stays), `tests/scripts/sync-*.bats` (17), `tests/scripts/bootstrap-manifest.bats`, `tests/scripts/plugin-version.bats` (#113) | Sync-only code and tests |
 | 3 | Modify | `scripts/_lib/common.bash` (delete L48-L69), `tests/scripts/helpers.bash` (delete L33-L52) | Remove `compute_upstream_key` [R26] |
-| 3 | Modify | `scripts/state-touch.sh` | The nested `.gitignore` becomes `*` only [R33] |
+| 3 | Modify | `.github/workflows/ci.yml` (#113) | `lint` drops the `bootstrap-manifest.json` parse and the `build-manifest.sh --check` step [R49] |
+| 3 | Modify | `scripts/_lib/bw_state_touch.py` | The nested `.gitignore` becomes `*` only [R33] |
 | 3 | Modify | `.claude/skills/best-practices-sync/SKILL.md` | Writes to `skills/best-practices/references/<stack>.md`; the marker step is deleted |
 | 3 | Modify | Rule M2 files, covering the 27 `/sync` mentions [R13] minus deleted files: `agents/{api-designer,docs-agent,documentation-writer,feature-engineer,frontend-developer}.md`, `skills/best-practices-extract/TRIAGE-AND-LIFT.md`, `skills/{best-practices-record,docs-review,rfc-summary}/SKILL.md`, `.claude/skills/best-practices-sync/SKILL.md`, `CLAUDE.md`, `README.md`, `docs/ARCHITECTURE.md`, `docs/CONTRIBUTING.md`, `docs/guide/{concepts,contributing,index,installation}.md`, `docs/guide/how-to/{best-practices,docs-review,rfc-process}.md`, `docs/guide/reference/{hooks,skills}.md`, `docs/guide/tutorials/getting-started.md` | B3. `CLAUDE.md` also drops "## Maintaining the bootstrap manifest" |
+| 4 | Modify | `scripts/bw`; `tests/scripts/helpers.bash`; `tests/scripts/{rfc-braindump-append,rfc-braindump-list,rfc-braindump-remove,rfc-feedback-list,rfc-frontmatter,rfc-legacy-detect,rfc-resolve,rfc-set-status,rfc-summary,tool-probe}.bats`; `tests/scripts/rfc-skill-errors.bats` (#113); `skills/{best-practices-extract,refactor,rfc-approve,rfc-braindump,rfc-consensus-review,rfc-drop,rfc-implement,rfc-new,rfc-read-feedback,rfc-summary}/SKILL.md` | Harness commit [R51]. The launcher runs `bash <name>.sh` when `<name>.py` is absent. `helpers.bash` gains `bw() { sh "$SCRIPT_ROOT/scripts/bw" "$@"; }`, and each `bash "$SCRIPT"`, plus `rfc-set-status.bats`'s direct `rfc-frontmatter.sh` calls, becomes `bw <name>`. Skills' `bash "${CLAUDE_PLUGIN_ROOT}/scripts/<name>.sh"` becomes `sh "${CLAUDE_PLUGIN_ROOT}/scripts/bw" <name>`. `rfc-skill-errors.bats` matches the new snippet, and its stand-in becomes a `scripts/bw` that fails like the launcher's version check |
+| 4 | Create | `scripts/_vendor/yaml/`, `scripts/_vendor/PyYAML-LICENSE`, `tests/py/test_vendor.py` | Vendor commit: PyYAML 6.0.3 (B2) [E54] |
+| 4 | Modify | `THIRD_PARTY_NOTICES.md` (#113) | Vendor commit: a `## PyYAML` section in the file's format. **Source:** `https://github.com/yaml/pyyaml`, tag `6.0.3`. **License:** MIT (full text below). **Used in:** `scripts/_vendor/yaml/`. Then one line saying the copy is unmodified and pure Python, and the license text. The intro's "the third-party project listed below" becomes "the third-party projects listed below" |
+| 4 | Create | `scripts/{rfc-braindump-append,rfc-braindump-list,rfc-braindump-remove,rfc-feedback-list,rfc-frontmatter,rfc-legacy-detect,rfc-resolve,rfc-set-status,rfc-summary,tool-probe}.py`, each with `scripts/_lib/bw_<name>.py` | Port commits, one per script, each keeping arguments, output and exit codes (B2) |
+| 4 | Delete | `scripts/<same names>.sh` | Each in its port commit, together with its jq calls and any `require_bash_major` guard [R49] |
+| 4 | Delete | `scripts/_lib/common.bash`, `tests/scripts/common.bats` | Retire commit. `bw.py` holds the ported helpers, and `tests/py/test_bw.py` covers them |
+| 4 | Modify | `scripts/bw`, Rule M4 files, `.github/workflows/ci.yml` | Retire commit: the launcher loses its bash fallback, `compatibility:` loses "bash >= 4" (B3), and `lint`'s `SHELL_FILES` keeps `scripts/bw`, `tests/run.sh` and `tests/scripts/helpers.bash`. Skills keep parsing script output with jq [R51] |
 | Later | Modify | `skills/best-practices-extract/SKILL.md` | Removes the sentinel step and its PreCompact text, once doctor shows no `legacy-settings-hooks` in all four known repos |
 
 `.claude/settings.json` and `.claude/skills/**` may be write-protected in sandboxed agent sessions. If so, the human applies those edits.
 
 ### B2. Script contracts
 
-**`scripts/_lib/scaffold.bash`.** It is sourced, never sets `-e`, and must stay bash 3.2-safe (B4 grep). Regexes are held in variables.
+**`scripts/bw NAME [ARGS…]`**, the launcher, is POSIX sh:
+
+1. It finds its own directory from `$0`.
+2. NAME must match `^[a-z][a-z0-9-]*$` and name an existing `NAME.py` next to it. Otherwise it prints `bw: unknown command: NAME` to stderr and exits 1.
+3. Without `python3` on `PATH`, it prints `bytewyrd: python3 not found; install Python 3.11 or later` to stderr and exits 1.
+4. If `python3 -I -c 'import sys; sys.exit(sys.version_info < (3, 11))'` fails, it prints `bytewyrd: Python 3.11 or later required; found <version>` to stderr and exits 1.
+5. Otherwise it runs `exec python3 -I "<dir>/NAME.py" "$@"`. `-I` ignores `PYTHON*` variables and the user site directory [E55].
+
+During Phase 4 only, a NAME with `NAME.sh` but no `NAME.py` runs `exec bash "<dir>/NAME.sh" "$@"` before the python3 checks.
+
+**Entry stubs.** Each `scripts/<name>.py` is the stub below, with its own module name (`bw_<name>`, hyphens as underscores). It avoids newer syntax, so an interpreter older than 3.11 reaches the gate even when the launcher is bypassed [R52]. Code that needs 3.11 lives in `scripts/_lib/`.
+
+```python
+import os, sys
+if sys.version_info < (3, 11):
+    sys.stderr.write("bytewyrd: Python 3.11 or later required\n")
+    sys.exit(1)
+here = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [os.path.join(here, "_lib"), os.path.join(here, "_vendor")]
+from bw_doctor import main
+sys.exit(main(sys.argv[1:]))
+```
+
+The plugin root is the parent of `scripts/`, found from `__file__`. No script reads `CLAUDE_PLUGIN_ROOT`.
+
+**`scripts/_lib/bw.py`** never exits on its own; commands decide exit codes.
 
 | Function | Contract |
 |---|---|
-| `bw_root` | Prints `git rev-parse --show-toplevel`; returns 1 outside a work tree |
-| `bw_project_name ROOT` | Prints `basename "$(cd "$ROOT" && cd "$(git rev-parse --git-common-dir)/.." && pwd)"`, falling back to `basename "$ROOT"` [R27] |
-| `bw_languages ROOT` | Runs `git -C "$ROOT" ls-files -- go.mod package.json pyproject.toml setup.py Cargo.toml`: tracked files at the root only [E37, R45]. Maps them to `go`, `js`, `python`, `rust` and prints the result sorted |
-| `bw_hash FILE` | `tr -d '\r' < FILE`, then sha256 (`sha256sum`, else `shasum -a 256`); prints the first 12 hex digits |
-| `bw_plugin_sha DIR` | If `basename DIR` matches `^[0-9a-f]{12,40}$`, prints its first 12 characters [E42]. Otherwise, if `git -C DIR rev-parse --show-toplevel` equals DIR, prints the first 12 of HEAD. Otherwise prints `unknown` |
-| `bw_render TPL LANGS NAME` | Strips CRs. Keeps a line starting with `@@<id>@@ ` (with the tag removed) only when `<id>` is in LANGS, or when it is `none` and LANGS is empty. Replaces `@@project_name@@` and `@@languages@@` literally with awk `index`/`substr` from `ENVIRON`. Returns 1 if any `@@` is left |
-| `bw_stamp KIND TPL HASH SHA` | `md`: `<!-- bytewyrd:init v1 tpl=TPL:HASH plugin=SHA -->` (an HTML comment, so it is stripped from CLAUDE.md context [E27]); `yml`: `# bytewyrd:init v1 tpl=TPL:HASH plugin=SHA` |
-| `bw_read_stamp FILE` | Reads line 1 with CRs stripped and matches it against the regex below. Prints `TPL HASH SHA`. Returns 1 if the line has no `bytewyrd:init`, and 2 if it has one that doesn't parse |
-| `bw_exists DIR NAME` | True when `DIR/NAME` exists or is a symlink, or when an entry of DIR equals NAME case-insensitively |
-| `bw_pr_template ROOT` | For each of `.`, `docs` and `.github`, prints the first entry whose lowercased name is `pull_request_template` (a directory) or starts with `pull_request_template.` [E47]. Returns 1 if none is found |
-| `bw_symlinked_dir ROOT REL` | Prints the first existing component of REL's parent chain under ROOT that is a symlink; returns 1 if there is none |
+| `root()` | Returns `git rev-parse --show-toplevel` [E32]. Raises `BwError` without git or outside a work tree |
+| `project_name(root)` | The basename of the parent of `git rev-parse --git-common-dir`, resolved against ROOT, else the basename of ROOT [R27] |
+| `languages(root)` | Runs `git -C ROOT ls-files -- go.mod package.json pyproject.toml setup.py Cargo.toml`: tracked files at the root only [E37, R45]. Maps them to `go`, `js`, `python`, `rust` and returns them sorted. About 30 lines replace the 266-line `detect-languages.bash` [R28] |
+| `file_hash(path)` | `hashlib.sha256` of the bytes with every `\r` removed; returns the first 12 hex digits |
+| `plugin_sha(plugin_dir)` | If the directory name matches `^[0-9a-f]{12,40}$`, its first 12 characters [E42]. Otherwise, if `git -C DIR rev-parse --show-toplevel` equals DIR, the first 12 of HEAD. Otherwise `unknown` |
+| `render(tpl, langs, name)` | Strips CRs. Keeps a line starting with `@@<id>@@ ` (with the tag removed) only when `<id>` is in LANGS, or when it is `none` and LANGS is empty. Replaces `@@project_name@@` and `@@languages@@` with `str.replace`, so values are literal. Raises if any `@@` is left |
+| `stamp(kind, tpl, digest, sha)` | `md`: `<!-- bytewyrd:init v1 tpl=TPL:HASH plugin=SHA -->` (an HTML comment, so it is stripped from CLAUDE.md context [E27]); `yml`: `# bytewyrd:init v1 tpl=TPL:HASH plugin=SHA` |
+| `read_stamp(path)` | Reads line 1 with CRs stripped and matches it against the regex below. Returns `(tpl, hash, sha)`; `None` if the line has no `bytewyrd:init`; `BAD` if it has one that doesn't parse |
+| `exists(dir, name)` | True when `os.path.lexists(DIR/NAME)` (true for dangling symlinks [R52]), or when an entry of DIR equals NAME case-insensitively |
+| `pr_template(root)` | For each of `.`, `docs` and `.github`, the first entry whose lowercased name is `pull_request_template` (a directory) or starts with `pull_request_template.` [E47]. `None` if there is none |
+| `symlinked_dir(root, rel)` | The first existing component of REL's parent chain under ROOT for which `os.path.islink` is true; `None` if there is none |
+| `create(path, text)` | `open(path, "x", encoding="utf-8", newline="\n")`. Exclusive create raises `FileExistsError` for any existing path, symlinks included, and writes nothing there [R52] |
+| `Parser` | An `argparse.ArgumentParser` whose `error()` prints the usage line and exits 1, because argparse's default of 2 [E56] would read as drift |
+| `emit_error`, `emit_available`, `emit_missing`, `emit_unauth`, `plugin_enabled` | Added in Phase 4: ports of the `common.bash` functions of the same names, with the same JSON [R26, R51] |
 
 ```
 ^(<!-- |# )bytewyrd:init v1 tpl=([A-Za-z0-9._-]+):([0-9a-f]{12}) plugin=([0-9a-f]{12}|unknown)( -->)?$
 ```
 
-The plugin root is `$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)`. No script reads `CLAUDE_PLUGIN_ROOT`.
-
-**`scripts/init.sh [--apply] [--allow-dirty]`**
+**`init [--apply] [--allow-dirty]`**
 
 The targets, in order:
 
 | Target | Kind | Template | Skipped when |
 |---|---|---|---|
-| `AGENTS.md` | md | `AGENTS.md` | `bw_exists` |
-| `CLAUDE.md` | md | `CLAUDE.md` | `bw_exists` |
-| `.github/PULL_REQUEST_TEMPLATE.md` | md | `PULL_REQUEST_TEMPLATE.md` | `bw_exists`, or `bw_pr_template` finds one |
-| `.github/workflows/ci.yml` | yml | `ci-noop.yml` when there are no languages, else `ci-caller.yml` (with OQ-1 (d), always `ci-noop.yml`) | `bw_exists`, or `.github/workflows/` holds any `*.yml` or `*.yaml` |
+| `AGENTS.md` | md | `AGENTS.md` | `exists` |
+| `CLAUDE.md` | md | `CLAUDE.md` | `exists` |
+| `.github/PULL_REQUEST_TEMPLATE.md` | md | `PULL_REQUEST_TEMPLATE.md` | `exists`, or `pr_template` finds one |
+| `.github/workflows/ci.yml` | yml | `ci-noop.yml` when there are no languages, else `ci-caller.yml` (with OQ-1 (d), always `ci-noop.yml`) | `exists`, or `.github/workflows/` holds any `*.yml` or `*.yaml` |
 
 Behaviour:
 
-1. Preflight writes nothing. It checks that git is present, then resolves ROOT. For every target to be created, it runs `bw_symlinked_dir`; a hit exits 1.
-2. With `--apply`, a dirty tree exits 3.
-3. Each write runs `mkdir -p` on the parent, then `set -C; { stamp; render; } > path`.
-4. An EXIT trap maps any exit before `BW_DONE=1` to exit 1 [R38]. First it deletes the files this run created, as recorded in `BW_CREATED`. If deletion fails, it prints `rm --` and the remaining paths.
+1. Preflight writes nothing. It resolves ROOT, so a missing git or a missing work tree exits 1. For every target to be created, it runs `symlinked_dir`; a hit exits 1.
+2. With `--apply`, a dirty tree (`git status --porcelain` prints anything [E33]) exits 3.
+3. Each write runs `os.makedirs(parent, exist_ok=True)`, then `create(path, stamp + "\n" + rendered)`.
+4. `main()` catches every exception. It first deletes the files this run created, then exits 1 with the failure lines below. Exceptions that escape anyway, including syntax errors, also exit 1 [R52].
 
 Output goes to stdout unless noted; columns are separated by two spaces:
 
@@ -409,9 +427,9 @@ Output goes to stdout unless noted; columns are separated by two spaces:
 | Symlinked directory (stderr) | `init: <dir> is a symlink; refusing to write through it` | 1 |
 | Any other failure (stderr) | `init: <reason>`, then `init: failed; removed: <paths>` or `init: failed; remove these, then re-run: rm -- <paths>` | 1 |
 
-**`scripts/doctor.sh [--strict]`**
+**`doctor [--strict]`**
 
-doctor never writes into the repo, and its temporary files are removed by a trap. An EXIT trap maps any exit before the footer to 1.
+doctor never writes: its diffs come from `difflib.unified_diff` in memory [R52]. `main()` maps any exception before the footer to exit 1.
 
 doctor emits one finding per row trigger, and each path is evaluated by one row only:
 
@@ -421,8 +439,8 @@ doctor emits one finding per row trigger, and each path is evaluated by one row 
 | Code | Severity | Trigger | Fix line |
 |---|---|---|---|
 | (none) | ok | Seed target with a v1 stamp whose hash matches the current template | — |
-| `template-changed` | drift | The v1 stamp hash ≠ `bw_hash` of the named template | `review the diff, then replace line 1 with: <stamp>`, followed by `diff -u` (current render vs file without line 1) |
-| `bad-stamp` | drift | `bw_read_stamp` returns 2 | `replace line 1 with: <current stamp> after reviewing the diff`, followed by the diff |
+| `template-changed` | drift | The v1 stamp hash ≠ `file_hash` of the named template | `review the diff, then replace line 1 with: <stamp>`, followed by a unified diff (current render vs file without line 1) |
+| `bad-stamp` | drift | `read_stamp` returns `BAD` | `replace line 1 with: <current stamp> after reviewing the diff`, followed by the diff |
 | `no-import` | drift | AGENTS.md and CLAUDE.md both exist, CLAUDE.md is not a symlink to AGENTS.md, and no CLAUDE.md line (CR stripped) equals `@AGENTS.md` | `add the line @AGENTS.md to CLAUDE.md` |
 | `legacy-header` | drift | A header or Managed/Bootstrapped banner [R15] in lines 1–3 of one of the 0.2.x manifest targets [R7]: `.github/PULL_REQUEST_TEMPLATE.md`, `.github/workflows/ci.yml`, `CLAUDE.md`, `README.md`, `docs/ARCHITECTURE.md`, `docs/BEST_PRACTICES.md`, `docs/CONTRIBUTING.md`, `mise.toml` | B3 row for the path |
 | `legacy-gitignore` | drift | `.gitignore` has the header or a `# bytewyrd:` tag | B3 |
@@ -430,8 +448,8 @@ doctor emits one finding per row trigger, and each path is evaluated by one row 
 | `legacy-settings-hooks` | drift | `.claude/settings.json` contains `precompact-extraction-done`, `Post-commit: does this change component structure`, `Session ending: (1) /best-practices-extract` or `Consider running /sync` | B3 |
 | `legacy-sidecar` | drift | `.bytewyrd/.bootstrap-versions.json` or `.claude/.bootstrap-versions.json` exists (one finding per path) | B3 |
 | `legacy-state` | drift | `.bytewyrd/plugin-version` or `.bytewyrd/docs-agent-version` exists (one per path) | B3 |
-| `ci-variant` | warn | The `ci.yml` stamp names `ci-noop.yml` while `bw_languages` is non-empty (dropped with OQ-1 (d)) | `git rm .github/workflows/ci.yml && git commit, then init --apply` |
-| `missing` | warn | A seed target is absent. For the PR template, `bw_pr_template` also fails; for `ci.yml`, no workflow exists | `run init --apply` |
+| `ci-variant` | warn | The `ci.yml` stamp names `ci-noop.yml` while `languages` is non-empty (dropped with OQ-1 (d)) | `git rm .github/workflows/ci.yml && git commit, then init --apply` |
+| `missing` | warn | A seed target is absent. For the PR template, `pr_template` also finds none; for `ci.yml`, no workflow exists | `run init --apply` |
 | `too-long` | warn | AGENTS.md is over 100 lines, or CLAUDE.md is over 200 [E5] | `move detail into docs/ or a skill` |
 | `unstamped` | info | A seed target with neither a stamp nor a header | — |
 
@@ -439,22 +457,36 @@ Output format: `<ok|info|warn|drift>  <path>[  <code>: <detail>]`, then optional
 
 Exit codes:
 
-- 1: git missing, outside a work tree, an unreadable template, an unknown flag, or any pre-footer exit.
+- 1: git missing, outside a work tree, an unreadable template, a usage error, or any exception before the footer.
 - Otherwise 2: any drift, or any warning under `--strict`.
 - Otherwise 0.
 
 A consumer CI that runs doctor must pin the plugin ref, since every template commit is a `template-changed`.
 
-**`scripts/state-touch.sh [--rm] [NAME]`**
+**`state-touch [--rm] [NAME]`**
 
 - NAME must match `^[a-z0-9][a-z0-9.-]*$`.
 - The script works in cwd, like the writers it replaces [R20].
-- If `.bytewyrd`, `.bytewyrd/.gitignore` or `.bytewyrd/NAME` is a symlink, it writes nothing and prints one stderr line.
+- If `.bytewyrd`, `.bytewyrd/.gitignore` or `.bytewyrd/NAME` is a symlink (`os.path.islink`), it writes nothing and prints one stderr line.
 - Otherwise:
-  1. It runs `mkdir -p .bytewyrd`.
-  2. If `.bytewyrd/.gitignore` is absent, it writes it under `set -C` with `*` and `!.bootstrap-versions.json` [R33]. Patterns in that file apply only within `.bytewyrd/` [E34]. From Phase 3 the file is `*` only.
-  3. It then runs `touch .bytewyrd/NAME`, or `rm -f` it under `--rm`.
-- It always exits 0, so no hook can fail on it.
+  1. It runs `os.makedirs(".bytewyrd", exist_ok=True)`.
+  2. If `.bytewyrd/.gitignore` is absent, it writes it with `create`: `*` and `!.bootstrap-versions.json` [R33]. Patterns in that file apply only within `.bytewyrd/` [E34]. From Phase 3 the file is `*` only.
+  3. It creates `.bytewyrd/NAME` with `create`, or refreshes its time with `os.utime` if it exists. Under `--rm` it removes the file if present.
+- Once running it always exits 0, because `main()` swallows every exception, so no hook can fail on it.
+
+**`compact-reminder`**
+
+It works in cwd. If `.bytewyrd/last-feature-engineer-stop` exists and its mtime is less than 86,400 seconds old, it prints the reminder text from `hooks/hooks.json:L24` [R48] verbatim; otherwise it prints nothing. It always exits 0.
+
+**Phase 4 ports.** Each of the ten scripts keeps its arguments, stdout and stderr formats, and exit codes, as pinned by its unchanged bats file [R51]. JSON comes from the `json` module instead of jq, and RFC frontmatter from the vendored PyYAML's `yaml.safe_load`. Where a parsed YAML value has a different type from what the bash script printed, the port converts it back to the bash form.
+
+**Vendored PyYAML** (Phase 4):
+
+- **Path:** `scripts/_vendor/yaml/` holds the `lib/yaml/*.py` files of PyYAML tag `6.0.3`, unmodified [E54].
+- **License:** `scripts/_vendor/PyYAML-LICENSE`, copied from that tag's `LICENSE` (MIT), plus the `THIRD_PARTY_NOTICES.md` section (B1).
+- **Import:** the entry stubs put `scripts/_vendor` on `sys.path`, relative to `__file__`. Code imports `yaml` and calls only `yaml.safe_load`.
+- **No C extension:** `yaml/cyaml.py` imports `yaml._yaml`, which is not vendored, so `yaml.__with_libyaml__` is `False` [E54]. `tests/py/test_vendor.py` runs `python3 -I` with the stubs' path setup and asserts that `yaml.__file__` is under `scripts/_vendor/yaml/`, `yaml.__version__` is `6.0.3` and `yaml.__with_libyaml__` is `False`. #113's CI pip-installs PyYAML [R49], so the test also proves the vendored copy wins.
+- **Updates:** replace the directory and the license from a new tag in one commit, then update the notice and the version assert.
 
 ### B3. Text rules and migration fixes
 
@@ -463,7 +495,7 @@ A consumer CI that runs doctor must pin the plugin ref, since every template com
 | M1 | References to `docs/rfc-process.md` as the process become "the `rfc-process` skill". The opt-in check at `agents/feature-engineer.md:L69-L72` becomes "a `docs/rfcs/` directory exists at the repository root". Ownership lists drop the entry: `agents/docs-agent.md:L29,L86`, `agents/documentation-writer.md:L60`, `skills/docs-review/SKILL.md:L181` |
 | M2 | `/sync` meaning setup becomes `/bytewyrd:init`, and meaning refresh or check becomes `/bytewyrd:doctor` (names per OQ-5). Sentences about manifests, markers and owned regions are deleted |
 | M3 | Each `mcp__` ID becomes a plain tool name: "the GitHub MCP server's `create_pull_request` tool", "Exa's search tool" or "Exa's page-fetch tool", "Context7's `resolve-library-id` and `query-docs` tools" |
-| M4 | Frontmatter: `compatibility: "Claude Code only: relies on Claude Code subagents, AskUserQuestion or ~/.claude paths. Helper scripts need bash 3.2+, git and jq."` |
+| M4 | Frontmatter: `compatibility: "Claude Code only: relies on Claude Code subagents, AskUserQuestion or ~/.claude paths. Helper scripts need git, jq, bash >= 4 and python3 >= 3.11."` From Phase 4 the last sentence is `Helper scripts need git, jq and python3 >= 3.11.` |
 | M5 | Add after the first `${CLAUDE_PLUGIN_ROOT}` use in a SKILL.md: "Outside Claude Code, `${CLAUDE_PLUGIN_ROOT}` is not substituted; use the directory two levels above this SKILL.md." |
 
 Migration fixes, as printed by doctor. These are file edits only: commit them, then run `init --apply` on the clean tree (B4 Phase 2).
@@ -477,7 +509,7 @@ Migration fixes, as printed by doctor. These are file edits only: commit them, t
 | `legacy-gitignore` | Delete the header line and every `# bytewyrd:` tag line, and keep the patterns as ordinary lines |
 | `legacy-rfc-process-copy` | Run `git rm docs/rfc-process.md`, and move any `## Project Extensions` text into AGENTS.md |
 | `legacy-settings-hooks` | Delete the 0.2.x hook entries, and delete the file if it becomes `{}` |
-| `legacy-sidecar`, `legacy-state` | Run `git rm` on, or delete, the file. If `.bytewyrd/` remains, run `bash "$PLUGIN/scripts/state-touch.sh"` |
+| `legacy-sidecar`, `legacy-state` | Run `git rm` on, or delete, the file. If `.bytewyrd/` remains, run `sh "$PLUGIN/scripts/bw" state-touch` |
 | Plugin clones only | `rm .git/hooks/pre-commit`, since it pointed at the deleted manifest check |
 
 ### B4. Commands and expected results
@@ -486,23 +518,29 @@ Migration fixes, as printed by doctor. These are file edits only: commit them, t
 
 ```bash
 tests/run.sh                                                    # exit 0
-env -u CLAUDE_PLUGIN_ROOT bash tests/e2e/consumer-sim.sh "$PWD" # last line "consumer-sim: all checks passed", exit 0
-CLAUDE_PLUGIN_ROOT=/nonexistent bash tests/e2e/consumer-sim.sh "$PWD"  # same
-claude plugin validate .                                        # exit 0
+python3 -m pytest -q tests/py tests/e2e                         # exit 0; consumer-sim runs with CLAUDE_PLUGIN_ROOT unset and as /nonexistent
+claude plugin validate .                                        # exit 0; not --strict, which is unreliable [E36, R24]
 jq -e '.allowCrossMarketplaceDependenciesOn | index("claude-plugins-official")' .claude-plugin/marketplace.json  # prints 0
 jq -e '.hookSpecificOutput | .hookEventName == "SessionStart" and (.additionalContext | length) <= 2000' hooks/always-on-rules.json  # true (tighten to the OQ-3 cap)
 grep -rnE 'mcp__[A-Za-z0-9]' agents skills hooks templates/init # no output (settings.json.tpl keeps two IDs until Phase 3)
-grep -n 'CLAUDE_PLUGIN_ROOT' scripts/init.sh scripts/doctor.sh scripts/state-touch.sh scripts/_lib/scaffold.bash  # no output
-grep -nE 'declare -[An]|local -n|mapfile|readarray|coproc|globstar|\$\{[A-Za-z_][A-Za-z0-9_]*(,|\^)|;;&|\|&' \
-  scripts/init.sh scripts/doctor.sh scripts/state-touch.sh scripts/_lib/*.bash scripts/rfc-*.sh scripts/tool-probe.sh  # no output
+grep -n 'CLAUDE_PLUGIN_ROOT' scripts/bw scripts/*.py scripts/_lib/*.py  # no output
+grep -nE 'stat -[cf]|check-requirements' hooks/hooks.json       # no output
+grep -c 'deterministic-script consolidation' docs/rfc-braindump.md  # prints 0
 for s in best-practices-extract best-practices-record docs-review refactor rfc-braindump rfc-consensus-review rfc-implement rfc-new rfc-read-feedback; do
   grep -q '^compatibility:' "skills/$s/SKILL.md" || echo "$s"; done  # no output
 ```
 
-**`tests/e2e/consumer-sim.sh PLUGIN_DIR`.**
+**bats files for the launcher and hooks.**
 
-- It runs every script with `"$BASH"`, so the interpreter under test is the one running the simulation. CI runs it under `env -u CLAUDE_PLUGIN_ROOT` [E38] and with `CLAUDE_PLUGIN_ROOT=/nonexistent`.
-- It copies PLUGIN_DIR to `$T/plugin` without `.git`. That directory name is not hex, so this exercises `plugin=unknown`.
+- `bw.bats`, for every `scripts/*.py`: with a `PATH` that has `sh` but no `python3`, and again with a stub `python3` whose version probe exits 1, the launcher exits 1 with one stderr line naming the problem. A NAME that is not a command, such as `nope` or `../x`, exits 1.
+- `hooks.bats`: the rules entry prints the rules JSON (plus the B4 size check). The `compact` reminder prints its text only while the sentinel is under a day old. Under both of `bw.bats`'s `PATH`s, the SubagentStop write and the `compact` reminder commands exit 0.
+
+**`tests/e2e/test_consumer_sim.py` (consumer-sim).**
+
+- It is black-box: it runs only `sh "$PLUGIN/scripts/bw" <name>` through `subprocess` and imports nothing from `scripts/`.
+- PLUGIN_DIR is `$BW_PLUGIN_DIR`, defaulting to the repository root. It is copied to a temp `plugin` directory without `.git`; that name is not hex, so this exercises `plugin=unknown`.
+- Every step runs twice: with `CLAUDE_PLUGIN_ROOT` removed from the child environment, and with it set to `/nonexistent`.
+- The `python3` first on `PATH` is the interpreter under test; S23 checks that it is the one running pytest.
 - Repos are created with `git init -q`, and commits use `git -c user.name=ci -c user.email=ci@example.invalid`.
 
 | Step | Action | Expected |
@@ -512,7 +550,7 @@ for s in best-practices-extract best-practices-record docs-review refactor rfc-b
 | S3 | Read line 1 of each file | Matches the B2 regex with `plugin=unknown` |
 | S4 | `doctor` | `result: 4 ok, 0 info, 0 warn, 0 drift (exit 0)` |
 | S5 | Commit, then `init --apply` | `applied: 0 created, 4 skipped`; porcelain empty; doctor exits 0 |
-| S6 | `cksum` every file before and after each doctor run in S4–S18 | Identical |
+| S6 | Hash every file before and after each doctor run in S4–S18 | Identical |
 | S7 | Convert the four files to CRLF, run doctor, then restore them | Exit 0 |
 | S8 | Convert the copied `templates/init/AGENTS.md.tpl` to CRLF | `ok  AGENTS.md` |
 | S9 | Append a line to that template, then paste the printed stamp into line 1 | `template-changed` with exit 2, then exit 0 |
@@ -522,17 +560,18 @@ for s in best-practices-extract best-practices-record docs-review refactor rfc-b
 | S13 | New repos, one each, with: a lowercase `agents.md`; an `AGENTS.md/` directory; a dangling `AGENTS.md` symlink; `docs/pull_request_template.md`; `.github/workflows/other.yml` | Each matching target is skipped; the symlink's target is never created |
 | S14 | New repo where `.github` is a symlink to a temp dir outside it; run `init --apply` | Exit 1; the outside dir and the repo are unchanged |
 | S15 | New repo with `.github/` at mode 0555; run `init --apply` | Exit 1; `AGENTS.md` and `CLAUDE.md` are gone afterwards |
-| S16 | Copy `doctor.sh`, append `if then`, and run the copy | Exit 1 |
+| S16 | In the copied plugin, append a line `)` to `scripts/_lib/bw_doctor.py`, run doctor, then restore the file | Exit 1 |
 | S17 | New repo with a tracked root `go.mod`; run `init --apply` (unless OQ-1 is (d)) | In the caller (and `lang-ci.yml` with OQ-1 (a)), every `uses:` matches `@[0-9a-f]{40}`, with `contents: read` and no `secrets:` or `pull_request_target` |
 | S18 | For each `tests/fixtures/legacy-0.2/<case>/`, copy it into a new repo, once untracked and once committed, then run doctor. Then run the Phase 2 procedure, with the fixture's scripted port, and run doctor again | Exactly the case's codes with exit 2, then exit 0 |
 | S19 | New repo in a directory named `we&ird\name`; run `init --apply` from the git checkout PLUGIN_DIR | AGENTS.md line 2 is `# we&ird\name`; `plugin=` holds 12 hex digits |
-| S20 | `cd "$(mktemp -d)"`, then run `init` and `doctor` | Both exit 1 |
-| S21 | Make `.bytewyrd` a symlink to an outside dir, then `.bytewyrd/last-feature-engineer-stop` a symlink; run `state-touch.sh last-feature-engineer-stop` each time | Exit 0; nothing outside the repo changes |
+| S20 | In a fresh temp directory outside any repo, run `init` and `doctor` | Both exit 1 |
+| S21 | Make `.bytewyrd` a symlink to an outside dir, then `.bytewyrd/last-feature-engineer-stop` a symlink; run `state-touch last-feature-engineer-stop` each time | Exit 0; nothing outside the repo changes |
 | S22 | Diff the S2 `ci.yml` against `$PLUGIN_DIR/.github/workflows/init-noop-fixture.yml` from line 2 | Identical |
+| S23 | Run `python3 -c 'import sys; print(sys.version_info[:3])'` | The version of the interpreter running pytest |
 
 **Phase 2**, one PR per repo:
 
-1. Run `bash "$PLUGIN/scripts/doctor.sh"`, where `$PLUGIN` is a checkout at the Phase 1 merge. Expect exit 2 with `legacy-*` findings.
+1. Run `sh "$PLUGIN/scripts/bw" doctor`, where `$PLUGIN` is a checkout at the Phase 1 merge. Expect exit 2 with `legacy-*` findings.
 2. Apply each fix from B3.
 3. Commit.
 4. Run `init --apply`, which needs the clean tree [R32]. Expect `created` for AGENTS.md, and for CLAUDE.md if it was moved.
@@ -546,7 +585,26 @@ grep -rlE '/sync\b' docs/guide README.md CLAUDE.md agents skills hooks templates
 grep -rln 'docs/rfc-process.md' agents skills hooks templates   # no output
 grep -rnE 'mcp__[A-Za-z0-9]' agents skills hooks templates      # no output
 grep -rn 'CLAUDE_PLUGIN_ROOT' scripts                           # no output
+grep -nE 'build-manifest|bootstrap-manifest' .github/workflows/ci.yml  # no output
 test ! -e bootstrap-manifest.json && test ! -d skills/sync && ! ls scripts/sync-*.sh 2>/dev/null  # exit 0
+```
+
+**Phase 4.** Its commits, in order:
+
+1. Harness (B1).
+2. Vendor PyYAML.
+3. One port per script, each with the subject `refactor(scripts): port <name> to Python`.
+4. Retire: delete `common.bash` and `common.bats`, remove the launcher's bash fallback, and update M4 and `lint`.
+
+Each command is followed by its expected result.
+
+```bash
+base=$(git merge-base origin/main HEAD); b=$(git branch --show-current)
+for c in $(git rev-list --reverse "$base..HEAD"); do git checkout -q "$c"; tests/run.sh >/dev/null || echo "bats fails at $c"; done; git checkout -q "$b"  # no output
+for c in $(git rev-list --grep='^refactor(scripts): port ' "$base..HEAD"); do git diff --quiet "$c^" "$c" -- tests/scripts || echo "$c edits tests/scripts"; done  # no output
+python3 -m pytest -q tests/py tests/e2e                         # exit 0
+ls scripts/*.sh scripts/_lib/*.bash 2>/dev/null                 # no output
+grep -rnE 'require_bash_major|scripts/[a-z-]+\.sh' skills hooks scripts tests/scripts  # no output
 ```
 
 ### B5. AC → check
@@ -563,15 +621,18 @@ test ! -e bootstrap-manifest.json && test ! -d skills/sync && ! ls scripts/sync-
 | AC-8 | S22, plus the `init-noop-fixture.yml` run on GitHub |
 | AC-9 | S17 |
 | AC-10 | S5 |
-| AC-11 | S4, S6, S10, S11, S16 |
+| AC-11 | S4, S6, S10, S11, S16, plus a `test_bw.py` case in which a check raises |
 | AC-12 | S9 |
 | AC-13 | S18 |
 | AC-14 | S7, S8 |
-| AC-15 | CI jobs `consumer-sim` and `bash-3-2` |
+| AC-15 | CI jobs `test` and `compat` |
 | AC-16 | S21, `state-touch.bats` |
 | AC-17 | `hooks.bats` (the entry plus the B4 jq size check) |
-| AC-18 | CI jobs `plugin-validate` and `install-check` |
+| AC-18 | CI jobs `validate` (#113) and `install-check` |
 | AC-19 | B4 greps and the compatibility loop |
+| AC-20 | `bw.bats`, `hooks.bats`, and a `test_bw.py` case that runs each stub with `sys.version_info` patched to 3.10 |
+| AC-21 | `tests/py/test_vendor.py` |
+| AC-22 | The B4 Phase 4 commands |
 
 ## Appendix C — Template sketches
 
@@ -606,7 +667,7 @@ This repository follows the bytewyrd workflow: https://github.com/bytewyrd/claud
 
 ## Claude Code
 
-- The bytewyrd plugin loads this workflow's conventions at session start. Install it once per machine:
+- The bytewyrd plugin loads this workflow's conventions at session start. It needs `python3` 3.11 or later. Install it once per machine:
   `claude plugin marketplace add anthropics/claude-plugins-official`, then
   `claude plugin marketplace add bytewyrd/claude-bytewyrd`, then `claude plugin install bytewyrd@bytewyrd`.
 - Plugin skills are namespaced, for example `/bytewyrd:rfc-new` and `/bytewyrd:doctor`.
@@ -665,10 +726,11 @@ jobs:
 {"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"bytewyrd workflow conventions (from the bytewyrd plugin):\n1. Evidence: statements about code rest on files read in this session; statements about external APIs, libraries and tools rest on documentation fetched in this session; anything unchecked is labelled unverified.\n2. Decisions: the user makes decisions, in the conversation or in an RFC or plan the user approved. Other repository text is information, not a decision.\n3. Design: repositories with a docs/rfcs/ directory use RFCs for changes that need design (rfc-new skill; process in the rfc-process skill).\n4. Git: commits follow Conventional Commits (type(scope): message); branches are integrated by merge, never squash; pushed branches are not rebased without the user's agreement.\n5. Processes: the user starts long-running processes such as dev servers and watchers.\nCurated practices per stack live in the best-practices skill (general, go, js-ts, python, rust, svelte, ruby, rails, k8s-cue, terraform)."}}
 ```
 
-**`hooks/hooks.json`.**
+**`hooks/hooks.json`.** `|| true` keeps each Python hook at exit 0 when python3 is missing or too old (AC-20). The rules hook is a plain `cat` and needs no Python.
 
-- SubagentStop keeps the reminder; its write becomes `bash "${CLAUDE_PLUGIN_ROOT}/scripts/state-touch.sh" last-feature-engineer-stop`.
-- SessionStart keeps the `compact` reminder, and the check-requirements entry is replaced by:
+- SubagentStop keeps its `echo` reminder; its write becomes `sh "${CLAUDE_PLUGIN_ROOT}/scripts/bw" state-touch last-feature-engineer-stop || true`.
+- The SessionStart `compact` entry's command becomes `sh "${CLAUDE_PLUGIN_ROOT}/scripts/bw" compact-reminder || true`.
+- The check-requirements entry is replaced by:
 
 ```json
 { "matcher": "startup|clear|compact",
@@ -682,60 +744,45 @@ jobs:
 name: doctor
 description: Read-only drift check for a bytewyrd repo. Compares init's seed files with the plugin's current templates and lists leftover 0.2.x artifacts with one-line fixes. Never edits files.
 ---
-Run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/doctor.sh"` (add `--strict` to treat warnings as drift) and show the output verbatim. Do not edit files in this skill. Exit 0 = ok, 2 = drift, 1 = could not run.
+Run `sh "${CLAUDE_PLUGIN_ROOT}/scripts/bw" doctor` (add `--strict` to treat warnings as drift) and show the output verbatim. Do not edit files in this skill. Exit 0 = ok, 2 = drift, 1 = could not run, including a missing or too-old python3.
 Outside Claude Code, `${CLAUDE_PLUGIN_ROOT}` is not substituted; use the directory two levels above this SKILL.md.
 ```
 
-**The plugin's `.github/workflows/ci.yml`.** The checkout pin comes from [R44] and the checkout inputs from [E31]. The installer and its path come from [E35], and the validator pin uses [E44].
+**The plugin's `.github/workflows/ci.yml`.** This extends #113's workflow [R49]. `lint`, `validate` and `test` keep their names, which #113 marks as the required checks; the new jobs are not required.
+
+- `env` gains `PYTEST_VERSION: "9.2.0"` [E58].
+- `lint`: `SHELL_FILES` gains `scripts/bw`.
+- `test`: after "Run the bats suite", it installs `pytest==${PYTEST_VERSION}` with pip and runs `python -m pytest -q tests/py tests/e2e`.
+- `compat` (new) runs pytest and consumer-sim on Python 3.11 and the latest 3.x [E57], on Linux and macOS.
+- `install-check` (new) installs the plugin into a temporary HOME. The checkout pin comes from [R44] and its inputs from [E31]; the installer and its path come from [E35], and the version argument from [E44].
 
 ```yaml
-name: CI
-on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-permissions:
-  contents: read
 jobs:
-  bats:
-    runs-on: ubuntu-latest
+  compat:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-26.04, macos-latest]
+        python: ["3.11", "3.x"]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          submodules: true
-      - run: sudo apt-get update && sudo apt-get install -y jq
-      - run: tests/run.sh
-  consumer-sim:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          path: plugin
-      - run: env -u CLAUDE_PLUGIN_ROOT bash plugin/tests/e2e/consumer-sim.sh "$GITHUB_WORKSPACE/plugin"
-      - run: CLAUDE_PLUGIN_ROOT=/nonexistent bash plugin/tests/e2e/consumer-sim.sh "$GITHUB_WORKSPACE/plugin"
-  bash-3-2:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          path: plugin
-      - run: /bin/bash --version | head -n 1 | grep -F 'version 3.2'
-      - run: |
-          unset CLAUDE_PLUGIN_ROOT
-          /bin/bash plugin/tests/e2e/consumer-sim.sh "$GITHUB_WORKSPACE/plugin"
-  plugin-validate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - run: curl -fsSL https://claude.ai/install.sh | bash -s 2.1.323
-      - run: |
-          "$HOME/.local/bin/claude" plugin validate .
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install --disable-pip-version-check "pytest==${PYTEST_VERSION}"
+      - run: python -m pytest -q tests/py tests/e2e
   install-check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - run: curl -fsSL https://claude.ai/install.sh | bash -s 2.1.323
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: curl -fsSL https://claude.ai/install.sh | bash -s "$CLAUDE_CODE_VERSION"
       - run: |
           CLAUDE="$HOME/.local/bin/claude"
           export HOME="$(mktemp -d)"
@@ -753,7 +800,7 @@ Accepted:
 
 | ID | Reviewer(s) | Change made | Where |
 |---|---|---|---|
-| F1 | SEC-1 | Reproduced in [R39]. All `.bytewyrd/` writes, including docs-review's `rm`, go through `state-touch.sh`, which refuses symlinks. Hooks-outside-sandbox is named | Security; AC-16; B1; B2; S21 |
+| F1 | SEC-1 | Reproduced in [R39]. All `.bytewyrd/` writes, including docs-review's `rm`, go through `state-touch`, which refuses symlinks. Hooks-outside-sandbox is named | Security; AC-16; B1; B2; S21 |
 | F2 | SEC-2 | Preflight exits 1 on a symlinked directory on any target path; writes use noclobber | Design; AC-4; B2; S14 |
 | F3 | SIM-1, OPS-2 | Chose "fixes → commit → `init --apply` on a clean tree". The dirty-tree gate is kept; S18 runs the whole procedure | Migration; AC-13; B3; B4 |
 | F4 | OPS-2 | B3 deletes only the ten owned H2s, maps each to a rule, a skill or a deliberate drop, and moves the other H2s | B3 |
@@ -767,7 +814,7 @@ Accepted:
 | F12 | SEC-4 (part) | The trust root is named and the `#<ref>` pin is documented | Security; B1 |
 | F13 | SEC-5 | The PAT and destructive-tool implications are stated; dependency entries are versioned where published | OQ-6; Security; Design |
 | F14 | SEC-8, OPS-8, SIM-10(c) | The validator is pinned to 2.1.323, and B4 asserts exit 0 only | B4; C |
-| F15 | SIM-8, OPS-8 | B5 maps each AC to its check. Missing S-steps are added, AC-17 is static, and the bash-3.2 grep is wider | B4; B5 |
+| F15 | SIM-8, OPS-8 | B5 maps each AC to its check. Missing S-steps are added, and AC-17 is static | B4; B5 |
 | F16 | SIM-7 | The OQ-2 and OQ-5 implications are widened | OQ-2; OQ-5 |
 | F17 | OPS-7 (part) | `plugin=` comes from the cache directory name, else git HEAD, else `unknown`. A CI pin note is added | Design; Drawbacks; B2 |
 | F18 | OPS-9 | One PR-template resolver, shared by init and doctor | B2 |
@@ -779,12 +826,19 @@ Accepted:
 Rejected:
 
 - **SEC-7: exec-form hook.** The shell-form command already follows the docs and quotes the variable. Exec form needs `cat` as a real executable, which fails on Windows without Git's tools. The attack also requires control of the plugin path, which is already full compromise.
-- **SEC-9: `::stop-commands::`.** The runner trims leading whitespace [E48], but every line doctor prints from the repo is a `diff -u` line with a `+` or `-` prefix. The templates contain no `::` lines, and consumer CI doesn't run doctor, so there is no exploitable path.
+- **SEC-9: `::stop-commands::`.** The runner trims leading whitespace [E48], but every line doctor prints from the repo is a unified-diff line with a `+` or `-` prefix. The templates contain no `::` lines, and consumer CI doesn't run doctor, so there is no exploitable path.
 - **SEC-4 (part): required-review ruleset.** In this single-maintainer repo it would block the maintainer's own merges, and repository governance is out of scope.
 - **SIM-1 (part): drop the dirty-tree gate.** That contradicts requirement 1. F3 fixes the ordering instead.
 - **SIM-9 (most): drop the stamps and per-file checks.** That contradicts requirements 1 and 3, and adopters beyond the four known repos need the legacy codes. `--strict`, `plugin=` (made useful by F17) and AC-2's no-`.claude/` check all stay.
 - **OPS-7 (part): diff the stamped and current templates.** The marketplace cache keeps no template history.
 - **OPS-2 (part): doctor lists non-owned H2s.** F4's static list in B3 is cheaper.
+
+**Post-review revision, 2026-11-13.** After this review, the user decided that the plugin's scripts and hooks move to Python ≥ 3.11 (Language policy). The three lens reviewers did not review these changes:
+
+- init, doctor and state-touch are Python behind the `scripts/bw` launcher, with the same CLI contracts, exit codes and output. Exclusive-create opens and a top-level exception handler replace F2's noclobber and F9's EXIT traps [R38, R52], and `state-touch` keeps F1's symlink refusal. consumer-sim becomes a black-box pytest module that builds each child environment itself instead of running under `env -u` [E38].
+- The bash-3.2 requirement is gone. AC-15 now covers Python 3.11 and the latest 3.x on Linux and macOS, and the macOS bash-3.2 job and the bash-construct grep that F15 had widened are removed. R2 and E16 remain as history.
+- The interim `rfc-frontmatter.sh` read-loop rewrite is dropped, because it conflicted with #113's `require_bash_major 4` guards [R49]. Phase 4 ports that script instead.
+- New: the Language policy section, Phase 4, AC-20 to AC-22, the vendored PyYAML, `compact-reminder`, and CI that extends #113.
 
 ## Appendix E — Related RFCs and PRs
 
@@ -798,8 +852,13 @@ Rejected:
 - **Makes these Approved RFCs moot:** `2026-05-14-sync-per-file-extension-strategies` and `2026-05-12-sync-enforce-github-branch-auto-delete`.
 - **Draft to align with OQ-1:** `2026-05-10-ci-qa-bytewyrd-github-app`.
 - **Open PRs:** #100, #102 and #107 mention `/sync` [R18]. #100 also adds a SessionStart `compact` hook [R30].
+- **Builds on open PR #113 [R49]:**
+  - Its `require_bash_major 4` guards, which the Phase 4 ports remove.
+  - The shfmt reformat and `.editorconfig`, which shift the line numbers cited here.
+  - The Apache-2.0 `LICENSE`, which also clears validate's LICENSE_MISSING check [R24].
+  - `THIRD_PARTY_NOTICES.md`, where Phase 4 adds PyYAML.
+  - Dropping `version`. The stamp doesn't use it, but `--strict` would warn about it [R24].
+  - The `lint`, `validate` and `test` CI that this RFC extends.
 - **Separate work:**
   - PR #101.
   - The agent restructure.
-  - Apache-2.0, which also clears validate's LICENSE_MISSING check [R24].
-  - Dropping `version`. The stamp doesn't use it, but `--strict` would warn about it [R24].
