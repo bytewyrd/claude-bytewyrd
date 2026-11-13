@@ -2,7 +2,7 @@
 rfc: "2026-11-09-init-and-doctor"
 title: "Replace /sync with scaffold + drift"
 author: "Rodrigo Kochenburger"
-status: "Draft"
+status: "Approved"
 created: "2026-11-09"
 drop_reason: ~
 implemented_by: ~  # PR URL(s) of the implementation; set when status becomes Done
