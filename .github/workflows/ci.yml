@@ -5,7 +5,9 @@
 # so change the ruleset in the same PR as any rename.
 #
 # Every action is pinned to a full commit SHA; the trailing comment names the
-# release it corresponds to.
+# release it corresponds to. Jobs run on a pinned image (ubuntu-26.04) rather
+# than ubuntu-latest, so a runner-image change cannot start failing a required
+# check without a change in this repository.
 
 name: CI
 
@@ -34,7 +36,7 @@ env:
 jobs:
   lint:
     name: lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -65,7 +67,7 @@ jobs:
 
   validate:
     name: validate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -91,7 +93,7 @@ jobs:
 
   test:
     name: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
