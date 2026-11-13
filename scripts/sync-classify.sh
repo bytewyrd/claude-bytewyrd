@@ -84,7 +84,8 @@ require_jq
 # Detect whether a target path is a .gitignore-style target — controls the
 # chunk-extraction branch under the structured strategy.
 is_gitignore_target() {
-  case "$1" in *.gitignore | */.gitignore | .gitignore) return 0 ;; *) return 1 ;; esac
+  # `*` matches "" and "/", so this also covers .gitignore and dir/.gitignore.
+  case "$1" in *.gitignore) return 0 ;; *) return 1 ;; esac
 }
 
 if [ "${1:-}" = "" ] || [ "${2:-}" = "" ] || [ "${3:-}" = "" ]; then

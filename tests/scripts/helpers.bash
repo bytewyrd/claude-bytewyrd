@@ -21,7 +21,7 @@ setup_common() {
   # Pre-create the docs/ hierarchy so scripts don't fail on missing dirs.
   mkdir -p "$TEST_TMPDIR/docs/rfcs"
   # Run all scripts with CWD = TEST_TMPDIR so they see the fixture tree.
-  cd "$TEST_TMPDIR"
+  cd "$TEST_TMPDIR" || return 1
 }
 
 teardown_common() {

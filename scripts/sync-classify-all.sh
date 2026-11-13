@@ -76,7 +76,10 @@ if [ ! -d "$repo_root" ]; then
   exit 2
 fi
 
-cd "$repo_root"
+cd "$repo_root" || {
+  emit_error "sync-classify-all: cannot enter repo root: $repo_root"
+  exit 2
+}
 
 # Collect per-artifact result objects as newline-separated JSON, then wrap in
 # an array at the end via `jq -s '.'`. This avoids building a big shell array.

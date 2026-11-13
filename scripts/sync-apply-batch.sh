@@ -313,7 +313,7 @@ is_json_target() {
 # block replacement when strategy is structured).
 is_gitignore_target() {
   case "$1" in
-    *.gitignore | */.gitignore | .gitignore) return 0 ;;
+    *.gitignore) return 0 ;; # also matches .gitignore and dir/.gitignore
     *) return 1 ;;
   esac
 }

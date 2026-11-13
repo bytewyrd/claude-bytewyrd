@@ -46,6 +46,7 @@
 # On failure (no manifest found anywhere), sets:
 #   PLUGIN_ROOT_ERROR — human-readable error message
 # Returns 1.
+# shellcheck disable=SC2034 # PLUGIN_* are outputs, read by the scripts that source this file.
 find_plugin_root() {
   PLUGIN_ROOT=""
   PLUGIN_MANIFEST=""

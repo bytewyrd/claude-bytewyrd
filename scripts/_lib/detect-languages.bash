@@ -255,15 +255,18 @@ detect_languages() {
   done
 
   # --- Export results to caller via DL_* variables ---
-  DL_LANGUAGES="$languages_json"
-  DL_COMPONENT_ROOTS="$component_roots"
-  DL_HAS_RUST="$has_rust"
-  DL_HAS_JS="$has_js"
-  DL_HAS_GO="$has_go"
-  DL_HAS_PYTHON="$has_python"
-  DL_HAS_SVELTE="$has_svelte"
-  DL_HAS_RUBY="$has_ruby"
-  DL_HAS_RAILS="$has_rails"
-  DL_HAS_K8S_CUE="$has_k8s_cue"
-  DL_HAS_TERRAFORM="$has_terraform"
+  # shellcheck disable=SC2034 # DL_* are outputs, read by the scripts that source this file.
+  {
+    DL_LANGUAGES="$languages_json"
+    DL_COMPONENT_ROOTS="$component_roots"
+    DL_HAS_RUST="$has_rust"
+    DL_HAS_JS="$has_js"
+    DL_HAS_GO="$has_go"
+    DL_HAS_PYTHON="$has_python"
+    DL_HAS_SVELTE="$has_svelte"
+    DL_HAS_RUBY="$has_ruby"
+    DL_HAS_RAILS="$has_rails"
+    DL_HAS_K8S_CUE="$has_k8s_cue"
+    DL_HAS_TERRAFORM="$has_terraform"
+  }
 }
