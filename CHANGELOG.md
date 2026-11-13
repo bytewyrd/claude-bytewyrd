@@ -3,7 +3,64 @@
 All notable changes to this project will be documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
-This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+**Versioning.** Releases up to 0.2.0 used [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Since then the plugin has no version number: `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` deliberately omit `version`, and users track commits on `main`. Claude Code takes the version from the manifest first, and a pinned value kept every install on its cached copy until the string changed, however many commits landed. Without it, Claude Code identifies each install by commit, so every new commit on `main` is an update. Notable changes are recorded under [Unreleased].
+
+---
+
+## [Unreleased]
+
+Everything merged after the 0.2.0 release notes were written: #94, #96, #110, #111, #112, and the release-hygiene PR that introduced this section.
+
+### Changed
+
+- **No version number; users track commits.** `version` is removed from `plugin.json` and `metadata.version` from `marketplace.json`. Side effects:
+  - The `plugin-version` SessionStart warning (installed plugin older than the one that last ran `/sync`) no longer fires.
+  - `/sync` no longer writes `.bytewyrd/plugin-version`.
+  - `claude plugin validate` reports an expected "No version specified" warning.
+- **License:** the plugin is licensed under Apache-2.0 (`LICENSE`, plus `"license"` in `plugin.json`). [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) carries the MIT notice of VoltAgent/awesome-claude-code-subagents and lists the agents that still contain substantial upstream text.
+- **Per-file `/sync` extension strategies** (#96):
+  - Every plugin-managed file now declares one of `additive-merge`, `additive-merge-with-diff`, `bootstrap`, `authoritative`, or `owned-regions`, which ends the `conflict_legacy` prompts on every run.
+  - Plugin infrastructure moved out of `.claude-plugin/` to the repository root (`scripts/`, `templates/`, `hooks/pre-commit/`, `bootstrap-manifest.json`).
+  - `/rfc-update` is removed now that `docs/rfc-process.md` is plugin-authoritative.
+  - `/docs-review` now covers `README.md`.
+- **Skill helper scripts** (#94): ten scripts under `scripts/`, each with a JSON stdout contract and bats tests, replace the inline bash/awk in eleven skills. bats-core and its libraries are vendored as submodules under `tests/`.
+- **RFC model tier** (#112): `rfc-process.md` documents Opus as the default rather than the highest available model, and `/rfc-new` can draft with Claude Fable 5 on opt-in.
+
+### Added
+
+- **CI that gates merges.** Three jobs replace the stub workflow:
+  - `lint`: JSON manifests parse, `bootstrap-manifest.json` is current, agent and skill frontmatter is strict YAML, relative Markdown links resolve.
+  - `validate`: `claude plugin validate` with a pinned CLI.
+  - `test`: the bats suite.
+
+  Actions are pinned to commit SHAs and the token is read-only.
+
+### Fixed
+
+- Skills invoked bundled scripts by relative path, which failed in consuming projects; they now use `${CLAUDE_PLUGIN_ROOT}/scripts/…` (#110).
+- `/sync` (#111):
+  - The project slug is now derived correctly when `/sync` runs from a worktree.
+  - `enabledPlugins` is limited to the three companion plugins.
+  - `PULL_REQUEST_TEMPLATE.md` and `ci.yml` get real drift detection.
+  - `## Auto Mode` and `## Git` now propagate to consumers' `CLAUDE.md`.
+  - `mise.toml` `[tools]` canonicalization and apply now work.
+- `/sync` resolves its plugin root to the cached copy that is running and skips cache directories Claude Code marked `.orphaned_at`. With commit-SHA cache directories, a version sort could otherwise pick a stale copy for up to two weeks after an update.
+- `/sync` renders a valid `ci.yml` when no language is detected: a single no-op `ci` job instead of an empty `jobs:` that GitHub rejects.
+- Fourteen agents and `rfc-read-feedback` had frontmatter that only Claude Code's lenient fallback could parse; they are now strict YAML, with the text unchanged. The `best-practices-extract` description is no longer cut off at "## Project-Specific".
+- Broken relative links in `docs/CONTRIBUTING.md` (and the template it is rendered from) and in the `best-practices-sync` skill.
+- The manifest pre-commit hook is committed executable, and its setup command now works from git worktrees.
+
+### Upgrading
+
+Existing installs are pinned to the cached 0.2.0 copy. Refresh the marketplace and update once:
+
+```bash
+claude plugin marketplace update bytewyrd
+claude plugin update bytewyrd@bytewyrd
+```
+
+Restart Claude Code afterwards. From then on, each `claude plugin update` (or marketplace auto-update, if you turn it on) picks up the latest commit on `main`.
 
 ---
 

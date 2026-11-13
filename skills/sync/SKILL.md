@@ -103,10 +103,10 @@ Note: Exa is a separate MCP server (not a plugin) — its permissions go uncondi
 
 ```bash
 PLUGIN_VER=$(jq -r '.version // empty' "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/.claude-plugin/plugin.json" 2>/dev/null || echo "")
-[ -n "$PLUGIN_VER" ] && echo "$PLUGIN_VER" > .bytewyrd/plugin-version
+if [ -n "$PLUGIN_VER" ]; then echo "$PLUGIN_VER" > .bytewyrd/plugin-version; fi
 ```
 
-Only write if `PLUGIN_VER` is non-empty. If the file is unreadable (e.g. development checkout with a non-standard layout), skip silently.
+Only write if `PLUGIN_VER` is non-empty. If the file is unreadable (e.g. development checkout with a non-standard layout), skip silently. The plugin's `plugin.json` no longer sets `version` (users track commits), so this currently writes nothing and exits 0.
 
 ---
 
