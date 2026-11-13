@@ -88,20 +88,36 @@ target=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --owned-sections)
-      [ "${2:-}" = "" ] && { emit_error "sync-canonical: --owned-sections requires a value"; exit 2; }
-      owned_sections_json="$2"; shift 2
+      [ "${2:-}" = "" ] && {
+        emit_error "sync-canonical: --owned-sections requires a value"
+        exit 2
+      }
+      owned_sections_json="$2"
+      shift 2
       ;;
     --owned-boundaries)
-      [ "${2:-}" = "" ] && { emit_error "sync-canonical: --owned-boundaries requires a value"; exit 2; }
-      owned_boundaries_json="$2"; shift 2
+      [ "${2:-}" = "" ] && {
+        emit_error "sync-canonical: --owned-boundaries requires a value"
+        exit 2
+      }
+      owned_boundaries_json="$2"
+      shift 2
       ;;
     --owned-paths)
-      [ "${2:-}" = "" ] && { emit_error "sync-canonical: --owned-paths requires a value"; exit 2; }
-      owned_paths_json="$2"; shift 2
+      [ "${2:-}" = "" ] && {
+        emit_error "sync-canonical: --owned-paths requires a value"
+        exit 2
+      }
+      owned_paths_json="$2"
+      shift 2
       ;;
     --target)
-      [ "${2:-}" = "" ] && { emit_error "sync-canonical: --target requires a value"; exit 2; }
-      target="$2"; shift 2
+      [ "${2:-}" = "" ] && {
+        emit_error "sync-canonical: --target requires a value"
+        exit 2
+      }
+      target="$2"
+      shift 2
       ;;
     *)
       emit_error "sync-canonical: unknown argument: $1"
@@ -265,7 +281,7 @@ structured_json_canonical() {
     path="$(echo "$paths_json" | jq -r ".[$i]")"
     if [ "$path" = "*" ]; then
       # Whole-document mode.
-      piece="$(jq -S '.' < "$src")"
+      piece="$(jq -S '.' <"$src")"
       printf '%s\n' "$piece"
       continue
     fi
@@ -284,7 +300,7 @@ structured_json_canonical() {
           | if   ($v | type) == "array"  then ($v | sort)
             elif ($v | type) == "object" then $v
             else ($v // []) end
-        ' < "$src")"
+        ' <"$src")"
         printf '%s\n' "$piece"
       else
         # Serialize entries with a non-empty id field, sorted by id.
@@ -292,13 +308,13 @@ structured_json_canonical() {
           (.'"$base"' // [])
           | map(select(.[$key] != null and .[$key] != ""))
           | sort_by(.[$key])
-        ' < "$src")"
+        ' <"$src")"
         printf '%s\n' "$piece"
       fi
       continue
     fi
     # Dot-path. Use jq getpath via a tiny eval helper.
-    piece="$(jq -S ".${path}" < "$src" 2>/dev/null || printf 'null')"
+    piece="$(jq -S ".${path}" <"$src" 2>/dev/null || printf 'null')"
     printf '%s\n' "$piece"
   done
 }
@@ -315,7 +331,7 @@ gitignore_canonical() {
   local i tag
   for ((i = 0; i < count; i++)); do
     tag="$(echo "$paths_json" | jq -r ".[$i]")"
-    extract_gitignore_block "$tag" < "$file"
+    extract_gitignore_block "$tag" <"$file"
   done
 }
 
@@ -332,35 +348,37 @@ case "$strategy" in
     sha="$(printf '%s' "$canonical" | sha12_of_stdin)"
     emit_sha "$sha"
     ;;
-  owned-regions|section)
+  owned-regions | section)
     if [ "$(echo "$owned_boundaries_json" | jq -r 'type')" != "array" ]; then
-      emit_error "sync-canonical: --owned-boundaries must be a JSON array"; exit 2
+      emit_error "sync-canonical: --owned-boundaries must be a JSON array"
+      exit 2
     fi
     count="$(echo "$owned_boundaries_json" | jq -r 'length')"
     out=""
     for ((i = 0; i < count; i++)); do
       heading="$(echo "$owned_boundaries_json" | jq -r ".[$i].heading")"
-      piece="$(extract_section "$heading" < "$file")"
+      piece="$(extract_section "$heading" <"$file")"
       out="${out}${piece}"
     done
     sha="$(printf '%s' "$out" | sha12_of_stdin)"
     emit_sha "$sha"
     ;;
-  additive-merge|additive-merge-with-diff)
+  additive-merge | additive-merge-with-diff)
     case "$type_hint" in
-      *.yml|*.yaml)
+      *.yml | *.yaml)
         # Whole-file YAML special case (e.g. .github/workflows/ci.yml).
         out="$(whole_file_yaml_canonical)"
         ;;
       *)
         if [ "$(echo "$owned_sections_json" | jq -r 'type')" != "array" ]; then
-          emit_error "sync-canonical: --owned-sections must be a JSON array"; exit 2
+          emit_error "sync-canonical: --owned-sections must be a JSON array"
+          exit 2
         fi
         count="$(echo "$owned_sections_json" | jq -r 'length')"
         out=""
         for ((i = 0; i < count; i++)); do
           heading="$(echo "$owned_sections_json" | jq -r ".[$i]")"
-          piece="$(extract_section "$heading" < "$file")"
+          piece="$(extract_section "$heading" <"$file")"
           out="${out}${piece}"
         done
         ;;
@@ -370,7 +388,8 @@ case "$strategy" in
     ;;
   structured)
     if [ "$(echo "$owned_paths_json" | jq -r 'type')" != "array" ]; then
-      emit_error "sync-canonical: --owned-paths must be a JSON array"; exit 2
+      emit_error "sync-canonical: --owned-paths must be a JSON array"
+      exit 2
     fi
     case "$type_hint" in
       *.gitignore)
@@ -396,7 +415,7 @@ import tomllib, json, sys, re
 raw = open(sys.argv[1], "rb").read().decode("utf-8", "replace")
 cleaned = "\n".join("" if re.match(r"^\s*<[A-Za-z0-9_]+>\s*$", ln) else ln for ln in raw.splitlines())
 json.dump(tomllib.loads(cleaned), sys.stdout)
-' "$file" > "$toml_json" 2>/dev/null; then
+' "$file" >"$toml_json" 2>/dev/null; then
           rm -f "$toml_json"
           emit_error "sync-canonical: failed to parse TOML: $file"
           exit 2

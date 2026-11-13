@@ -49,17 +49,24 @@ file_type=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --section)
-      [ "${2:-}" = "" ] && { emit_error "sync-item-parser: --section requires a value"; exit 2; }
-      section_arg="$2"; shift 2
+      [ "${2:-}" = "" ] && {
+        emit_error "sync-item-parser: --section requires a value"
+        exit 2
+      }
+      section_arg="$2"
+      shift 2
       ;;
     -*)
-      emit_error "sync-item-parser: unknown option: $1"; exit 2
+      emit_error "sync-item-parser: unknown option: $1"
+      exit 2
       ;;
     *)
       if [ -z "$file_type" ]; then
-        file_type="$1"; shift
+        file_type="$1"
+        shift
       else
-        emit_error "sync-item-parser: unexpected extra argument: $1"; exit 2
+        emit_error "sync-item-parser: unexpected extra argument: $1"
+        exit 2
       fi
       ;;
   esac
@@ -71,14 +78,17 @@ if [ -z "$file_type" ]; then
 fi
 
 case "$file_type" in
-  markdown|yaml) ;;
-  *) emit_error "sync-item-parser: unknown file_type: $file_type"; exit 2 ;;
+  markdown | yaml) ;;
+  *)
+    emit_error "sync-item-parser: unknown file_type: $file_type"
+    exit 2
+    ;;
 esac
 
 # Read all of stdin into a temp file (we may need multiple passes).
 tmp_in="$(mktemp)"
 trap 'rm -f "$tmp_in"' EXIT
-cat > "$tmp_in"
+cat >"$tmp_in"
 
 # Step 1 — Slice section body if --section was given.
 tmp_body="$tmp_in"
@@ -94,7 +104,7 @@ if [ -n "$section_arg" ]; then
         print
       }
     }
-  ' "$tmp_in" > "$tmp_body"
+  ' "$tmp_in" >"$tmp_body"
 fi
 
 # Step 2 — Parse items based on file_type.

@@ -77,8 +77,8 @@ find_plugin_root() {
     self_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd -P)"
     cache_real="$(cd "$cache_dir" 2>/dev/null && pwd -P)"
     if [ -n "$self_root" ] && [ -n "$cache_real" ] \
-        && [ "$(dirname "$self_root")" = "$cache_real" ] \
-        && [ -f "$self_root/bootstrap-manifest.json" ]; then
+      && [ "$(dirname "$self_root")" = "$cache_real" ] \
+      && [ -f "$self_root/bootstrap-manifest.json" ]; then
       PLUGIN_ROOT="$cache_dir/$(basename "$self_root")"
       PLUGIN_MANIFEST="$PLUGIN_ROOT/bootstrap-manifest.json"
       PLUGIN_SOURCE="cache"

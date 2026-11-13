@@ -65,7 +65,7 @@ create_rfc_fixture() {
     dr_yaml="\"$escaped\""
   fi
   mkdir -p docs/rfcs
-  cat > "docs/rfcs/${name}.md" <<EOF
+  cat >"docs/rfcs/${name}.md" <<EOF
 ---
 rfc: "$name"
 title: "Test RFC"
@@ -85,8 +85,8 @@ EOF
 # Usage: create_braindump_fixture <body1> [<body2> ...]
 create_braindump_fixture() {
   mkdir -p docs
-  printf '# RFC Braindump\n\nPotential RFC ideas.\n\n' > docs/rfc-braindump.md
+  printf '# RFC Braindump\n\nPotential RFC ideas.\n\n' >docs/rfc-braindump.md
   for body in "$@"; do
-    printf '* %s\n' "$body" >> docs/rfc-braindump.md
+    printf '* %s\n' "$body" >>docs/rfc-braindump.md
   done
 }

@@ -33,11 +33,11 @@ file="docs/rfc-braindump.md"
 
 created_file=false
 if [ ! -f "$file" ]; then
-  printf '# RFC Braindump\n\nPotential RFC ideas. Add with `/rfc-braindump`, promote to full RFC with `/rfc-new`.\n\n' > "$file"
+  printf '# RFC Braindump\n\nPotential RFC ideas. Add with `/rfc-braindump`, promote to full RFC with `/rfc-new`.\n\n' >"$file"
   created_file=true
 fi
 
-printf '* %s\n' "$body" >> "$file"
+printf '* %s\n' "$body" >>"$file"
 
 jq -n --arg file "$file" --argjson created "$created_file" \
   '{appended: true, file: $file, created_file: $created}'

@@ -91,7 +91,7 @@ awk '
     if ($0 == "") next
   }
   { print }
-' "$file" > "$tmp_body"
+' "$file" >"$tmp_body"
 
 # Write the new file with the two-line header prepended, followed by the body.
 # Insert a blank line between the header and the body to preserve Markdown rendering
@@ -104,7 +104,7 @@ body_first_line="$(head -n1 "$tmp_body")"
     printf '\n'
   fi
   cat "$tmp_body"
-} > "$file"
+} >"$file"
 
 rm -f "$tmp_body"
 trap - EXIT

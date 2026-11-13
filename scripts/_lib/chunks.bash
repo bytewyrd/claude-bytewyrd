@@ -54,11 +54,23 @@ json_dotpath_chunks() {
   local local_file="$2"
   local plugin_file="$3"
 
-  [ -f "$local_file" ] && [ -f "$plugin_file" ] || { printf '[]'; return 0; }
+  [ -f "$local_file" ] && [ -f "$plugin_file" ] || {
+    printf '[]'
+    return 0
+  }
   printf '%s' "$owned_paths_json" | jq -e 'type == "array"' >/dev/null 2>&1 \
-    || { printf '[]'; return 0; }
-  jq -e '.' "$local_file" >/dev/null 2>&1 || { printf '[]'; return 0; }
-  jq -e '.' "$plugin_file" >/dev/null 2>&1 || { printf '[]'; return 0; }
+    || {
+      printf '[]'
+      return 0
+    }
+  jq -e '.' "$local_file" >/dev/null 2>&1 || {
+    printf '[]'
+    return 0
+  }
+  jq -e '.' "$plugin_file" >/dev/null 2>&1 || {
+    printf '[]'
+    return 0
+  }
 
   # Build the list of owned dot-paths and the set of "covered" top-level keys
   # (the first dot-segment of each path). Wildcards / array-id paths bail out
@@ -74,7 +86,7 @@ json_dotpath_chunks() {
     # Skip non-simple paths — chunks are display-only and the simple-path case
     # is by far the common one for JSON targets.
     case "$path" in
-      ""|"*"|*"["*) continue ;;
+      "" | "*" | *"["*) continue ;;
     esac
 
     first_seg="${path%%.*}"
@@ -164,9 +176,15 @@ gitignore_chunks() {
   local local_file="$2"
   local plugin_file="$3"
 
-  [ -f "$local_file" ] && [ -f "$plugin_file" ] || { printf '[]'; return 0; }
+  [ -f "$local_file" ] && [ -f "$plugin_file" ] || {
+    printf '[]'
+    return 0
+  }
   printf '%s' "$owned_paths_json" | jq -e 'type == "array"' >/dev/null 2>&1 \
-    || { printf '[]'; return 0; }
+    || {
+      printf '[]'
+      return 0
+    }
 
   local count
   count="$(printf '%s' "$owned_paths_json" | jq -r 'length' 2>/dev/null)" || return 0
@@ -217,7 +235,10 @@ gitignore_chunks() {
 _gitignore_extract_block() {
   local tag="$1"
   local file="$2"
-  [ -f "$file" ] || { printf ''; return 0; }
+  [ -f "$file" ] || {
+    printf ''
+    return 0
+  }
   awk -v tag="$tag" '
     BEGIN { in_block = 0 }
     $0 == tag { in_block = 1; print; next }
@@ -255,9 +276,15 @@ owned_regions_chunks() {
   local local_file="$2"
   local plugin_file="$3"
 
-  [ -f "$local_file" ] && [ -f "$plugin_file" ] || { printf '[]'; return 0; }
+  [ -f "$local_file" ] && [ -f "$plugin_file" ] || {
+    printf '[]'
+    return 0
+  }
   printf '%s' "$owned_boundaries_json" | jq -e 'type == "array"' >/dev/null 2>&1 \
-    || { printf '[]'; return 0; }
+    || {
+      printf '[]'
+      return 0
+    }
 
   local count
   count="$(printf '%s' "$owned_boundaries_json" | jq -r 'length' 2>/dev/null)" || return 0
@@ -332,7 +359,10 @@ owned_regions_chunks() {
 _owned_region_body() {
   local heading="$1"
   local file="$2"
-  [ -f "$file" ] || { printf ''; return 0; }
+  [ -f "$file" ] || {
+    printf ''
+    return 0
+  }
   awk -v heading="$heading" '
     BEGIN { in_section = 0 }
     {

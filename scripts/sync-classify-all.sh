@@ -97,7 +97,7 @@ while IFS= read -r entry; do
       --arg upstream_key "$upstream_key" \
       --arg error "$msg" \
       '{classification: "error", target: "", upstream_key: $upstream_key, error: $error}' \
-      >> "$tmp_out"
+      >>"$tmp_out"
     continue
   fi
 
@@ -106,7 +106,7 @@ while IFS= read -r entry; do
   classify_out=""
   classify_err=""
   classify_rc=0
-  : > "$tmp_err"
+  : >"$tmp_err"
   classify_out="$(bash "$SCRIPT_DIR/sync-classify.sh" "$entry" "$target" "$plugin_root" "$project_inputs_arg" 2>"$tmp_err")"
   classify_rc=$?
   classify_err="$(cat "$tmp_err" 2>/dev/null || true)"
@@ -128,7 +128,7 @@ while IFS= read -r entry; do
       --arg upstream_key "$upstream_key" \
       --arg error "$err_msg" \
       '{classification: $classification, target: $target, upstream_key: $upstream_key, error: $error}' \
-      >> "$tmp_out"
+      >>"$tmp_out"
     continue
   fi
 
@@ -142,7 +142,7 @@ while IFS= read -r entry; do
       --arg upstream_key "$upstream_key" \
       --arg error "$msg" \
       '{classification: $classification, target: $target, upstream_key: $upstream_key, error: $error}' \
-      >> "$tmp_out"
+      >>"$tmp_out"
     continue
   fi
 
@@ -161,12 +161,12 @@ while IFS= read -r entry; do
           owned_sections:   (.[0].owned_sections // [])
         }
       ' \
-    >> "$tmp_out"
+      >>"$tmp_out"
 done < <(jq -c '.artifacts[]' "$manifest")
 
 # Wrap collected per-element objects into a JSON array.
 if [ -s "$tmp_out" ]; then
-  jq -s '.' < "$tmp_out"
+  jq -s '.' <"$tmp_out"
 else
   printf '[]\n'
 fi

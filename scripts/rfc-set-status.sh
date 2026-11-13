@@ -34,8 +34,11 @@ new_status="$2"
 drop_reason="${3:-}"
 
 case "$new_status" in
-  Draft|Approved|Done|Dropped) ;;
-  *) emit_error "rfc-set-status: invalid status '$new_status' (allowed: Draft, Approved, Done, Dropped)"; exit 2 ;;
+  Draft | Approved | Done | Dropped) ;;
+  *)
+    emit_error "rfc-set-status: invalid status '$new_status' (allowed: Draft, Approved, Done, Dropped)"
+    exit 2
+    ;;
 esac
 
 if [ "$new_status" = "Dropped" ] && [ -z "$drop_reason" ]; then
@@ -66,12 +69,15 @@ fi
 
 # Escape drop_reason for safe embedding in a YAML double-quoted string.
 # Order matters: escape backslashes first, then double quotes.
-escaped_reason="${drop_reason//\\/\\\\}"   # \ -> \\
-escaped_reason="${escaped_reason//\"/\\\"}"  # " -> \"
+escaped_reason="${drop_reason//\\/\\\\}"    # \ -> \\
+escaped_reason="${escaped_reason//\"/\\\"}" # " -> \"
 # Reject newlines — YAML double-quoted scalars cannot contain raw newlines safely
 # without folding, and a single-line drop_reason is the documented contract.
 case "$escaped_reason" in
-  *$'\n'*) emit_error "rfc-set-status: drop_reason must not contain newlines"; exit 2 ;;
+  *$'\n'*)
+    emit_error "rfc-set-status: drop_reason must not contain newlines"
+    exit 2
+    ;;
 esac
 
 # Use awk to rewrite the 'status:' line inside the first frontmatter block.
@@ -102,9 +108,9 @@ awk -v new_status="$new_status" -v drop_reason="$escaped_reason" '
     next
   }
   { print }
-' "$file" > "$tmp"
+' "$file" >"$tmp"
 
-cat "$tmp" > "$file"
+cat "$tmp" >"$file"
 rm -f "$tmp"
 trap - EXIT
 

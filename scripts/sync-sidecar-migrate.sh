@@ -31,12 +31,18 @@ new_path=".bytewyrd/.bootstrap-versions.json"
 while [ $# -gt 0 ]; do
   case "$1" in
     --old-path)
-      [ "${2:-}" = "" ] && { emit_error "sync-sidecar-migrate: --old-path requires a value"; exit 2; }
+      [ "${2:-}" = "" ] && {
+        emit_error "sync-sidecar-migrate: --old-path requires a value"
+        exit 2
+      }
       old_path="$2"
       shift 2
       ;;
     --new-path)
-      [ "${2:-}" = "" ] && { emit_error "sync-sidecar-migrate: --new-path requires a value"; exit 2; }
+      [ "${2:-}" = "" ] && {
+        emit_error "sync-sidecar-migrate: --new-path requires a value"
+        exit 2
+      }
       new_path="$2"
       shift 2
       ;;

@@ -36,7 +36,7 @@ while IFS= read -r line; do
       bodies+=("$body")
       ;;
   esac
-done < "$file"
+done <"$file"
 
 entries_array="$(
   if [ "${#bodies[@]}" -eq 0 ]; then

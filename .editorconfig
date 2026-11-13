@@ -1,0 +1,10 @@
+# Shell script style. shfmt (v3) reads these settings whenever it runs without
+# printer flags, so a plain `shfmt -w <file>` formats like CI's `shfmt -d`
+# check in .github/workflows/ci.yml (equivalent to `shfmt -i 2 -ci -bn`).
+root = true
+
+[*.{sh,bash}]
+indent_style = space
+indent_size = 2
+switch_case_indent = true
+binary_next_line = true

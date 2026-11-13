@@ -53,7 +53,7 @@ awk -v target="$target" '
     print
   }
   END { exit (done ? 0 : 1) }
-' "$file" > "$tmp" && removed=1 || removed=0
+' "$file" >"$tmp" && removed=1 || removed=0
 
 if [ "$removed" -eq 0 ]; then
   rm -f "$tmp"
@@ -62,7 +62,7 @@ if [ "$removed" -eq 0 ]; then
   exit 1
 fi
 
-cat "$tmp" > "$file"
+cat "$tmp" >"$file"
 rm -f "$tmp"
 trap - EXIT
 jq -n --arg file "$file" '{removed: true, file: $file}'

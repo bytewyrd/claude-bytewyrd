@@ -93,7 +93,8 @@ pre_tool_use_hook="$(jq -r '
 # placeholder survives for /sync Step 4c to fill with per-language jobs (see
 # "ci.yml rendering" in skills/sync/SKILL.md), exactly as before. `has_github`
 # is not a language and does not count.
-ci_jobs_section="$(cat <<'YAML'
+ci_jobs_section="$(
+  cat <<'YAML'
   ci:
     runs-on: ubuntu-latest
     steps:
@@ -104,8 +105,8 @@ YAML
 
 # Output the enriched JSON.
 jq \
-  --arg epe    "$enabled_plugins_entries" \
-  --arg ptuh   "$pre_tool_use_hook" \
+  --arg epe "$enabled_plugins_entries" \
+  --arg ptuh "$pre_tool_use_hook" \
   --arg cijobs "$ci_jobs_section" \
   'def truthy: . == true or . == "true";
    ( ((.languages // []) | length) > 0

@@ -84,7 +84,7 @@ require_jq
 # Detect whether a target path is a .gitignore-style target — controls the
 # chunk-extraction branch under the structured strategy.
 is_gitignore_target() {
-  case "$1" in *.gitignore|*/.gitignore|.gitignore) return 0 ;; *) return 1 ;; esac
+  case "$1" in *.gitignore | */.gitignore | .gitignore) return 0 ;; *) return 1 ;; esac
 }
 
 if [ "${1:-}" = "" ] || [ "${2:-}" = "" ] || [ "${3:-}" = "" ]; then
@@ -123,18 +123,18 @@ emit() {
   local recorded_sha="${2:-null}"
   local plugin_sha="${3:-null}"
   local chunks_json="${4:-[]}"
-  local args=( --arg classification "$classification" --arg strategy "$strategy" --arg target "$target" --argjson chunks "$chunks_json" )
+  local args=(--arg classification "$classification" --arg strategy "$strategy" --arg target "$target" --argjson chunks "$chunks_json")
   local filter='{classification: $classification, strategy: $strategy, target: $target'
   if [ "$recorded_sha" = "null" ]; then
     filter+=', recorded_sha: null'
   else
-    args+=( --arg recorded "$recorded_sha" )
+    args+=(--arg recorded "$recorded_sha")
     filter+=', recorded_sha: $recorded'
   fi
   if [ "$plugin_sha" = "null" ]; then
     filter+=', plugin_sha: null'
   else
-    args+=( --arg plugin "$plugin_sha" )
+    args+=(--arg plugin "$plugin_sha")
     filter+=', plugin_sha: $plugin'
   fi
   filter+=', chunks: $chunks}'
@@ -183,22 +183,22 @@ read_marker_sha() {
 canonical_sha() {
   local strat="$1"
   local f="$2"
-  local args=( --target "$target" )
+  local args=(--target "$target")
   case "$strat" in
-    additive-merge|additive-merge-with-diff)
+    additive-merge | additive-merge-with-diff)
       local sections
       sections="$(echo "$manifest_json" | jq -c '.owned_sections // []')"
-      args+=( --owned-sections "$sections" )
+      args+=(--owned-sections "$sections")
       ;;
-    owned-regions|section)
+    owned-regions | section)
       local boundaries
       boundaries="$(echo "$manifest_json" | jq -c '.owned_boundaries // []')"
-      args+=( --owned-boundaries "$boundaries" )
+      args+=(--owned-boundaries "$boundaries")
       ;;
     structured)
       local paths
       paths="$(echo "$manifest_json" | jq -c '.owned_paths // []')"
-      args+=( --owned-paths "$paths" )
+      args+=(--owned-paths "$paths")
       ;;
   esac
   local out
@@ -237,7 +237,7 @@ case "$strategy" in
     fi
     ;;
 
-  additive-merge|additive-merge-with-diff)
+  additive-merge | additive-merge-with-diff)
     apply_kind="additive_merge_apply"
     if [ "$strategy" = "additive-merge-with-diff" ]; then
       apply_kind="additive_merge_with_diff_apply"
@@ -261,7 +261,7 @@ case "$strategy" in
     fi
     ;;
 
-  owned-regions|section|structured)
+  owned-regions | section | structured)
     if [ ! -f "$plugin_source" ]; then
       emit_error "sync-classify: plugin source not found for $strategy artifact: $plugin_source"
       exit 2
@@ -274,10 +274,10 @@ case "$strategy" in
     plugin_source_for_sha="$plugin_source"
     tmp_rendered=""
     if [ "$strategy" = "structured" ] && [ "$templated" = "true" ] \
-        && [ -n "$project_inputs_arg" ] && [ -f "$project_inputs_arg" ]; then
+      && [ -n "$project_inputs_arg" ] && [ -f "$project_inputs_arg" ]; then
       tmp_rendered="$(mktemp)"
       if bash "$script_dir/sync-render-template.sh" "$plugin_source" "$project_inputs_arg" \
-          > "$tmp_rendered" 2>/dev/null; then
+        >"$tmp_rendered" 2>/dev/null; then
         plugin_source_for_sha="$tmp_rendered"
       fi
     fi
@@ -290,7 +290,7 @@ case "$strategy" in
     chunks="[]"
     if [ -f "$target" ] && [ -f "$plugin_source_for_sha" ]; then
       case "$strategy" in
-        owned-regions|section)
+        owned-regions | section)
           boundaries="$(echo "$manifest_json" | jq -c '.owned_boundaries // []')"
           chunks="$(owned_regions_chunks "$boundaries" "$target" "$plugin_source_for_sha")"
           ;;

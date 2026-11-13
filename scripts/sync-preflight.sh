@@ -161,7 +161,7 @@ fi
 remote_url="$(git remote get-url origin 2>/dev/null || echo "")"
 case "$remote_url" in
   *github.com*) github_remote="$remote_url" ;;
-  *)            github_remote="" ;;
+  *) github_remote="" ;;
 esac
 
 # GitHub description: only fetched when gh is available AND we found a GH remote.
@@ -229,7 +229,7 @@ fi
 # already prevents that, but be explicit here too).
 if [ "$docs_agent_drifted" = "true" ] && [ -n "$plugin_docs_ver" ]; then
   mkdir -p .bytewyrd
-  printf '%s\n' "$plugin_docs_ver" > .bytewyrd/docs-agent-version
+  printf '%s\n' "$plugin_docs_ver" >.bytewyrd/docs-agent-version
 fi
 
 # --- Plugin root resolution ---

@@ -86,7 +86,7 @@ awk -v outdir="$tmp_split" '
   cur != "" {
     print >> cur
   }
-' <<< "$diff_text"
+' <<<"$diff_text"
 
 # Build hunks JSON array.
 hunks_json="[]"
