@@ -2,9 +2,9 @@
 rfc: "2026-05-14-sync-per-file-extension-strategies"
 title: "Sync Per-File Extension Strategies"
 author: "Rodrigo Kochenburger"
-status: "Approved"
+status: "Dropped"
 created: "2026-05-14"
-drop_reason: ~
+drop_reason: "Superseded by RFC 2026-11-09-init-and-doctor (approved 2026-11-13), which replaces /sync with scaffold + drift."
 ---
 
 ## Summary
