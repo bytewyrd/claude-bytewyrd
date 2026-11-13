@@ -131,6 +131,16 @@ _cache_version_dir() {
   assert_equal "$(echo "$output" | jq -r .source)" "cache"
 }
 
+@test "a running cache dir without a manifest falls back to the scan" {
+  running="$FAKE_HOME/.claude/plugins/cache/bytewyrd/bytewyrd/0412be76f50a"
+  mkdir -p "$running"
+  cp -R "$SCRIPT_ROOT/scripts" "$running/"   # scripts present, bootstrap-manifest.json missing
+  live="$(_cache_version_dir 1a2b3c4d5e6f)"
+  run bash "$running/scripts/sync-find-plugin-root.sh"
+  assert_success
+  assert_equal "$(echo "$output" | jq -r .plugin_root)" "$live"
+}
+
 # --- not-found -------------------------------------------------------------
 
 @test "exits 1 with error when no manifest is found anywhere" {
