@@ -31,11 +31,12 @@ Everything merged after the 0.2.0 release notes were written: #94, #96, #110, #1
 ### Added
 
 - **CI that gates merges.** Three jobs replace the stub workflow:
-  - `lint`: JSON manifests parse, `bootstrap-manifest.json` is current, agent and skill frontmatter is strict YAML, relative Markdown links resolve.
+  - `lint`: JSON manifests parse, `bootstrap-manifest.json` is current, agent and skill frontmatter is strict YAML, relative Markdown links resolve, and the shell scripts pass shellcheck (warning level) and shfmt.
   - `validate`: `claude plugin validate` with a pinned CLI.
   - `test`: the bats suite.
 
-  Actions are pinned to commit SHAs and the token is read-only.
+  Actions are pinned to commit SHAs, jobs run on a pinned `ubuntu-26.04` image, and the token is read-only. See [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md#quality-gate) to run the same checks locally.
+- **Shell style.** `.editorconfig` records the shfmt style (2-space indent, indented case items, binary operators may start a line). The scripts were reformatted once, with no behavior change: their syntax trees are identical before and after.
 
 ### Fixed
 

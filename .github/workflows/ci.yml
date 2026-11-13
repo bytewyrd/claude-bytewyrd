@@ -38,6 +38,12 @@ jobs:
     name: lint
     runs-on: ubuntu-26.04
     timeout-minutes: 10
+    env:
+      # Shell files held to shellcheck and shfmt, as git pathspecs. Formatting
+      # style comes from .editorconfig.
+      SHELL_FILES: scripts/*.sh scripts/_lib/*.bash hooks/pre-commit/*.sh tests/run.sh tests/scripts/helpers.bash
+      SHFMT_VERSION: "3.14.1"
+      SHFMT_SHA256: "76e77641faa025814b77f153b29796b8e6fa2fca03e0c76a691608b86c7ea7bf"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -64,6 +70,27 @@ jobs:
 
       - name: Relative Markdown links resolve
         run: python .github/scripts/check-links.py
+
+      # shellcheck comes with the pinned runner image (0.11.0 on ubuntu-26.04).
+      # Info-level notes are advisory; warnings and errors fail the job.
+      - name: Shell scripts pass shellcheck
+        run: |
+          set -f  # SHELL_FILES holds git pathspecs; keep bash from globbing them
+          shellcheck --version
+          git ls-files -z -- $SHELL_FILES | xargs -0 shellcheck -x --source-path=SCRIPTDIR --severity=warning
+
+      - name: Install shfmt
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/shfmt" "https://github.com/mvdan/sh/releases/download/v${SHFMT_VERSION}/shfmt_v${SHFMT_VERSION}_linux_amd64"
+          echo "${SHFMT_SHA256}  $RUNNER_TEMP/shfmt" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/shfmt"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Shell scripts are shfmt-formatted
+        run: |
+          set -f  # SHELL_FILES holds git pathspecs; keep bash from globbing them
+          shfmt --version
+          git ls-files -z -- $SHELL_FILES | xargs -0 shfmt -d
 
   validate:
     name: validate

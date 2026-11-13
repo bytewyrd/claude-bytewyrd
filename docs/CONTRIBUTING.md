@@ -91,14 +91,36 @@ chore(scope): tooling, deps, config
 
 ## Quality Gate
 
-No automated quality gate configured yet. Review changes manually before pushing.
+CI (`.github/workflows/ci.yml`) runs three jobs on every pull request to `main`. Their names are the checks the branch ruleset requires:
+
+- **`lint`**:
+  - The JSON manifests parse, and `bootstrap-manifest.json` is current.
+  - Agent and skill frontmatter is strict YAML.
+  - Relative Markdown links resolve.
+  - The shell scripts have no shellcheck warnings and match the shfmt style in `.editorconfig`.
+- **`validate`**: `claude plugin validate .` with the pinned Claude Code CLI.
+- **`test`**: the bats suite.
+
+To run the same checks locally before pushing (shellcheck, shfmt, and PyYAML must be installed):
+
+```bash
+git submodule update --init --recursive   # once: the bats libraries
+tests/run.sh
+scripts/build-manifest.sh --check
+python3 .github/scripts/lint-frontmatter.py agents/*.md skills/*/SKILL.md .claude/skills/*/SKILL.md
+python3 .github/scripts/check-links.py
+SHELL_FILES=$(git ls-files -- 'scripts/*.sh' 'scripts/_lib/*.bash' 'hooks/pre-commit/*.sh' tests/run.sh tests/scripts/helpers.bash)
+shellcheck -x --source-path=SCRIPTDIR --severity=warning $SHELL_FILES
+shfmt -d $SHELL_FILES   # shfmt -w applies the fixes
+claude plugin validate .
+```
 
 ## Pull Request Process
 
 1. Open a PR against `main`
 2. CI must pass
 3. One approval required for merge
-4. Squash merge to keep history clean
+4. Merge with a merge commit; never squash (see the Git section of `CLAUDE.md`)
 
 ## RFC Process
 
