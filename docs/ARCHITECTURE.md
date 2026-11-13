@@ -52,7 +52,18 @@ Current plugin-local skills:
 
 **Purpose:** Shell-level automation that Claude Code executes in response to session lifecycle events. The plugin currently ships one hook: a `SessionStart` probe that runs once per session in every project where the plugin is enabled.
 **Location:** `hooks/hooks.json` (hook declarations) + `scripts/check-requirements.sh` (probe logic)
-**Key behavior:** The hook is silent when all requirements are met. It emits a warning bundle for soft-dependency gaps (companion plugins not enabled, MCP servers not configured, optional CLI tools absent, installed plugin older than the version that last ran `/sync` on the project) and exits with status 2 only for hard failures (`git` missing, or a stale `claude-plugins-official` reference that Claude Code would error on later). Individual warnings can be suppressed via `BYTEWYRD_SKIP_WARN=<id>` in the user's shell environment.
+**Key behavior:** The hook is silent when all requirements are met. It emits a warning bundle for soft-dependency gaps (companion plugins not enabled, MCP servers not configured, optional CLI tools absent) and exits with status 2 only for hard failures (`git` missing, or a stale `claude-plugins-official` reference that Claude Code would error on later). Individual warnings can be suppressed via `BYTEWYRD_SKIP_WARN=<id>` in the user's shell environment. The `plugin-version` probe, which compared the installed version with the one recorded by `/sync`, is inert now that `plugin.json` carries no `version`.
+
+### CI (`.github/workflows/ci.yml`, `.github/scripts/`)
+
+**Purpose:** Gates merges to `main`. The three jobs, `lint`, `validate`, and `test`, are the required checks.
+**Location:** `.github/workflows/ci.yml`. The Python lint helpers `lint-frontmatter.py` and `check-links.py` live in `.github/scripts/` and are tested by `tests/scripts/ci-lint.bats`.
+**Key behavior:**
+- `lint` checks the JSON manifests, `bootstrap-manifest.json` freshness, strict-YAML agent and skill frontmatter, relative Markdown links, shellcheck warnings, and shfmt formatting (style in `.editorconfig`).
+- `validate` runs `claude plugin validate .` with a pinned Claude Code CLI.
+- `test` runs the bats suite.
+
+Actions are pinned to commit SHAs, and the runner image is pinned to `ubuntu-26.04`.
 
 ## Data Flow
 
