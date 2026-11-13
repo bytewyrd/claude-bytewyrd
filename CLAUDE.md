@@ -205,12 +205,13 @@ The script walks the manifest, recomputes the `sha256` or `template_sha` for eac
 
 **The pre-commit hook** (`hooks/pre-commit/manifest-check.sh`) runs `build-manifest.sh --check` and fails the commit if the manifest is stale. This prevents shipping a plugin where the recorded hash for an artifact does not match the artifact's current content, which would cause every consumer to see phantom fast-forward updates on the next `/sync` run.
 
-To wire the hook into git (one-time setup on a fresh clone):
+To wire the hook into git (one-time setup per clone; run it from the main checkout, not a worktree):
 
 ```bash
-ln -sf ../../hooks/pre-commit/manifest-check.sh .git/hooks/pre-commit
-chmod +x .git/hooks/pre-commit
+ln -sf "$(git rev-parse --show-toplevel)/hooks/pre-commit/manifest-check.sh" "$(git rev-parse --git-path hooks)/pre-commit"
 ```
+
+`git rev-parse --git-path hooks` resolves to the hooks directory git actually uses: the shared `.git/hooks` of the main checkout (also from inside a worktree, where `.git` is a file and a literal `.git/hooks/...` path fails), or `core.hooksPath` when that is set. Every worktree shares that one hook, and the script it points to checks the manifest of whichever checkout is committing. Create the link from the main checkout because a link into a worktree dangles once the worktree is removed, and git then skips the hook without any message. The script is committed executable (`100755`), so no `chmod` is needed. CI runs the same `build-manifest.sh --check`, so a skipped hook still cannot merge a stale manifest.
 
 ## Conventions
 
