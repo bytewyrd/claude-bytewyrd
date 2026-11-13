@@ -10,7 +10,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-Everything merged after the 0.2.0 release notes were written: #94, #96, #110, #111, #112, and the release-hygiene PR that introduced this section.
+Everything merged after the 0.2.0 release notes were written: #94, #96, #110, #111, #112, and #113 (the release-hygiene PR that introduced this section).
 
 ### Changed
 
