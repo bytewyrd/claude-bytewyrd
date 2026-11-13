@@ -1,10 +1,112 @@
 # bootstrap-content-version: bytewyrd/.github/workflows/ci.yml@bc393baf:e3b0c44298fc
 
+# Required checks: the job names below (lint, validate, test) are what the
+# branch ruleset requires. Renaming a job silently drops it from the ruleset,
+# so change the ruleset in the same PR as any rename.
+#
+# Every action is pinned to a full commit SHA; the trailing comment names the
+# release it corresponds to.
+
 name: CI
+
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PYTHON_VERSION: "3.13"
+  PYYAML_VERSION: "6.0.3"
+  NODE_VERSION: "24"
+  # Claude Code CLI used by the validate job. Bump deliberately: newer releases
+  # can add validation checks.
+  CLAUDE_CODE_VERSION: "2.1.323"
+
 jobs:
-  # No language-specific jobs detected — add source code and re-run /sync to populate.
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install PyYAML
+        run: python -m pip install --disable-pip-version-check "pyyaml==${PYYAML_VERSION}"
+
+      - name: JSON manifests parse
+        run: |
+          for f in .claude-plugin/plugin.json .claude-plugin/marketplace.json hooks/hooks.json bootstrap-manifest.json; do
+            jq -e . "$f" > /dev/null || { echo "::error file=$f::$f is not valid JSON"; exit 1; }
+          done
+
+      - name: bootstrap-manifest.json is current
+        run: scripts/build-manifest.sh --check
+
+      - name: Agent and skill frontmatter is strict YAML
+        run: python .github/scripts/lint-frontmatter.py agents/*.md skills/*/SKILL.md .claude/skills/*/SKILL.md
+
+      - name: Relative Markdown links resolve
+        run: python .github/scripts/check-links.py
+
+  validate:
+    name: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - name: Install Claude Code CLI
+        run: npm install --global --no-audit --no-fund "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+
+      # Warnings (such as the root CLAUDE.md not being loaded as plugin
+      # context) are reported but do not fail the job; --strict would.
+      - name: claude plugin validate
+        env:
+          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+        run: |
+          claude --version
+          claude plugin validate . --json
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      # PyYAML lets the ci.yml rendering tests parse their output instead of
+      # skipping.
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install PyYAML
+        run: python -m pip install --disable-pip-version-check "pyyaml==${PYYAML_VERSION}"
+
+      - name: Run the bats suite
+        run: tests/run.sh
