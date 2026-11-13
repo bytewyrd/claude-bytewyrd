@@ -32,7 +32,7 @@ Skills are organized by noun-first naming convention (e.g., `best-practices-extr
 **Location:** `agents/`
 **Key interfaces:** Each agent is a single `.md` file with YAML frontmatter (`name`, `description`, optional `model`). Claude Code discovers agents in this directory and makes them available as subagent targets.
 
-**Source:** Agent definitions originated from [VoltAgent/awesome-claude-code-subagents](https://github.com/VoltAgent/awesome-claude-code-subagents) (MIT) and are now permanently locally owned. The upstream repository is organized by category (`categories/{category}/{agent-name}.md`); this plugin flattens them into a single `agents/` directory for simpler discovery. Each locally modified file carries an attribution comment. Future upstream improvements are pulled manually, file by file, when a maintainer judges them worth applying.
+**Source:** Agent definitions originated from [VoltAgent/awesome-claude-code-subagents](https://github.com/VoltAgent/awesome-claude-code-subagents) (MIT) and are now permanently locally owned. The upstream repository is organized by category (`categories/{category}/{agent-name}.md`); this plugin flattens them into a single `agents/` directory for simpler discovery. Attribution lives in [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md), which carries the upstream MIT license text and lists the agents that still contain substantial upstream text; the agent files themselves generally carry no attribution comment. Future upstream improvements are pulled manually, file by file, when a maintainer judges them worth applying.
 
 ### Plugin-local skills (`.claude/skills/`)
 
