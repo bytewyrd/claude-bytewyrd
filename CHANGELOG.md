@@ -35,7 +35,7 @@ Everything merged after the 0.2.0 release notes were written: #94, #96, #110, #1
   - `validate`: `claude plugin validate` with a pinned CLI.
   - `test`: the bats suite.
 
-  Actions are pinned to commit SHAs, jobs run on a pinned `ubuntu-26.04` image, and the token is read-only. See [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md#quality-gate) to run the same checks locally.
+  Actions are pinned to commit SHAs, shellcheck and shfmt are pinned releases verified by sha256, jobs run on `ubuntu-26.04` instead of `ubuntu-latest`, and the token is read-only. See [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md#quality-gate) to run the same checks locally.
 - **Shell style.** `.editorconfig` records the shfmt style (2-space indent, indented case items, binary operators may start a line). The scripts were reformatted once, with no behavior change: their syntax trees are identical before and after.
 
 ### Fixed

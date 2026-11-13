@@ -56,14 +56,14 @@ Current plugin-local skills:
 
 ### CI (`.github/workflows/ci.yml`, `.github/scripts/`)
 
-**Purpose:** Gates merges to `main`. The three jobs, `lint`, `validate`, and `test`, are the required checks.
+**Purpose:** Gates merges to `main`. The three jobs, `lint`, `validate`, and `test`, are the checks the branch ruleset is meant to require.
 **Location:** `.github/workflows/ci.yml`. The Python lint helpers `lint-frontmatter.py` and `check-links.py` live in `.github/scripts/` and are tested by `tests/scripts/ci-lint.bats`.
 **Key behavior:**
 - `lint` checks the JSON manifests, `bootstrap-manifest.json` freshness, strict-YAML agent and skill frontmatter, relative Markdown links, shellcheck warnings, and shfmt formatting (style in `.editorconfig`).
 - `validate` runs `claude plugin validate .` with a pinned Claude Code CLI.
 - `test` runs the bats suite.
 
-Actions are pinned to commit SHAs, and the runner image is pinned to `ubuntu-26.04`.
+Actions are pinned to commit SHAs, and shellcheck and shfmt are pinned releases verified by sha256. Jobs run on `ubuntu-26.04` instead of `ubuntu-latest`; GitHub still updates that image weekly.
 
 ## Data Flow
 

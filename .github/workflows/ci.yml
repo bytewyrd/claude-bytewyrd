@@ -1,13 +1,16 @@
 # bootstrap-content-version: bytewyrd/.github/workflows/ci.yml@bc393baf:e3b0c44298fc
 
-# Required checks: the job names below (lint, validate, test) are what the
-# branch ruleset requires. Renaming a job silently drops it from the ruleset,
-# so change the ruleset in the same PR as any rename.
+# Required checks: the job names below (lint, validate, test) are the checks
+# the branch ruleset is meant to require. A renamed job leaves its old name
+# required but never reported, so every PR waits on it ("Expected"); update
+# the ruleset together with any rename.
 #
 # Every action is pinned to a full commit SHA; the trailing comment names the
-# release it corresponds to. Jobs run on a pinned image (ubuntu-26.04) rather
-# than ubuntu-latest, so a runner-image change cannot start failing a required
-# check without a change in this repository.
+# release it corresponds to. Jobs run on ubuntu-26.04 rather than
+# ubuntu-latest, so moving to the next Ubuntu release happens in a reviewed
+# PR. GitHub still refreshes that image every week, so the lint tools that
+# decide pass/fail (shellcheck, shfmt) are downloaded at pinned versions and
+# checked against their sha256 instead of being taken from the image.
 
 name: CI
 
@@ -42,6 +45,9 @@ jobs:
       # Shell files held to shellcheck and shfmt, as git pathspecs. Formatting
       # style comes from .editorconfig.
       SHELL_FILES: scripts/*.sh scripts/_lib/*.bash hooks/pre-commit/*.sh tests/run.sh tests/scripts/helpers.bash
+      # sha256 values are the digests GitHub records for these release assets.
+      SHELLCHECK_VERSION: "0.11.0"
+      SHELLCHECK_SHA256: "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
       SHFMT_VERSION: "3.14.1"
       SHFMT_SHA256: "76e77641faa025814b77f153b29796b8e6fa2fca03e0c76a691608b86c7ea7bf"
     steps:
@@ -71,20 +77,26 @@ jobs:
       - name: Relative Markdown links resolve
         run: python .github/scripts/check-links.py
 
-      # shellcheck comes with the pinned runner image (0.11.0 on ubuntu-26.04).
+      - name: Install shellcheck and shfmt
+        run: |
+          bin="$RUNNER_TEMP/bin"
+          mkdir -p "$bin"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/shellcheck.tar.xz" \
+            "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+          echo "${SHELLCHECK_SHA256}  $RUNNER_TEMP/shellcheck.tar.xz" | sha256sum -c -
+          tar -xJf "$RUNNER_TEMP/shellcheck.tar.xz" -C "$bin" --strip-components=1 "shellcheck-v${SHELLCHECK_VERSION}/shellcheck"
+          curl -fsSL --retry 3 -o "$bin/shfmt" \
+            "https://github.com/mvdan/sh/releases/download/v${SHFMT_VERSION}/shfmt_v${SHFMT_VERSION}_linux_amd64"
+          echo "${SHFMT_SHA256}  $bin/shfmt" | sha256sum -c -
+          chmod +x "$bin/shellcheck" "$bin/shfmt"
+          echo "$bin" >> "$GITHUB_PATH"
+
       # Info-level notes are advisory; warnings and errors fail the job.
       - name: Shell scripts pass shellcheck
         run: |
           set -f  # SHELL_FILES holds git pathspecs; keep bash from globbing them
           shellcheck --version
           git ls-files -z -- $SHELL_FILES | xargs -0 shellcheck -x --source-path=SCRIPTDIR --severity=warning
-
-      - name: Install shfmt
-        run: |
-          curl -fsSL -o "$RUNNER_TEMP/shfmt" "https://github.com/mvdan/sh/releases/download/v${SHFMT_VERSION}/shfmt_v${SHFMT_VERSION}_linux_amd64"
-          echo "${SHFMT_SHA256}  $RUNNER_TEMP/shfmt" | sha256sum -c -
-          chmod +x "$RUNNER_TEMP/shfmt"
-          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
 
       - name: Shell scripts are shfmt-formatted
         run: |

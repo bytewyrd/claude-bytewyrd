@@ -91,7 +91,7 @@ chore(scope): tooling, deps, config
 
 ## Quality Gate
 
-CI (`.github/workflows/ci.yml`) runs three jobs on every pull request to `main`. Their names are the checks the branch ruleset requires:
+CI (`.github/workflows/ci.yml`) runs three jobs on every pull request to `main`. Their names are the checks the branch ruleset is meant to require:
 
 - **`lint`**:
   - The JSON manifests parse, and `bootstrap-manifest.json` is current.
@@ -101,7 +101,7 @@ CI (`.github/workflows/ci.yml`) runs three jobs on every pull request to `main`.
 - **`validate`**: `claude plugin validate .` with the pinned Claude Code CLI.
 - **`test`**: the bats suite.
 
-To run the same checks locally before pushing (shellcheck, shfmt, and PyYAML must be installed):
+To run the same checks locally before pushing (shellcheck, shfmt, and PyYAML must be installed; CI uses shellcheck 0.11.0 and shfmt 3.14.1, and other versions can report differently):
 
 ```bash
 git submodule update --init --recursive   # once: the bats libraries
