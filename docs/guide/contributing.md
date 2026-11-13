@@ -9,7 +9,7 @@ For the narrow dev ops (clone, install locally, run the quality gate, commit con
 ```
 claude-bytewyrd/
 ├── .claude-plugin/
-│   ├── plugin.json              — plugin identity (name, version, description)
+│   ├── plugin.json              — plugin identity (name, description, author, license; deliberately no version)
 │   └── marketplace.json         — local marketplace entry for self-install
 ├── agents/                      — 48 specialist subagent definitions (.md files)
 ├── skills/                      — exported slash-command skills (auto-discovered)
@@ -83,9 +83,12 @@ Use `/rfc-new <description>` to start. The skill walks the full Draft → Approv
 {
   "name": "bytewyrd",
   "description": "Opinionated Claude Code workflow for Bytewyrd projects and teams: skills, agents, hooks, and operating principles for evidence-based development with RFC-driven design.",
-  "version": "0.2.0"
+  "author": { "name": "Bytewyrd" },
+  "license": "Apache-2.0"
 }
 ```
+
+The manifest deliberately has no `version`. Claude Code reads the manifest's `version` first, and a pinned value keeps every install on its cached copy until the string changes. Without one, each commit on `main` is a new version, so users track commits. Don't add `version` back. See the versioning note at the top of [`CHANGELOG.md`](../../CHANGELOG.md).
 
 Skills under `skills/` and agents under `agents/` are auto-discovered — no array of paths is required in `plugin.json`. The plugin manifest is intentionally minimal: identity only, no behavior. Discovery does the rest.
 
