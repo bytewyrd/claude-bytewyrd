@@ -90,6 +90,47 @@ teardown() {
   assert_equal "$(echo "$output" | jq -r .plugin_root)" "$FAKE_HOME/.claude/plugins/cache/bytewyrd/bytewyrd/0.2.0"
 }
 
+# --- commit-SHA cache directories (plugin.json has no version) --------------
+# Claude Code names version directories after commit SHAs and marks the
+# previous one `.orphaned_at` on update. `sort -V -r` ranks these SHAs
+# c447c3207a42 > 1a2b3c4d5e6f > 0412be76f50a, which says nothing about age.
+
+_cache_version_dir() {
+  local dir="$FAKE_HOME/.claude/plugins/cache/bytewyrd/bytewyrd/$1"
+  mkdir -p "$dir"
+  printf '{"artifacts":[]}\n' > "$dir/bootstrap-manifest.json"
+  printf '%s' "$dir"
+}
+
+@test "cache search skips a version dir marked .orphaned_at" {
+  stale="$(_cache_version_dir c447c3207a42)"
+  : > "$stale/.orphaned_at"
+  live="$(_cache_version_dir 1a2b3c4d5e6f)"
+  run bash "$SCRIPT"
+  assert_success
+  assert_equal "$(echo "$output" | jq -r .plugin_root)" "$live"
+  assert_equal "$(echo "$output" | jq -r .source)" "cache"
+}
+
+@test "cache search falls back to an orphaned dir when no live dir has a manifest" {
+  only="$(_cache_version_dir c447c3207a42)"
+  : > "$only/.orphaned_at"
+  mkdir -p "$FAKE_HOME/.claude/plugins/cache/bytewyrd/bytewyrd/1a2b3c4d5e6f"  # half-installed: no manifest
+  run bash "$SCRIPT"
+  assert_success
+  assert_equal "$(echo "$output" | jq -r .plugin_root)" "$only"
+}
+
+@test "a script running from a cache dir resolves to that dir, not the version-sort winner" {
+  running="$(_cache_version_dir 0412be76f50a)"
+  cp -R "$SCRIPT_ROOT/scripts" "$running/"
+  _cache_version_dir c447c3207a42 >/dev/null   # live sibling that sort -V -r ranks first
+  run bash "$running/scripts/sync-find-plugin-root.sh"
+  assert_success
+  assert_equal "$(echo "$output" | jq -r .plugin_root)" "$running"
+  assert_equal "$(echo "$output" | jq -r .source)" "cache"
+}
+
 # --- not-found -------------------------------------------------------------
 
 @test "exits 1 with error when no manifest is found anywhere" {

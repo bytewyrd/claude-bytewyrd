@@ -13,16 +13,19 @@
 #   2. $HOME/.claude/bootstrap-manifest.json, if present.
 #      Reported as source="home". Used by legacy installations that
 #      shipped the manifest directly under ~/.claude/.
-#   3. The newest semantic-versioned cache directory under
+#   3. A cache directory under
 #      $HOME/.claude/plugins/cache/bytewyrd/bytewyrd/<version>/ that
 #      contains bootstrap-manifest.json.
 #      Reported as source="cache". This is the common case for users
 #      who installed via `claude plugin install bytewyrd@bytewyrd`.
 #   4. Otherwise: emit_error + exit 1.
 #
-# Selecting the "newest" cache directory uses `sort -V` (version sort) and
-# picks the lexicographically-last entry. Pre-release suffixes (0.2.0-rc1)
-# sort below their release (0.2.0) under -V, which matches semver intent.
+# Within the cache, the directory this script runs from wins. Otherwise the
+# newest directory by `sort -V` that is not marked `.orphaned_at` (Claude Code
+# marks the previous version on update) and has a manifest is used, falling
+# back to orphaned directories only when nothing else has one. Version
+# directories are commit SHAs (plugin.json has no `version`), so the sort
+# alone cannot identify the current one. See _lib/plugin.bash.
 #
 # Args: none.
 #
