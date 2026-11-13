@@ -37,7 +37,7 @@ Use judgment to distinguish CONFLICT from NEW: if the global entry and an existi
 
 ## Step 2a — Re-triage (defense in depth)
 
-For every entry classified NEW or CONFLICT in Step 2, re-apply the three portability questions defined in [`../../skills/best-practices-extract/TRIAGE-AND-LIFT.md`](../../skills/best-practices-extract/TRIAGE-AND-LIFT.md):
+For every entry classified NEW or CONFLICT in Step 2, re-apply the three portability questions defined in [`../../../skills/best-practices-extract/TRIAGE-AND-LIFT.md`](../../../skills/best-practices-extract/TRIAGE-AND-LIFT.md):
 
 1. Framework portability
 2. Project portability
@@ -223,6 +223,6 @@ The skill never commits. Review and commit are the user's call.
 
 ## Red Flags — Stop and Reconsider
 
-- A candidate is project-specific (mentions a project name, internal service, or repo path) → Step 2a should have caught this. If it didn't, the triage predicate may need refinement — see [`../../skills/best-practices-extract/TRIAGE-AND-LIFT.md`](../../skills/best-practices-extract/TRIAGE-AND-LIFT.md). Skip the entry, surface the miss to the user, and ask whether to update the predicate.
+- A candidate is project-specific (mentions a project name, internal service, or repo path) → Step 2a should have caught this. If it didn't, the triage predicate may need refinement — see [`../../../skills/best-practices-extract/TRIAGE-AND-LIFT.md`](../../../skills/best-practices-extract/TRIAGE-AND-LIFT.md). Skip the entry, surface the miss to the user, and ask whether to update the predicate.
 - A candidate is > 2 sentences → note this in the presentation ("Note: this entry is N sentences — sync entries are typically ≤ 2. Consider using the Combined option to get a tighter version.") but do NOT skip it; let the user decide. If it goes in via conflict resolution, the Opus combined version will naturally be more concise.
 - The destination section already has > 12 entries → warn the user that the section is getting long and may need a split, but proceed unless the user says to stop.
