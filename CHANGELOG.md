@@ -18,6 +18,7 @@ Everything merged after the 0.2.0 release notes were written: #94, #96, #110, #1
   - The `plugin-version` SessionStart warning (installed plugin older than the one that last ran `/sync`) no longer fires.
   - `/sync` no longer writes `.bytewyrd/plugin-version`.
   - `claude plugin validate` reports an expected "No version specified" warning.
+- **bash 4 or newer is required**, and the requirement is now explicit. The helper scripts already used `mapfile` and associative arrays, which macOS's stock `/bin/bash` 3.2 lacks. On older bash, `/sync` preflight and the scripts behind `/rfc-approve`, `/rfc-drop` and `/rfc-summary` now stop with a message pointing to `brew install bash`, instead of failing partway with `mapfile: command not found`. Requirements are listed in [`docs/guide/installation.md`](docs/guide/installation.md#requirements).
 - **License:** the plugin is licensed under Apache-2.0 (`LICENSE`, plus `"license"` in `plugin.json`). [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) carries the MIT notice of VoltAgent/awesome-claude-code-subagents and lists the agents that still contain substantial upstream text.
 - **Per-file `/sync` extension strategies** (#96):
   - Every plugin-managed file now declares one of `additive-merge`, `additive-merge-with-diff`, `bootstrap`, `authoritative`, or `owned-regions`, which ends the `conflict_legacy` prompts on every run.

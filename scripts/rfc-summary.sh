@@ -24,6 +24,9 @@ set -uo pipefail
 _LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$_LIB_DIR/_lib/common.bash"
 require_jq
+# rfc-frontmatter.sh needs bash 4, and the loop below turns its failures into
+# per-file "unparseable" warnings, so check up front for a clear error.
+require_bash_major 4
 
 FRONTMATTER_SH="$_LIB_DIR/rfc-frontmatter.sh"
 

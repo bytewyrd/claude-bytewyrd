@@ -12,6 +12,47 @@ teardown() {
 }
 
 # ---------------------------------------------------------------------------
+# require_bash_major
+# ---------------------------------------------------------------------------
+# The running bash cannot be swapped for 3.2 here, so the failure path is
+# exercised with a minimum above any real bash.
+
+@test "require_bash_major: returns quietly when bash meets the minimum" {
+  run bash -c ". '$LIB' && require_bash_major 4 && echo still-running"
+  assert_success
+  assert_output "still-running"
+}
+
+@test "require_bash_major: exits 2 with an actionable JSON error when bash is too old" {
+  run bash -c ". '$LIB' && require_bash_major 999 && echo still-running"
+  assert_failure 2
+  refute_output --partial "still-running"
+  msg="$(echo "$output" | jq -r .error)"
+  [[ "$msg" == *"require bash >= 999; this is bash ${BASH_VERSINFO[0]}."* ]] || fail "unexpected message: $msg"
+  [[ "$msg" == *"brew install bash"* ]] || fail "missing the macOS hint: $msg"
+}
+
+@test "require_bash_major: every script using bash 4 features calls it" {
+  # mapfile/readarray and associative arrays do not exist in bash 3.2, the
+  # stock /bin/bash on macOS. Any script using them must fail with the clear
+  # require_bash_major error rather than "mapfile: command not found". The
+  # /sync preflight checks up front as well.
+  cd "$SCRIPT_ROOT"
+  missing=""
+  for f in scripts/*.sh; do
+    if grep -qE '\b(mapfile|readarray)\b|(declare|local|typeset) -A' "$f" \
+        && ! grep -qE '^require_bash_major 4\b' "$f"; then
+      missing="$missing $f"
+    fi
+  done
+  [ -z "$missing" ] || fail "scripts use bash 4 features without require_bash_major 4:$missing"
+  grep -qE '^require_bash_major 4\b' scripts/sync-preflight.sh || fail "sync-preflight.sh must check the bash version"
+  # rfc-summary.sh tolerates per-file rfc-frontmatter.sh failures, which would
+  # hide the guard's error behind "unparseable" warnings.
+  grep -qE '^require_bash_major 4\b' scripts/rfc-summary.sh || fail "rfc-summary.sh must check the bash version"
+}
+
+# ---------------------------------------------------------------------------
 # require_jq
 # ---------------------------------------------------------------------------
 

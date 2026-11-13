@@ -33,6 +33,7 @@ set -uo pipefail
 # shellcheck source=_lib/common.bash
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib/common.bash"
 require_jq
+require_bash_major 4 # mapfile / associative arrays
 
 if [ "${1:-}" = "" ] || [ "${2:-}" = "" ] || [ "${3:-}" = "" ]; then
   emit_error "usage: sync-owned-regions-apply.sh <local-file> <plugin-source> <boundaries-json>"
