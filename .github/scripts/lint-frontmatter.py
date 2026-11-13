@@ -15,7 +15,11 @@ Two failure classes this exists to catch:
   other YAML consumer sees a broken file.
 * A plain scalar followed by ` #...`. YAML reads the rest of the line as
   a comment and silently drops it, so the value is truncated without an
-  error.
+  error. This is rejected for every key, including harmless cases like
+  `model: opus  # why`: in frontmatter such text is almost always meant
+  to be part of the value.
+* Duplicate keys. YAML parsers keep only the last value (PyYAML and the
+  parser Claude Code uses agree), so the first is silently ignored.
 
 Write long or punctuation-heavy values as a folded block scalar:
 
@@ -87,6 +91,13 @@ def lint(path):
         return [(first_line, "frontmatter must be a YAML mapping of key: value pairs")]
 
     problems = []
+    first_seen = {}
+    for key_node, _ in node.value:
+        line = first_line + key_node.start_mark.line
+        if key_node.value in first_seen:
+            problems.append((line, f'duplicate key "{key_node.value}" (first on line {first_seen[key_node.value]}); YAML keeps only the last value'))
+        else:
+            first_seen[key_node.value] = line
     for key in REQUIRED_STRING_KEYS:
         value = data.get(key)
         if not isinstance(value, str) or not value.strip():

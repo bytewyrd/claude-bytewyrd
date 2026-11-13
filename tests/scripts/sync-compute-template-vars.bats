@@ -89,7 +89,10 @@ _rendered_ci_jobs() {
 }
 
 _require_pyyaml() {
-  python3 -c 'import yaml' 2>/dev/null || skip "python3 with PyYAML is required to parse the rendered workflow"
+  python3 -c 'import yaml' 2>/dev/null && return 0
+  # CI installs PyYAML; never let these tests skip there.
+  [ -z "${CI:-}" ] || fail "PyYAML is not importable, and CI must not skip these tests"
+  skip "python3 with PyYAML is required to parse the rendered workflow"
 }
 
 @test "ci.yml.tpl with no detected language renders a valid workflow with one no-op job" {

@@ -18,7 +18,10 @@ teardown() {
 }
 
 _require_pyyaml() {
-  python3 -c 'import yaml' 2>/dev/null || skip "python3 with PyYAML is required by lint-frontmatter.py"
+  python3 -c 'import yaml' 2>/dev/null && return 0
+  # CI installs PyYAML; never let these tests skip there.
+  [ -z "${CI:-}" ] || fail "PyYAML is not importable, and CI must not skip these tests"
+  skip "python3 with PyYAML is required by lint-frontmatter.py"
 }
 
 # --- lint-frontmatter.py ----------------------------------------------------
@@ -129,4 +132,43 @@ EOF
   refute_output --partial "untracked.md"
   refute_output --partial "template.md.tpl"
   assert_output --partial "1 file(s) checked, 1 broken link(s)"
+}
+
+# --- review follow-ups: false positives and duplicate keys -------------------
+
+@test "frontmatter: a duplicate key fails and names the first occurrence" {
+  _require_pyyaml
+  printf -- '---\nname: a\ndescription: first\ndescription: second\n---\n' > a.md
+  run python3 "$LINT_FM" a.md
+  assert_failure 1
+  assert_output --partial 'a.md:4: duplicate key "description" (first on line 3)'
+}
+
+@test "links: an indented fence inside a list item is skipped" {
+  printf -- '- item\n\n    ```bash\n    [x](missing.md)\n    ```\n' > a.md
+  run python3 "$CHECK_LINKS" a.md
+  assert_success
+}
+
+@test "links: escaped brackets are not a link" {
+  printf '%s\n' '\[x\](missing.md) and \[y](missing2.md)' > a.md
+  run python3 "$CHECK_LINKS" a.md
+  assert_success
+}
+
+@test "links: balanced parentheses in a target are part of the path" {
+  printf 'x\n' > 'notes(1).md'
+  printf '%s\n' '[ok](notes(1).md) [bad](notes(2).md)' > a.md
+  run python3 "$CHECK_LINKS" a.md
+  assert_failure 1
+  assert_output --partial 'broken relative link notes(2).md'
+  refute_output --partial 'notes(1).md'
+}
+
+@test "links: prose that looks like a reference label is not a definition" {
+  printf '%s\n' '[Note]: this sentence is prose, not a link.' '' '[ref]: missing-ref.md "A title"' > a.md
+  run python3 "$CHECK_LINKS" a.md
+  assert_failure 1
+  assert_output --partial 'a.md:3: broken relative link missing-ref.md'
+  refute_output --partial 'a.md:1:'
 }

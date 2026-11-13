@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check that relative links in Markdown files point at existing paths.
+r"""Check that relative links in Markdown files point at existing paths.
 
 Usage: check-links.py [FILE...]
 
@@ -9,7 +9,11 @@ tracked Markdown file (`git ls-files '*.md'`).
 Checks inline links and images (`[text](target)`, `![alt](target)`) and
 reference definitions (`[id]: target`). Links with a URL scheme
 (https:, mailto:, ...) and same-page anchors (#section) are skipped, as
-are fenced code blocks, inline code spans, and HTML comments. A target
+are fenced code blocks (indented ones too), inline code spans, HTML
+comments, and escaped brackets (`\[text\](...)`). Targets may contain
+balanced parentheses, such as `notes(1).md`. A line like `[Note]: some
+text` is prose, not a reference definition. Indented (four-space) code
+blocks are not recognised; use fences for code that contains links. A target
 is resolved against the linking file's directory (or the repository
 root when it starts with "/") after dropping any "#fragment" or
 "?query"; the check passes when that file or directory exists.
@@ -26,12 +30,19 @@ import subprocess
 import sys
 from urllib.parse import unquote
 
-FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+# Fence openers may be indented, e.g. inside list items.
+FENCE = re.compile(r"^\s*(`{3,}|~{3,})")
 INLINE_CODE = re.compile(r"(`+)(?:(?!\1).)+?\1")
 HTML_COMMENT = re.compile(r"<!--.*?-->", re.S)
-# [text](target "title") / ![alt](<target with spaces>)
-INLINE_LINK = re.compile(r"!?\[(?:[^\[\]]|\[[^\[\]]*\])*\]\(\s*(<[^>\n]*>|[^)\s]+)(?:\s+(?:\"[^\"]*\"|'[^']*'|\([^)]*\)))?\s*\)")
-REFERENCE_DEF = re.compile(r"^ {0,3}\[[^\]]+\]:\s*(<[^>\n]*>|\S+)")
+TITLE = r"(?:\"[^\"]*\"|'[^']*'|\([^)]*\))"
+# [text](target "title") / ![alt](<target with spaces>), not \[escaped\]; the
+# target may hold balanced parentheses, e.g. notes(1).md.
+INLINE_LINK = re.compile(
+    r"(?<!\\)!?\[(?:[^\[\]]|\[[^\[\]]*\])*\]"
+    r"\(\s*(<[^>\n]*>|(?:[^()\s]|\([^()\s]*\))+)(?:\s+" + TITLE + r")?\s*\)"
+)
+# [id]: target "title" must fill the line; "[Note]: some text" is prose.
+REFERENCE_DEF = re.compile(r"^ {0,3}\[[^\]]+\]:\s*(<[^>\n]*>|\S+)(?:\s+" + TITLE + r")?\s*$")
 SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
 
 
