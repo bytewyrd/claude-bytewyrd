@@ -33,6 +33,7 @@ set -uo pipefail
 # shellcheck source=_lib/common.bash
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib/common.bash"
 require_jq
+require_bash_major 4 # mapfile / associative arrays
 
 if [ "${1:-}" = "" ] || [ "${2:-}" = "" ] || [ "${3:-}" = "" ]; then
   emit_error "usage: sync-owned-regions-apply.sh <local-file> <plugin-source> <boundaries-json>"
@@ -88,7 +89,7 @@ plugin_slice_for() {
 # heading that exists, or at EOF if none exist.
 
 # Step 1 — load local content as a numbered line array.
-mapfile -t local_lines < "$local_file"
+mapfile -t local_lines <"$local_file"
 local_count="${#local_lines[@]}"
 
 # Step 2 — find heading positions in the local file (1-based for clarity).
@@ -175,7 +176,7 @@ done
 # Build a per-line "inserts_before" list: at line N, which absent headings
 # should be emitted before processing line N (or after the current line for
 # inserts at EOF, i.e. N == local_count).
-declare -A inserts_at=()  # key = numeric position; value = newline-separated headings
+declare -A inserts_at=() # key = numeric position; value = newline-separated headings
 for h in "${headings[@]}"; do
   pos="${insert_after[$h]:-}"
   if [ -z "$pos" ]; then continue; fi
@@ -200,7 +201,7 @@ while [ "$cursor" -lt "$local_count" ]; do
   if [ -n "$ins" ]; then
     while IFS= read -r h; do
       emit_plugin_slice "$h"
-    done <<< "$ins"
+    done <<<"$ins"
     unset 'inserts_at['"$cursor"']'
   fi
 
@@ -231,7 +232,7 @@ ins="${inserts_at[$local_count]:-}"
 if [ -n "$ins" ]; then
   while IFS= read -r h; do
     emit_plugin_slice "$h"
-  done <<< "$ins"
+  done <<<"$ins"
 fi
 
 exit 0

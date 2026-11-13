@@ -24,6 +24,9 @@ set -uo pipefail
 _LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$_LIB_DIR/_lib/common.bash"
 require_jq
+# rfc-frontmatter.sh needs bash 4, and the loop below turns its failures into
+# per-file "unparseable" warnings, so check up front for a clear error.
+require_bash_major 4
 
 FRONTMATTER_SH="$_LIB_DIR/rfc-frontmatter.sh"
 
@@ -45,22 +48,25 @@ for f in docs/rfcs/*.md; do
     continue
   fi
   # Extract each field via jq -r.
-  rfc="$(printf '%s' "$out"     | jq -r .rfc)"
-  title="$(printf '%s' "$out"   | jq -r .title)"
-  author="$(printf '%s' "$out"  | jq -r .author)"
-  status="$(printf '%s' "$out"  | jq -r .status)"
+  rfc="$(printf '%s' "$out" | jq -r .rfc)"
+  title="$(printf '%s' "$out" | jq -r .title)"
+  author="$(printf '%s' "$out" | jq -r .author)"
+  status="$(printf '%s' "$out" | jq -r .status)"
   created="$(printf '%s' "$out" | jq -r .created)"
   if [ -z "$rfc" ] || [ -z "$status" ]; then
     warnings+=("Warning: $f — frontmatter incomplete; skipping.")
     continue
   fi
   case "$status" in
-    Draft|Approved|Done|Dropped) ;;
-    *) warnings+=("Warning: $f — unrecognized status \"$status\"; skipping."); continue ;;
+    Draft | Approved | Done | Dropped) ;;
+    *)
+      warnings+=("Warning: $f — unrecognized status \"$status\"; skipping.")
+      continue
+      ;;
   esac
   row="$(jq -n \
     --arg status "$status" --arg created "$created" --arg rfc "$rfc" \
-    --arg title "$title"   --arg author  "$author" \
+    --arg title "$title" --arg author "$author" \
     '{status: $status, created: $created, rfc: $rfc, title: $title, author: $author}')"
   rows_json+=("$row")
 done

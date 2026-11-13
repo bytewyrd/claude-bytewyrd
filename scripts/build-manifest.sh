@@ -32,23 +32,23 @@ source "$PLUGIN_ROOT/scripts/_lib/common.bash"
 
 jq -c '.artifacts[]' "$MANIFEST" \
   | while read -r artifact; do
-      source_rel=$(echo "$artifact" | jq -r '.source')
-      source_abs="$PLUGIN_ROOT/$source_rel"
-      if [[ ! -f "$source_abs" ]]; then
-        echo "manifest references missing source: $source_rel" >&2
-        exit 2
-      fi
-      full_hash=$(hash_file "$source_abs")
-      # Manifest stores the full 64-char hash; the diff engine truncates to 12 at marker-write time.
-      templated=$(echo "$artifact" | jq -r '.templated // false')
-      field=$([[ "$templated" == "true" ]] && echo "template_sha" || echo "sha256")
-      # Recompute upstream_key from strategy fingerprint (never preserved from existing manifest).
-      upstream_key="$(compute_upstream_key "$artifact")"
-      # Emit the updated artifact JSON on stdout.
-      echo "$artifact" | jq --arg h "$full_hash" --arg f "$field" --arg uk "$upstream_key" \
-        '.[$f] = $h | .upstream_key = $uk'
-    done \
-  | jq -s '{artifacts: (sort_by(.upstream_key))}' > "$TMP"
+    source_rel=$(echo "$artifact" | jq -r '.source')
+    source_abs="$PLUGIN_ROOT/$source_rel"
+    if [[ ! -f "$source_abs" ]]; then
+      echo "manifest references missing source: $source_rel" >&2
+      exit 2
+    fi
+    full_hash=$(hash_file "$source_abs")
+    # Manifest stores the full 64-char hash; the diff engine truncates to 12 at marker-write time.
+    templated=$(echo "$artifact" | jq -r '.templated // false')
+    field=$([[ "$templated" == "true" ]] && echo "template_sha" || echo "sha256")
+    # Recompute upstream_key from strategy fingerprint (never preserved from existing manifest).
+    upstream_key="$(compute_upstream_key "$artifact")"
+    # Emit the updated artifact JSON on stdout.
+    echo "$artifact" | jq --arg h "$full_hash" --arg f "$field" --arg uk "$upstream_key" \
+      '.[$f] = $h | .upstream_key = $uk'
+  done \
+  | jq -s '{artifacts: (sort_by(.upstream_key))}' >"$TMP"
 
 if [[ "${1:-}" == "--check" ]]; then
   if ! diff -q "$MANIFEST" "$TMP" >/dev/null; then

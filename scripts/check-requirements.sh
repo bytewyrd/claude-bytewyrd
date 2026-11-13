@@ -34,8 +34,12 @@ BYTEWYRD_SKIP_WARN="${BYTEWYRD_SKIP_WARN:-}"
 emit_json() {
   local cont="$1" suppress="$2" sys_msg="$3" ctx="$4"
   # Escape backslashes and double-quotes for JSON-safe embedding.
-  sys_msg="${sys_msg//\\/\\\\}"; sys_msg="${sys_msg//\"/\\\"}"; sys_msg="${sys_msg//$'\n'/\\n}"
-  ctx="${ctx//\\/\\\\}"; ctx="${ctx//\"/\\\"}"; ctx="${ctx//$'\n'/\\n}"
+  sys_msg="${sys_msg//\\/\\\\}"
+  sys_msg="${sys_msg//\"/\\\"}"
+  sys_msg="${sys_msg//$'\n'/\\n}"
+  ctx="${ctx//\\/\\\\}"
+  ctx="${ctx//\"/\\\"}"
+  ctx="${ctx//$'\n'/\\n}"
   printf '{"continue":%s,"suppressOutput":%s,"systemMessage":"%s","hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"%s"}}\n' \
     "$cont" "$suppress" "$sys_msg" "$ctx"
 }
@@ -78,15 +82,15 @@ plugin_installed() {
 # Compares dot-separated integer segments (MAJOR.MINOR.PATCH); no dependencies.
 version_lt() {
   local IFS=.
-  read -r -a _v1 <<< "$1"
-  read -r -a _v2 <<< "$2"
+  read -r -a _v1 <<<"$1"
+  read -r -a _v2 <<<"$2"
   local i
   for i in 0 1 2; do
     local a="${_v1[$i]:-0}" b="${_v2[$i]:-0}"
     [ "$a" -lt "$b" ] && return 0
     [ "$a" -gt "$b" ] && return 1
   done
-  return 1  # equal — not less-than
+  return 1 # equal — not less-than
 }
 
 # mcp_configured <prefix>: returns 0 if a mcpServers entry matching the

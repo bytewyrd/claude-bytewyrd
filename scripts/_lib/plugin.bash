@@ -18,15 +18,24 @@
 #   2. $HOME/.claude/bootstrap-manifest.json if it exists.
 #      Reported as source="home". Used by legacy installations that
 #      shipped the manifest directly under ~/.claude/.
-#   3. The newest semantic-versioned cache directory under
+#   3. A cache directory under
 #      $HOME/.claude/plugins/cache/bytewyrd/bytewyrd/<version>/ that
 #      contains bootstrap-manifest.json.
 #      Reported as source="cache". This is the common case for users
 #      who installed via `claude plugin install bytewyrd@bytewyrd`.
 #
-# Selecting the "newest" cache directory uses `sort -V` (version sort)
-# and walks newest -> oldest, picking the first directory that actually
-# contains a manifest (guards against half-installed versions).
+# Choosing the cache directory. plugin.json carries no `version`, so Claude
+# Code names each cache directory after a commit SHA, and an update leaves the
+# previous directory behind (marked with an `.orphaned_at` file) until a
+# cleanup about 14 days later. A version sort cannot tell which SHA is
+# current, so:
+#   a. If this library is itself loaded from a cache directory, use that
+#      directory: it is the version that is running.
+#   b. Otherwise walk the directories newest -> oldest by `sort -V`, skipping
+#      ones marked `.orphaned_at`, and pick the first that contains a
+#      manifest (guards against half-installed versions).
+#   c. If every directory with a manifest is orphaned, fall back to (b)
+#      without skipping, as before.
 #
 # On success, sets:
 #   PLUGIN_ROOT      — absolute path to the directory containing the manifest
@@ -37,6 +46,7 @@
 # On failure (no manifest found anywhere), sets:
 #   PLUGIN_ROOT_ERROR — human-readable error message
 # Returns 1.
+# shellcheck disable=SC2034 # PLUGIN_* are outputs, read by the scripts that source this file.
 find_plugin_root() {
   PLUGIN_ROOT=""
   PLUGIN_MANIFEST=""
@@ -63,19 +73,37 @@ find_plugin_root() {
   # 3. Plugin cache (claude plugin install location).
   local cache_dir="$home_root/plugins/cache/bytewyrd/bytewyrd"
   if [ -d "$cache_dir" ]; then
-    # List directory entries, sort by version, walk newest -> oldest until we
-    # find one with a manifest. This guards against half-installed versions.
-    local ver candidate
-    while IFS= read -r ver; do
-      [ -z "$ver" ] && continue
-      candidate="$cache_dir/$ver"
-      if [ -f "$candidate/bootstrap-manifest.json" ]; then
-        PLUGIN_ROOT="$candidate"
-        PLUGIN_MANIFEST="$candidate/bootstrap-manifest.json"
-        PLUGIN_SOURCE="cache"
-        return 0
-      fi
-    done < <(ls -1 "$cache_dir" 2>/dev/null | sort -V -r)
+    # 3a. The running copy: this file is <root>/scripts/_lib/plugin.bash.
+    local self_root cache_real
+    self_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd -P)"
+    cache_real="$(cd "$cache_dir" 2>/dev/null && pwd -P)"
+    if [ -n "$self_root" ] && [ -n "$cache_real" ] \
+      && [ "$(dirname "$self_root")" = "$cache_real" ] \
+      && [ -f "$self_root/bootstrap-manifest.json" ]; then
+      PLUGIN_ROOT="$cache_dir/$(basename "$self_root")"
+      PLUGIN_MANIFEST="$PLUGIN_ROOT/bootstrap-manifest.json"
+      PLUGIN_SOURCE="cache"
+      return 0
+    fi
+
+    # 3b/3c. Walk newest -> oldest by version sort until one has a manifest:
+    # first skipping directories Claude Code marked orphaned, then not.
+    local pass ver candidate
+    for pass in live any; do
+      while IFS= read -r ver; do
+        [ -z "$ver" ] && continue
+        candidate="$cache_dir/$ver"
+        if [ "$pass" = "live" ] && [ -e "$candidate/.orphaned_at" ]; then
+          continue
+        fi
+        if [ -f "$candidate/bootstrap-manifest.json" ]; then
+          PLUGIN_ROOT="$candidate"
+          PLUGIN_MANIFEST="$candidate/bootstrap-manifest.json"
+          PLUGIN_SOURCE="cache"
+          return 0
+        fi
+      done < <(ls -1 "$cache_dir" 2>/dev/null | sort -V -r)
+    done
   fi
 
   # 4. Nothing matched.

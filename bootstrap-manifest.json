@@ -208,7 +208,7 @@
       "upstream_key": "bytewyrd/docs/CONTRIBUTING.md@b73ff74a",
       "source": "templates/CONTRIBUTING.md.tpl",
       "target": "docs/CONTRIBUTING.md",
-      "sha256": "76fc00220ae50d664b49ec3d2a36b87ccd841627f1febe1ecdd565766272a4e9",
+      "sha256": "cdc1eed2e648c5635684d51db4b42ddfeccdeecba95da852217a0bb21c5b23e3",
       "extension_strategy": "bootstrap",
       "templated": false
     },

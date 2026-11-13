@@ -103,10 +103,10 @@ Note: Exa is a separate MCP server (not a plugin) — its permissions go uncondi
 
 ```bash
 PLUGIN_VER=$(jq -r '.version // empty' "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/.claude-plugin/plugin.json" 2>/dev/null || echo "")
-[ -n "$PLUGIN_VER" ] && echo "$PLUGIN_VER" > .bytewyrd/plugin-version
+if [ -n "$PLUGIN_VER" ]; then echo "$PLUGIN_VER" > .bytewyrd/plugin-version; fi
 ```
 
-Only write if `PLUGIN_VER` is non-empty. If the file is unreadable (e.g. development checkout with a non-standard layout), skip silently.
+Only write if `PLUGIN_VER` is non-empty. If the file is unreadable (e.g. development checkout with a non-standard layout), skip silently. The plugin's `plugin.json` no longer sets `version` (users track commits), so this currently writes nothing and exits 0.
 
 ---
 
@@ -701,6 +701,16 @@ The plugin's `SessionStart` hook will warn you if any required companion plugins
 **ci.yml rendering:**
 
 Assemble one job per detected language. If single language, name the job `ci`; otherwise name per language (`rust`, `frontend`, `go`, `python`). For non-root component paths, add `defaults: run: working-directory: <path>` at the job level.
+
+If no language is detected, render `<CI_JOBS_SECTION>` as exactly this no-op `ci` job. Never leave `jobs:` empty or keep the literal placeholder; GitHub rejects a workflow that has no jobs. The block matches `ci_jobs_section` in `scripts/sync-compute-template-vars.sh`, which is the source of truth; keep the two identical.
+
+```yaml
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: No language-specific checks yet
+        run: echo "No language was detected, so this workflow has no checks yet. Add jobs to .github/workflows/ci.yml, or add source code and re-run /sync."
+```
 ---
 
 ## Step 6 — GitHub repository metadata (only if `has_github = yes`)

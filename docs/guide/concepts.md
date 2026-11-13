@@ -33,7 +33,6 @@ Fires at the start of every Claude Code session. Runs `scripts/check-requirement
 - Companion plugins (GitHub, Context7, code-review)
 - MCP servers (Exa, Firefox DevTools)
 - CLI tools (`git`, `gh`)
-- Plugin version — whether the installed plugin is older than the version that last ran `/sync` on this project
 
 If all checks pass, the hook is silent. When something soft is missing, it emits a warning bundle but lets the session continue. Hard failures (`git` missing, a stale plugin reference in settings) block the session with a remediation command.
 

@@ -37,16 +37,16 @@ REVIEW_FILTER='.classification == "additive_merge_with_diff_apply"'
 NOTSHOWN_FILTER='.classification == "unchanged" or .classification == "local_only"'
 ALL_FILTER="${NEW_FILTER} or ${UPDATE_FILTER} or ${REVIEW_FILTER} or ${NOTSHOWN_FILTER}"
 
-new_items="$(    printf '%s' "$data" | jq -c "[.classifications[] | select(${NEW_FILTER})]")"
-update_items="$(  printf '%s' "$data" | jq -c "[.classifications[] | select(${UPDATE_FILTER})]")"
-review_items="$(  printf '%s' "$data" | jq -c "[.classifications[] | select(${REVIEW_FILTER})]")"
+new_items="$(printf '%s' "$data" | jq -c "[.classifications[] | select(${NEW_FILTER})]")"
+update_items="$(printf '%s' "$data" | jq -c "[.classifications[] | select(${UPDATE_FILTER})]")"
+review_items="$(printf '%s' "$data" | jq -c "[.classifications[] | select(${REVIEW_FILTER})]")"
 notshown_items="$(printf '%s' "$data" | jq -c "[.classifications[] | select(${NOTSHOWN_FILTER})]")"
-error_items="$(   printf '%s' "$data" | jq -c "[.classifications[] | select(${ALL_FILTER} | not)]")"
+error_items="$(printf '%s' "$data" | jq -c "[.classifications[] | select(${ALL_FILTER} | not)]")"
 
-new_count="$(    printf '%s' "$new_items"     | jq 'length')"
-update_count="$( printf '%s' "$update_items"  | jq 'length')"
-review_count="$( printf '%s' "$review_items"  | jq 'length')"
-error_count="$(  printf '%s' "$error_items"   | jq 'length')"
+new_count="$(printf '%s' "$new_items" | jq 'length')"
+update_count="$(printf '%s' "$update_items" | jq 'length')"
+review_count="$(printf '%s' "$review_items" | jq 'length')"
+error_count="$(printf '%s' "$error_items" | jq 'length')"
 notshown_count="$(printf '%s' "$notshown_items" | jq 'length')"
 
 total=$((new_count + update_count + review_count + error_count))
@@ -69,27 +69,31 @@ format_chunks() {
   if [ "$n" -eq 0 ]; then
     case "$strategy" in
       "additive-merge")
-        printf '      ~ additive merge (no user input required)\n' ;;
+        printf '      ~ additive merge (no user input required)\n'
+        ;;
       "additive-merge-with-diff")
-        printf '      ! additive merge — you cherry-pick which sections to accept\n' ;;
+        printf '      ! additive merge — you cherry-pick which sections to accept\n'
+        ;;
       "authoritative")
-        printf '      \xe2\x9c\x93 (full file)  \xe2\x86\x92 authoritative overwrite (plugin-owned)\n' ;;
+        printf '      \xe2\x9c\x93 (full file)  \xe2\x86\x92 authoritative overwrite (plugin-owned)\n'
+        ;;
       "bootstrap")
-        printf '      \xe2\x9c\x93 (full file)  \xe2\x86\x92 rendered from template\n' ;;
+        printf '      \xe2\x9c\x93 (full file)  \xe2\x86\x92 rendered from template\n'
+        ;;
     esac
     return
   fi
 
   while IFS= read -r chunk; do
     local cid owned status label
-    cid="$(    printf '%s' "$chunk" | jq -r '.id    // "?"')"
-    owned="$(  printf '%s' "$chunk" | jq -r '.owned // false')"
-    status="$( printf '%s' "$chunk" | jq -r '.status // ""')"
+    cid="$(printf '%s' "$chunk" | jq -r '.id    // "?"')"
+    owned="$(printf '%s' "$chunk" | jq -r '.owned // false')"
+    status="$(printf '%s' "$chunk" | jq -r '.status // ""')"
     if [ "$owned" = "true" ]; then
       case "$status" in
-        "changed")   label="updated (changed)" ;;
+        "changed") label="updated (changed)" ;;
         "unchanged") label="unchanged (preserved)" ;;
-        *)           label="$status" ;;
+        *) label="$status" ;;
       esac
       # ✓ U+2713, → U+2192
       printf '      \xe2\x9c\x93 %s  \xe2\x86\x92 %s\n' "$cid" "$label"
@@ -113,9 +117,9 @@ fi
 if [ "$new_count" -gt 0 ]; then
   printf '\nNew %s (%d):\n' "$(plural "$new_count" "file")" "$new_count"
   while IFS= read -r item; do
-    target="$(  printf '%s' "$item" | jq -r '.target   // "?"')"
+    target="$(printf '%s' "$item" | jq -r '.target   // "?"')"
     strategy="$(printf '%s' "$item" | jq -r '.strategy // ""')"
-    chunks="$(  printf '%s' "$item" | jq -c '.chunks   // []')"
+    chunks="$(printf '%s' "$item" | jq -c '.chunks   // []')"
     printf '  + %s\n' "$target"
     format_chunks "$chunks" "$strategy"
   done < <(printf '%s' "$new_items" | jq -c '.[]')
@@ -128,9 +132,9 @@ if [ "$update_count" -gt 0 ]; then
     "$update_count" \
     "$(plural "$update_count" "file")"
   while IFS= read -r item; do
-    target="$(  printf '%s' "$item" | jq -r '.target   // "?"')"
+    target="$(printf '%s' "$item" | jq -r '.target   // "?"')"
     strategy="$(printf '%s' "$item" | jq -r '.strategy // ""')"
-    chunks="$(  printf '%s' "$item" | jq -c '.chunks   // []')"
+    chunks="$(printf '%s' "$item" | jq -c '.chunks   // []')"
     printf '  ~ %s\n' "$target"
     format_chunks "$chunks" "$strategy"
   done < <(printf '%s' "$update_items" | jq -c '.[]')
@@ -153,7 +157,7 @@ if [ "$error_count" -gt 0 ]; then
     "$(plural "$error_count" "item")"
   while IFS= read -r item; do
     target="$(printf '%s' "$item" | jq -r '.target // "?"')"
-    err="$(    printf '%s' "$item" | jq -r '.error // .classification // "unknown"')"
+    err="$(printf '%s' "$item" | jq -r '.error // .classification // "unknown"')"
     printf '  ? %s \xe2\x80\x94 %s\n' "$target" "$err"
   done < <(printf '%s' "$error_items" | jq -c '.[]')
 fi
@@ -167,7 +171,7 @@ if [ "$notshown_count" -gt 0 ]; then
 
   parts=()
   [ -n "$local_only_list" ] && parts+=("${local_only_list} (local-only, preserved)")
-  [ -n "$unchanged_list"   ] && parts+=("${unchanged_list} (unchanged)")
+  [ -n "$unchanged_list" ] && parts+=("${unchanged_list} (unchanged)")
 
   if [ "${#parts[@]}" -gt 0 ]; then
     # Join parts with "; "

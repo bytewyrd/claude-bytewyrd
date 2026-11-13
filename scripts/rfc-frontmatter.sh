@@ -25,6 +25,7 @@ set -uo pipefail
 # shellcheck source=_lib/common.bash
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib/common.bash"
 require_jq
+require_bash_major 4 # mapfile / associative arrays
 
 if [ "${1:-}" = "" ]; then
   emit_error "usage: rfc-frontmatter.sh <path-to-rfc.md>"
@@ -62,12 +63,12 @@ parsed="$(awk '
 ' "$file")"
 
 # Split parsed output into individual fields. Using mapfile for safety.
-mapfile -t fields <<< "$parsed"
+mapfile -t fields <<<"$parsed"
 jq -n \
-  --arg rfc         "${fields[0]:-}" \
-  --arg title       "${fields[1]:-}" \
-  --arg author      "${fields[2]:-}" \
-  --arg status      "${fields[3]:-}" \
-  --arg created     "${fields[4]:-}" \
+  --arg rfc "${fields[0]:-}" \
+  --arg title "${fields[1]:-}" \
+  --arg author "${fields[2]:-}" \
+  --arg status "${fields[3]:-}" \
+  --arg created "${fields[4]:-}" \
   --arg drop_reason "${fields[5]:-}" \
   '{rfc: $rfc, title: $title, author: $author, status: $status, created: $created, drop_reason: $drop_reason}'

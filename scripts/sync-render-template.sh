@@ -36,6 +36,7 @@ set -uo pipefail
 # shellcheck source=_lib/common.bash
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib/common.bash"
 require_jq
+require_bash_major 4 # mapfile / associative arrays
 
 if [ "${1:-}" = "" ] || [ "${2:-}" = "" ]; then
   emit_error "usage: sync-render-template.sh <template-path> <inputs-json-path>"
@@ -146,7 +147,7 @@ awk -v enabled_json="$enabled_json" '
   }
 ' "$template" \
   | awk '/^$/{blank++;if(blank>1)next;print;next}{blank=0;print}' \
-  > "$tmp1"
+    >"$tmp1"
 
 # -------- Pass 2: substitute placeholders --------
 # Read all top-level scalar keys from the inputs JSON. For each `<key>` in the
@@ -197,10 +198,10 @@ while IFS= read -r key; do
         result = result line
         print result
       }
-    ' "$tmp1.work" > "$tmp1.next"
+    ' "$tmp1.work" >"$tmp1.next"
     mv "$tmp1.next" "$tmp1.work"
   done
-done <<< "$keys"
+done <<<"$keys"
 
 cat "$tmp1.work"
 rm -f "$tmp1" "$tmp1.work"

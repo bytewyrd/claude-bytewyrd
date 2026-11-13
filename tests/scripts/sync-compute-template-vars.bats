@@ -73,3 +73,68 @@ EOF
   echo '{"installed_plugins":["bytewyrd@bytewyrd"]}' > in.json
   assert_equal "$(_enabled_keys in.json)" '[]'
 }
+
+# --- ci_jobs_section --------------------------------------------------------
+# templates/ci.yml.tpl ends in `jobs:` + <CI_JOBS_SECTION>. With no detected
+# language the rendered workflow must still be valid: GitHub rejects a
+# workflow whose `jobs:` map is empty, and a literal placeholder is not YAML.
+
+# Render templates/ci.yml.tpl with the enriched inputs and print the parsed
+# `jobs` mapping as JSON (exits non-zero if the result is not valid YAML).
+_rendered_ci_jobs() {
+  local inputs="$1"
+  bash "$SCRIPT" "$inputs" > enriched.json || return 1
+  bash "$SCRIPT_ROOT/scripts/sync-render-template.sh" "$SCRIPT_ROOT/templates/ci.yml.tpl" enriched.json > ci.yml || return 1
+  python3 -c 'import json, sys, yaml; print(json.dumps(yaml.safe_load(open(sys.argv[1]))["jobs"]))' ci.yml
+}
+
+_require_pyyaml() {
+  python3 -c 'import yaml' 2>/dev/null && return 0
+  # CI installs PyYAML; never let these tests skip there.
+  [ -z "${CI:-}" ] || fail "PyYAML is not importable, and CI must not skip these tests"
+  skip "python3 with PyYAML is required to parse the rendered workflow"
+}
+
+@test "ci.yml.tpl with no detected language renders a valid workflow with one no-op job" {
+  _require_pyyaml
+  echo '{"languages":[],"has_rust":false,"has_js":false,"installed_plugins":[]}' > in.json
+  run _rendered_ci_jobs in.json
+  assert_success
+  assert_equal "$(echo "$output" | jq -c 'keys')" '["ci"]'
+  assert_equal "$(echo "$output" | jq -r '.ci["runs-on"]')" "ubuntu-latest"
+  assert_equal "$(echo "$output" | jq -r '.ci.steps | length')" "1"
+  refute grep -q 'CI_JOBS_SECTION' ci.yml
+}
+
+@test "has_github alone is not a language: still renders the no-op job" {
+  _require_pyyaml
+  echo '{"languages":[],"has_github":true,"installed_plugins":[]}' > in.json
+  run _rendered_ci_jobs in.json
+  assert_success
+  assert_equal "$(echo "$output" | jq -c 'keys')" '["ci"]'
+}
+
+@test "a detected language leaves ci_jobs_section unset for /sync Step 4c" {
+  echo '{"languages":["rust"],"has_rust":true,"installed_plugins":[]}' > in.json
+  run bash "$SCRIPT" in.json
+  assert_success
+  assert_equal "$(echo "$output" | jq -r 'has("ci_jobs_section")')" "false"
+}
+
+@test "a has_* language flag without a languages array also counts as detected" {
+  echo '{"has_python":"true","installed_plugins":[]}' > in.json
+  run bash "$SCRIPT" in.json
+  assert_success
+  assert_equal "$(echo "$output" | jq -r 'has("ci_jobs_section")')" "false"
+}
+
+@test "skills/sync/SKILL.md documents the same no-op ci job the script emits" {
+  echo '{"languages":[]}' > in.json
+  expected="$(bash "$SCRIPT" in.json | jq -r '.ci_jobs_section')"
+  documented="$(awk '/render `<CI_JOBS_SECTION>` as exactly this no-op/ {found=1}
+                     found && /^```yaml$/ {inside=1; next}
+                     inside && /^```$/ {exit}
+                     inside {print}' "$SCRIPT_ROOT/skills/sync/SKILL.md")"
+  [ -n "$documented" ] || fail "no-op ci job block not found in skills/sync/SKILL.md"
+  assert_equal "$documented" "$expected"
+}

@@ -46,18 +46,19 @@ Skills in `skills/` are not auto-loaded as slash commands by Claude Code — onl
 
 ## Agents
 
-Agent definitions in `agents/` originated from [VoltAgent/awesome-claude-code-subagents](https://github.com/VoltAgent/awesome-claude-code-subagents) (MIT) and are now permanently locally owned. Each customized file carries an attribution comment near the top.
+Most agent definitions in `agents/` originated from [VoltAgent/awesome-claude-code-subagents](https://github.com/VoltAgent/awesome-claude-code-subagents) (MIT) and are now permanently locally owned. Attribution lives in [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md), which carries the upstream license text and lists the agents that still contain substantial upstream text. The agent files themselves generally carry no attribution comment.
 
 To pull in upstream improvements manually:
 
 1. Find the file in the upstream repo at `categories/{category}/{agent-name}.md`.
 2. Diff it against the local copy.
 3. Apply changes you want to keep; skip changes that conflict with local customizations.
-4. Commit with a message like `chore(agents): pull upstream improvements to {agent-name}`.
+4. Make sure the agent has a row in the table in `THIRD_PARTY_NOTICES.md`.
+5. Commit with a message like `chore(agents): pull upstream improvements to {agent-name}`.
 
-Never overwrite a local file wholesale — the upstream file won't have the attribution comment or any local customizations. Pull selectively.
+Never overwrite a local file wholesale — the upstream file won't have any local customizations. Pull selectively.
 
-To add a new agent not yet in the plugin, copy it from upstream into `agents/`, add the attribution comment after the frontmatter closing `---`, and commit.
+To add a new agent not yet in the plugin, copy it from upstream into `agents/`, add a row for it to the table in `THIRD_PARTY_NOTICES.md`, and commit.
 
 ## Sync
 
@@ -90,15 +91,37 @@ chore(scope): tooling, deps, config
 
 ## Quality Gate
 
-No automated quality gate configured yet. Review changes manually before pushing.
+CI (`.github/workflows/ci.yml`) runs three jobs on every pull request to `main`. Their names are the checks the branch ruleset is meant to require:
+
+- **`lint`**:
+  - The JSON manifests parse, and `bootstrap-manifest.json` is current.
+  - Agent and skill frontmatter is strict YAML.
+  - Relative Markdown links resolve.
+  - The shell scripts have no shellcheck warnings and match the shfmt style in `.editorconfig`.
+- **`validate`**: `claude plugin validate .` with the pinned Claude Code CLI.
+- **`test`**: the bats suite.
+
+To run the same checks locally before pushing (shellcheck, shfmt, and PyYAML must be installed; CI uses shellcheck 0.11.0 and shfmt 3.14.1, and other versions can report differently):
+
+```bash
+git submodule update --init --recursive   # once: the bats libraries
+tests/run.sh
+scripts/build-manifest.sh --check
+python3 .github/scripts/lint-frontmatter.py agents/*.md skills/*/SKILL.md .claude/skills/*/SKILL.md
+python3 .github/scripts/check-links.py
+SHELL_FILES=$(git ls-files -- 'scripts/*.sh' 'scripts/_lib/*.bash' 'hooks/pre-commit/*.sh' tests/run.sh tests/scripts/helpers.bash)
+shellcheck -x --source-path=SCRIPTDIR --severity=warning $SHELL_FILES
+shfmt -d $SHELL_FILES   # shfmt -w applies the fixes
+claude plugin validate .
+```
 
 ## Pull Request Process
 
 1. Open a PR against `main`
 2. CI must pass
 3. One approval required for merge
-4. Squash merge to keep history clean
+4. Merge with a merge commit; never squash (see the Git section of `CLAUDE.md`)
 
 ## RFC Process
 
-Significant changes (new features, architectural changes, breaking changes) go through the RFC process. See [docs/rfc-process.md](docs/rfc-process.md).
+Significant changes (new features, architectural changes, breaking changes) go through the RFC process. See [docs/rfc-process.md](rfc-process.md).

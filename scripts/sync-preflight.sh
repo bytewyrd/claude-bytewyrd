@@ -67,8 +67,8 @@
 #   1  A hard environment check failed (git, sha256sum/shasum, python3, or
 #      plugin-root resolution). The script printed an error (plain text for
 #      the git-missing case; JSON via emit_error otherwise).
-#   2  jq itself is missing. The shared common.bash require_jq function
-#      handles this with a static JSON error.
+#   2  jq itself is missing (require_jq prints a static JSON error), or bash
+#      is older than 4 (require_bash_major prints a JSON error on stderr).
 
 set -uo pipefail
 
@@ -106,7 +106,13 @@ source "$SCRIPT_DIR/_lib/plugin.bash"
 source "$SCRIPT_DIR/_lib/detect-languages.bash"
 require_jq
 
-# --- Hard check 3: python3 >= 3.11 must be on PATH (used for TOML parsing). ---
+# --- Hard check 3: bash >= 4. ---
+# /sync's helpers use mapfile and associative arrays, which macOS's stock
+# /bin/bash 3.2 lacks. Every script runs under the first `bash` on PATH, as
+# this one does, so check it once here and fail before any work starts.
+require_bash_major 4
+
+# --- Hard check 4: python3 >= 3.11 must be on PATH (used for TOML parsing). ---
 # TOML canonicalization (mise.toml) decodes via the stdlib `tomllib` module,
 # which only exists in Python 3.11+. Checking only for `python3` would let an
 # older interpreter (e.g. 3.10 on Ubuntu 22.04 LTS) through, and the tomllib
@@ -161,7 +167,7 @@ fi
 remote_url="$(git remote get-url origin 2>/dev/null || echo "")"
 case "$remote_url" in
   *github.com*) github_remote="$remote_url" ;;
-  *)            github_remote="" ;;
+  *) github_remote="" ;;
 esac
 
 # GitHub description: only fetched when gh is available AND we found a GH remote.
@@ -229,7 +235,7 @@ fi
 # already prevents that, but be explicit here too).
 if [ "$docs_agent_drifted" = "true" ] && [ -n "$plugin_docs_ver" ]; then
   mkdir -p .bytewyrd
-  printf '%s\n' "$plugin_docs_ver" > .bytewyrd/docs-agent-version
+  printf '%s\n' "$plugin_docs_ver" >.bytewyrd/docs-agent-version
 fi
 
 # --- Plugin root resolution ---

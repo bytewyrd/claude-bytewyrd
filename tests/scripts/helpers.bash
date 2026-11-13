@@ -21,7 +21,7 @@ setup_common() {
   # Pre-create the docs/ hierarchy so scripts don't fail on missing dirs.
   mkdir -p "$TEST_TMPDIR/docs/rfcs"
   # Run all scripts with CWD = TEST_TMPDIR so they see the fixture tree.
-  cd "$TEST_TMPDIR"
+  cd "$TEST_TMPDIR" || return 1
 }
 
 teardown_common() {
@@ -65,7 +65,7 @@ create_rfc_fixture() {
     dr_yaml="\"$escaped\""
   fi
   mkdir -p docs/rfcs
-  cat > "docs/rfcs/${name}.md" <<EOF
+  cat >"docs/rfcs/${name}.md" <<EOF
 ---
 rfc: "$name"
 title: "Test RFC"
@@ -85,8 +85,8 @@ EOF
 # Usage: create_braindump_fixture <body1> [<body2> ...]
 create_braindump_fixture() {
   mkdir -p docs
-  printf '# RFC Braindump\n\nPotential RFC ideas.\n\n' > docs/rfc-braindump.md
+  printf '# RFC Braindump\n\nPotential RFC ideas.\n\n' >docs/rfc-braindump.md
   for body in "$@"; do
-    printf '* %s\n' "$body" >> docs/rfc-braindump.md
+    printf '* %s\n' "$body" >>docs/rfc-braindump.md
   done
 }

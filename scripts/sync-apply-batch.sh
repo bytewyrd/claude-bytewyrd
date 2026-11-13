@@ -98,7 +98,7 @@ plugin_root=""
 project_inputs=""
 
 if [ "${2:-}" = "" ] && [ -f "$1" ] \
-    && jq -e 'has("classifications") and has("preflight")' "$1" >/dev/null 2>&1; then
+  && jq -e 'has("classifications") and has("preflight")' "$1" >/dev/null 2>&1; then
   # --- Session-file mode ---
   session_file="$1"
 
@@ -124,12 +124,12 @@ if [ "${2:-}" = "" ] && [ -f "$1" ] \
     has_rails:       .preflight.has_rails,
     has_k8s_cue:     .preflight.has_k8s_cue,
     has_terraform:   .preflight.has_terraform
-  }' "$session_file" > "$project_inputs"
+  }' "$session_file" >"$project_inputs"
 
   # Enrich with derived scalar template variables (enabled_plugins_entries,
   # pre_tool_use_hook) so sync-render-template.sh can substitute them.
   if enriched="$(bash "$SCRIPT_DIR/sync-compute-template-vars.sh" "$project_inputs" 2>/dev/null)"; then
-    printf '%s' "$enriched" > "$project_inputs"
+    printf '%s' "$enriched" >"$project_inputs"
   fi
 
   # Filter classifications: skip unchanged, local_only, and additive-merge-with-diff
@@ -159,7 +159,7 @@ else
   _inputs_copy="$tmp_workdir/project-inputs.json"
   cp "$project_inputs" "$_inputs_copy"
   if enriched="$(bash "$SCRIPT_DIR/sync-compute-template-vars.sh" "$_inputs_copy" 2>/dev/null)"; then
-    printf '%s' "$enriched" > "$_inputs_copy"
+    printf '%s' "$enriched" >"$_inputs_copy"
   fi
   project_inputs="$_inputs_copy"
 
@@ -203,7 +203,7 @@ plugin_content_path() {
   fi
   out_path="$tmp_workdir/plugin-content.$$.$RANDOM"
   if [ "$templated" = "true" ]; then
-    if ! bash "$SCRIPT_DIR/sync-render-template.sh" "$tpl_path" "$project_inputs" > "$out_path" 2>>"$tmp_workdir/render.err"; then
+    if ! bash "$SCRIPT_DIR/sync-render-template.sh" "$tpl_path" "$project_inputs" >"$out_path" 2>>"$tmp_workdir/render.err"; then
       return 1
     fi
   else
@@ -219,9 +219,9 @@ canonical_sha12() {
   local file="$2"
   local extra_key="${3:-}"
   local extra_val="${4:-}"
-  local args=( "$strategy" "$file" )
+  local args=("$strategy" "$file")
   if [ -n "$extra_key" ]; then
-    args+=( "$extra_key" "$extra_val" )
+    args+=("$extra_key" "$extra_val")
   fi
   local out
   if ! out="$(bash "$SCRIPT_DIR/sync-canonical.sh" "${args[@]}" 2>/dev/null)"; then
@@ -238,11 +238,11 @@ canonical_args_for() {
   _canonical_extra_key=""
   _canonical_extra_val=""
   case "$strategy" in
-    additive-merge|additive-merge-with-diff)
+    additive-merge | additive-merge-with-diff)
       _canonical_extra_key="--owned-sections"
       _canonical_extra_val="$(printf '%s' "$item" | jq -c '.owned_sections // []')"
       ;;
-    owned-regions|section)
+    owned-regions | section)
       _canonical_extra_key="--owned-boundaries"
       _canonical_extra_val="$(printf '%s' "$item" | jq -c '.owned_boundaries // []')"
       ;;
@@ -258,7 +258,7 @@ stamp_md_header() {
   local file="$1"
   local upstream_key="$2"
   local sha12="$3"
-  local kind="$4"  # bootstrap | authoritative
+  local kind="$4" # bootstrap | authoritative
   bash "$SCRIPT_DIR/sync-write-header.sh" "$file" "$upstream_key" "$sha12" "$kind" >/dev/null
 }
 
@@ -296,7 +296,7 @@ stamp_hash_marker() {
       next
     }
     { print }
-  ' "$file" > "$tmp"
+  ' "$file" >"$tmp"
   mv "$tmp" "$file"
 }
 
@@ -313,7 +313,7 @@ is_json_target() {
 # block replacement when strategy is structured).
 is_gitignore_target() {
   case "$1" in
-    *.gitignore|*/.gitignore|.gitignore) return 0 ;;
+    *.gitignore) return 0 ;; # also matches .gitignore and dir/.gitignore
     *) return 1 ;;
   esac
 }
@@ -370,7 +370,7 @@ replace_gitignore_block() {
       $0 == tag { in_block = 1; next }
       !in_block { print }
       END { if (in_block) printf "%s\n", newblock }
-    ' "$local_file" > "$tmp_out"
+    ' "$local_file" >"$tmp_out"
   else
     # Append the plugin block to the local file, preceded by a blank line if
     # the local file does not already end with one.
@@ -379,12 +379,12 @@ replace_gitignore_block() {
       local last_byte
       last_byte="$(tail -c 1 "$tmp_out")"
       if [ "$last_byte" != $'\n' ]; then
-        printf '\n' >> "$tmp_out"
+        printf '\n' >>"$tmp_out"
       fi
       # Ensure a blank-line separator before the appended block.
-      printf '\n%s\n' "$plugin_block" >> "$tmp_out"
+      printf '\n%s\n' "$plugin_block" >>"$tmp_out"
     else
-      printf '%s\n' "$plugin_block" > "$tmp_out"
+      printf '%s\n' "$plugin_block" >"$tmp_out"
     fi
   fi
 
@@ -436,25 +436,43 @@ apply_owned_regions() {
   local content_path boundaries merged_path sha
 
   content_path="$(plugin_content_path "$item")" \
-    || { printf 'apply_owned_regions: failed to resolve plugin source for %s' "$target"; return 1; }
+    || {
+      printf 'apply_owned_regions: failed to resolve plugin source for %s' "$target"
+      return 1
+    }
   [ -f "$target" ] \
-    || { printf 'apply_owned_regions: target missing: %s' "$target"; return 1; }
+    || {
+      printf 'apply_owned_regions: target missing: %s' "$target"
+      return 1
+    }
 
   boundaries="$(printf '%s' "$item" | jq -c '.owned_boundaries // []')"
   merged_path="$tmp_workdir/merged.$$.$RANDOM"
 
   bash "$SCRIPT_DIR/sync-owned-regions-apply.sh" "$target" "$content_path" "$boundaries" \
-      > "$merged_path" 2>>"$tmp_workdir/merge.err" \
-    || { printf 'apply_owned_regions: owned-regions merge failed for %s' "$target"; return 1; }
+    >"$merged_path" 2>>"$tmp_workdir/merge.err" \
+    || {
+      printf 'apply_owned_regions: owned-regions merge failed for %s' "$target"
+      return 1
+    }
   mv "$merged_path" "$target" \
-    || { printf 'apply_owned_regions: failed to write merged content to %s' "$target"; return 1; }
+    || {
+      printf 'apply_owned_regions: failed to write merged content to %s' "$target"
+      return 1
+    }
 
   sha="$(canonical_sha12 owned-regions "$target" --owned-boundaries "$boundaries" 2>/dev/null)"
   [ -n "$sha" ] \
-    || { printf 'apply_owned_regions: failed to compute sha for %s' "$target"; return 1; }
+    || {
+      printf 'apply_owned_regions: failed to compute sha for %s' "$target"
+      return 1
+    }
 
   stamp_md_header "$target" "$upstream_key" "$sha" bootstrap 2>/dev/null \
-    || { printf 'apply_owned_regions: failed to stamp marker on %s' "$target"; return 1; }
+    || {
+      printf 'apply_owned_regions: failed to stamp marker on %s' "$target"
+      return 1
+    }
 
   printf '%s' "$sha"
 }
@@ -466,9 +484,15 @@ apply_gitignore_blocks() {
   local content_path owned_paths_json count sha i tag
 
   content_path="$(plugin_content_path "$item")" \
-    || { printf 'apply_gitignore_blocks: failed to resolve plugin source for %s' "$target"; return 1; }
+    || {
+      printf 'apply_gitignore_blocks: failed to resolve plugin source for %s' "$target"
+      return 1
+    }
   [ -f "$target" ] \
-    || { printf 'apply_gitignore_blocks: target missing: %s' "$target"; return 1; }
+    || {
+      printf 'apply_gitignore_blocks: target missing: %s' "$target"
+      return 1
+    }
 
   owned_paths_json="$(printf '%s' "$item" | jq -c '.owned_paths // []')"
   count="$(printf '%s' "$owned_paths_json" | jq -r 'length')"
@@ -476,15 +500,24 @@ apply_gitignore_blocks() {
   for ((i = 0; i < count; i++)); do
     tag="$(printf '%s' "$owned_paths_json" | jq -r ".[$i]")"
     replace_gitignore_block "# $tag" "$target" "$content_path" 2>>"$tmp_workdir/gitignore.err" \
-      || { printf 'apply_gitignore_blocks: block replacement failed for tag %s in %s' "$tag" "$target"; return 1; }
+      || {
+        printf 'apply_gitignore_blocks: block replacement failed for tag %s in %s' "$tag" "$target"
+        return 1
+      }
   done
 
   sha="$(canonical_sha12 structured "$target" --owned-paths "$owned_paths_json" 2>/dev/null)"
   [ -n "$sha" ] \
-    || { printf 'apply_gitignore_blocks: failed to compute sha for %s' "$target"; return 1; }
+    || {
+      printf 'apply_gitignore_blocks: failed to compute sha for %s' "$target"
+      return 1
+    }
 
   stamp_hash_marker "$target" "$upstream_key" "$sha" 2>/dev/null \
-    || { printf 'apply_gitignore_blocks: failed to stamp marker on %s' "$target"; return 1; }
+    || {
+      printf 'apply_gitignore_blocks: failed to stamp marker on %s' "$target"
+      return 1
+    }
 
   printf '%s' "$sha"
 }
@@ -498,9 +531,15 @@ apply_json_dotpath_merge() {
   local content_path owned_paths_json count merge_tmp sha i path plugin_val merged
 
   content_path="$(plugin_content_path "$item")" \
-    || { printf 'apply_json_dotpath_merge: failed to resolve plugin source for %s' "$target"; return 1; }
+    || {
+      printf 'apply_json_dotpath_merge: failed to resolve plugin source for %s' "$target"
+      return 1
+    }
   [ -f "$target" ] \
-    || { printf 'apply_json_dotpath_merge: target missing: %s' "$target"; return 1; }
+    || {
+      printf 'apply_json_dotpath_merge: target missing: %s' "$target"
+      return 1
+    }
 
   owned_paths_json="$(printf '%s' "$item" | jq -c '.owned_paths // []')"
   count="$(printf '%s' "$owned_paths_json" | jq -r 'length')"
@@ -511,10 +550,18 @@ apply_json_dotpath_merge() {
   for ((i = 0; i < count; i++)); do
     path="$(printf '%s' "$owned_paths_json" | jq -r ".[$i]")"
     plugin_val="$(jq -S ".${path}" "$content_path" 2>/dev/null)" \
-      || { rm -f "$merge_tmp"; printf 'apply_json_dotpath_merge: failed to read plugin value for path .%s in %s' "$path" "$target"; return 1; }
+      || {
+        rm -f "$merge_tmp"
+        printf 'apply_json_dotpath_merge: failed to read plugin value for path .%s in %s' "$path" "$target"
+        return 1
+      }
     merged="$(jq --argjson v "$plugin_val" ".${path} = \$v" "$merge_tmp" 2>/dev/null)" \
-      || { rm -f "$merge_tmp"; printf 'apply_json_dotpath_merge: failed to merge path .%s into %s' "$path" "$target"; return 1; }
-    printf '%s\n' "$merged" > "$merge_tmp"
+      || {
+        rm -f "$merge_tmp"
+        printf 'apply_json_dotpath_merge: failed to merge path .%s into %s' "$path" "$target"
+        return 1
+      }
+    printf '%s\n' "$merged" >"$merge_tmp"
   done
 
   cp "$merge_tmp" "$target"
@@ -522,7 +569,10 @@ apply_json_dotpath_merge() {
 
   sha="$(canonical_sha12 structured "$target" --owned-paths "$owned_paths_json" 2>/dev/null)"
   [ -n "$sha" ] \
-    || { printf 'apply_json_dotpath_merge: failed to compute sha for %s' "$target"; return 1; }
+    || {
+      printf 'apply_json_dotpath_merge: failed to compute sha for %s' "$target"
+      return 1
+    }
 
   printf '%s' "$sha"
 }
@@ -541,18 +591,27 @@ apply_toml_union_preserve() {
   local item="$1" target="$2" upstream_key="$3"
   local plugin_sha
   [ -f "$target" ] \
-    || { printf 'apply_toml_union_preserve: target missing: %s' "$target"; return 1; }
+    || {
+      printf 'apply_toml_union_preserve: target missing: %s' "$target"
+      return 1
+    }
   plugin_sha="$(printf '%s' "$item" | jq -r '.plugin_sha // ""')"
   [ -n "$plugin_sha" ] \
-    || { printf 'apply_toml_union_preserve: missing plugin_sha for %s' "$target"; return 1; }
+    || {
+      printf 'apply_toml_union_preserve: missing plugin_sha for %s' "$target"
+      return 1
+    }
   stamp_hash_marker "$target" "$upstream_key" "$plugin_sha" 2>/dev/null \
-    || { printf 'apply_toml_union_preserve: failed to stamp marker on %s' "$target"; return 1; }
+    || {
+      printf 'apply_toml_union_preserve: failed to stamp marker on %s' "$target"
+      return 1
+    }
   printf '%s' "$plugin_sha"
 }
 
 # Collect results as newline-delimited JSON, wrap into an array at the end.
 results_file="$tmp_workdir/results.jsonl"
-: > "$results_file"
+: >"$results_file"
 
 # ---------- Main loop ----------
 
@@ -561,14 +620,14 @@ is_needs_agent() {
   local classification="$1"
   local strategy="$2"
   case "$classification" in
-    additive_merge_apply|additive_merge_with_diff_apply)
+    additive_merge_apply | additive_merge_with_diff_apply)
       return 0
       ;;
-    conflict|conflict_legacy)
+    conflict | conflict_legacy)
       # Owned-regions and structured (including JSON dot-paths) are handled
       # deterministically: plugin-owned regions/paths always win.
       case "$strategy" in
-        owned-regions|section|structured) return 1 ;;
+        owned-regions | section | structured) return 1 ;;
         *) return 0 ;;
       esac
       ;;
@@ -576,7 +635,7 @@ is_needs_agent() {
       # All structured fast-forwards are deterministic: .gitignore uses
       # tagged-block replacement; JSON uses dot-path merge.
       case "$strategy" in
-        owned-regions|section|structured) return 1 ;;
+        owned-regions | section | structured) return 1 ;;
       esac
       ;;
   esac
@@ -586,7 +645,7 @@ is_needs_agent() {
 # Detect the "no-op" classifications the agent has nothing to do for.
 is_skipped() {
   case "$1" in
-    unchanged|local_only) return 0 ;;
+    unchanged | local_only) return 0 ;;
   esac
   return 1
 }
@@ -604,15 +663,15 @@ while IFS= read -r item; do
   # Skip / needs-agent fast paths.
   if [ "$classification" = "error" ]; then
     err_msg="$(printf '%s' "$item" | jq -r '.error // "unknown classify error"')"
-    emit_result "$target" "$upstream_key" "$classification" "error" "" "$(jq -nc --arg e "$err_msg" '{error: $e}')" >> "$results_file"
+    emit_result "$target" "$upstream_key" "$classification" "error" "" "$(jq -nc --arg e "$err_msg" '{error: $e}')" >>"$results_file"
     continue
   fi
   if is_skipped "$classification"; then
-    emit_result "$target" "$upstream_key" "$classification" "skipped" "" >> "$results_file"
+    emit_result "$target" "$upstream_key" "$classification" "skipped" "" >>"$results_file"
     continue
   fi
   if is_needs_agent "$classification" "$strategy"; then
-    emit_result "$target" "$upstream_key" "$classification" "needs-agent" "" >> "$results_file"
+    emit_result "$target" "$upstream_key" "$classification" "needs-agent" "" >>"$results_file"
     continue
   fi
 
@@ -624,7 +683,7 @@ while IFS= read -r item; do
   apply_extra=""
 
   case "$classification" in
-    authoritative_add|authoritative_update)
+    authoritative_add | authoritative_update)
       content_path="$(plugin_content_path "$item")" || content_path=""
       if [ -z "$content_path" ] || [ ! -f "$content_path" ]; then
         err_out="failed to read or render plugin source"
@@ -670,7 +729,7 @@ while IFS= read -r item; do
         else
           # Markdown / TOML / shell-comment files. Pick the right stamper.
           case "$target" in
-            *.md|*.markdown)
+            *.md | *.markdown)
               if stamp_md_header "$target" "$upstream_key" "$plugin_sha" bootstrap 2>/dev/null; then
                 apply_result="marker_stamped"
                 apply_sha="$plugin_sha"
@@ -713,7 +772,7 @@ while IFS= read -r item; do
               stamp_hash_marker "$target" "$upstream_key" "$sha" 2>/dev/null || stamp_ok=0
             else
               case "$target" in
-                *.md|*.markdown)
+                *.md | *.markdown)
                   stamp_md_header "$target" "$upstream_key" "$sha" bootstrap 2>/dev/null || stamp_ok=0
                   ;;
                 *)
@@ -734,9 +793,10 @@ while IFS= read -r item; do
 
     fast_forward)
       case "$strategy" in
-        owned-regions|section)
+        owned-regions | section)
           if result_sha="$(apply_owned_regions "$item" "$target" "$upstream_key" 2>/dev/null)"; then
-            apply_result="applied"; apply_sha="$result_sha"
+            apply_result="applied"
+            apply_sha="$result_sha"
           else
             err_out="fast_forward: $result_sha"
           fi
@@ -744,19 +804,22 @@ while IFS= read -r item; do
         structured)
           if is_gitignore_target "$target"; then
             if result_sha="$(apply_gitignore_blocks "$item" "$target" "$upstream_key" 2>/dev/null)"; then
-              apply_result="applied"; apply_sha="$result_sha"
+              apply_result="applied"
+              apply_sha="$result_sha"
             else
               err_out="fast_forward: $result_sha"
             fi
           elif is_toml_target "$target"; then
             if result_sha="$(apply_toml_union_preserve "$item" "$target" "$upstream_key" 2>/dev/null)"; then
-              apply_result="applied"; apply_sha="$result_sha"
+              apply_result="applied"
+              apply_sha="$result_sha"
             else
               err_out="fast_forward: $result_sha"
             fi
           else
             if result_sha="$(apply_json_dotpath_merge "$item" "$target" "$upstream_key" 2>/dev/null)"; then
-              apply_result="applied"; apply_sha="$result_sha"
+              apply_result="applied"
+              apply_sha="$result_sha"
               apply_extra="$(jq -nc '{sidecar_update_needed: true}')"
             else
               err_out="fast_forward: $result_sha"
@@ -787,7 +850,7 @@ while IFS= read -r item; do
             err_out="bootstrap_create: failed to compute canonical sha for $target"
           else
             case "$target" in
-              *.md|*.markdown)
+              *.md | *.markdown)
                 if stamp_md_header "$target" "$upstream_key" "$sha" bootstrap 2>/dev/null; then
                   apply_result="applied"
                   apply_sha="$sha"
@@ -809,14 +872,15 @@ while IFS= read -r item; do
       fi
       ;;
 
-    conflict|conflict_legacy)
+    conflict | conflict_legacy)
       # Plugin-owned regions/paths always win. The extension strategy encodes
       # what the plugin owns vs. what the project owns, so applying it
       # deterministically is strictly correct even without a baseline marker.
       case "$strategy" in
-        owned-regions|section)
+        owned-regions | section)
           if result_sha="$(apply_owned_regions "$item" "$target" "$upstream_key" 2>/dev/null)"; then
-            apply_result="applied"; apply_sha="$result_sha"
+            apply_result="applied"
+            apply_sha="$result_sha"
           else
             err_out="${classification}: $result_sha"
           fi
@@ -824,19 +888,22 @@ while IFS= read -r item; do
         structured)
           if is_gitignore_target "$target"; then
             if result_sha="$(apply_gitignore_blocks "$item" "$target" "$upstream_key" 2>/dev/null)"; then
-              apply_result="applied"; apply_sha="$result_sha"
+              apply_result="applied"
+              apply_sha="$result_sha"
             else
               err_out="${classification}: $result_sha"
             fi
           elif is_toml_target "$target"; then
             if result_sha="$(apply_toml_union_preserve "$item" "$target" "$upstream_key" 2>/dev/null)"; then
-              apply_result="applied"; apply_sha="$result_sha"
+              apply_result="applied"
+              apply_sha="$result_sha"
             else
               err_out="${classification}: $result_sha"
             fi
           else
             if result_sha="$(apply_json_dotpath_merge "$item" "$target" "$upstream_key" 2>/dev/null)"; then
-              apply_result="applied"; apply_sha="$result_sha"
+              apply_result="applied"
+              apply_sha="$result_sha"
               apply_extra="$(jq -nc '{sidecar_update_needed: true}')"
             else
               err_out="${classification}: $result_sha"
@@ -860,18 +927,18 @@ while IFS= read -r item; do
   if [ -n "$err_out" ]; then
     emit_result "$target" "$upstream_key" "$classification" "error" "" \
       "$(jq -nc --arg e "$err_out" '{error: $e}')" \
-      >> "$results_file"
+      >>"$results_file"
   else
     if [ -z "$apply_result" ]; then
       apply_result="needs-agent"
     fi
     emit_result "$target" "$upstream_key" "$classification" "$apply_result" "$apply_sha" "$apply_extra" \
-      >> "$results_file"
+      >>"$results_file"
   fi
 done < <(printf '%s' "$items_json" | jq -c '.[]')
 
 if [ -s "$results_file" ]; then
-  jq -s '.' < "$results_file"
+  jq -s '.' <"$results_file"
 else
   printf '[]\n'
 fi

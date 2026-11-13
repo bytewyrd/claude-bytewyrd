@@ -54,7 +54,10 @@ if [ "${1:-}" != "" ]; then
   arg="${arg%.md}"
   # Disallow path separators in the cleaned value — only basenames allowed.
   case "$arg" in
-    */*) emit_error "rfc-resolve: identifier must not contain '/' (got: $1)"; exit 2 ;;
+    */*)
+      emit_error "rfc-resolve: identifier must not contain '/' (got: $1)"
+      exit 2
+      ;;
   esac
   resolved="$(find_by_stem "$arg" || true)"
   if [ -z "$resolved" ]; then

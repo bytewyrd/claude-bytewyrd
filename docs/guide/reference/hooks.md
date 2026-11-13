@@ -62,7 +62,7 @@ Hard failures are not suppressible — Claude Code would error later in the same
 | `exa` | No `mcp__exa__` permission entry in any settings file | Add Exa under `mcpServers` in `~/.claude.json` or `.mcp.json` |
 | `firefox-devtools` | No `mcp__firefox-devtools__` permission entry in any settings file | Install Firefox MCP |
 | `gh-cli` | `gh` not on `PATH` | Install the GitHub CLI |
-| `plugin-version` | The installed plugin version is older than the version that last ran `/sync` on this project | Run `/sync` to update the project, or upgrade the plugin |
+| `plugin-version` | Inactive. It compared the installed plugin version with the one that last ran `/sync`, but the plugin no longer has a version number, so it never fires. The ID is still accepted. | None needed |
 
 ### Suppressing warnings
 

@@ -26,10 +26,12 @@ If the drop reason is not provided, ask: "Why is this RFC being dropped? (one se
 ### 2. Read and verify status
 
 ```bash
-fm="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-frontmatter.sh" "$RFC_PATH")"
+fm="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-frontmatter.sh" "$RFC_PATH")" || { printf '%s\n' "$fm"; exit 1; }
 status="$(printf '%s' "$fm" | jq -r .status)"
 drop_reason="$(printf '%s' "$fm" | jq -r .drop_reason)"
 ```
+
+If this fails, show the error and stop: either the `.error` field of the printed JSON, or the message the script wrote to stderr (for example, that bash >= 4 is required).
 
 If `$status` is `Done` → "This RFC is already done — it cannot be dropped." If `Dropped` → "Already dropped: $drop_reason." Stop in either case. Only `Draft` and `Approved` RFCs can be dropped.
 

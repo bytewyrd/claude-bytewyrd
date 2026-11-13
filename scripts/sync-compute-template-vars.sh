@@ -3,12 +3,14 @@
 # Adds `enabled_plugins_entries` and `pre_tool_use_hook` string keys so
 # sync-render-template.sh can substitute them via its Pass 2 scalar loop.
 # Without these keys the settings.json.tpl render produces invalid JSON.
+# Also adds `ci_jobs_section` (a no-op `ci` job for ci.yml.tpl) when no
+# language is detected; see the ci_jobs_section block below.
 #
 # Args:
 #   $1  Required. Path to project_inputs.json.
 #
 # Output:
-#   stdout: enriched JSON (original keys + two new string keys).
+#   stdout: enriched JSON (original keys + the derived string keys).
 #   stderr: error message if file cannot be read.
 #
 # Exit codes:
@@ -81,9 +83,36 @@ pre_tool_use_hook="$(jq -r '
   end
 ' "$inputs")"
 
+# --- ci_jobs_section ---
+# Expands <CI_JOBS_SECTION> in templates/ci.yml.tpl, which sits directly under
+# `jobs:`. When no language is detected there is nothing to build, but an empty
+# `jobs:` map is an invalid workflow (GitHub rejects it), so emit one no-op job
+# named `ci` that passes and says how to add real checks.
+#
+# When any language is detected the key is left out entirely, so the
+# placeholder survives for /sync Step 4c to fill with per-language jobs (see
+# "ci.yml rendering" in skills/sync/SKILL.md), exactly as before. `has_github`
+# is not a language and does not count.
+ci_jobs_section="$(
+  cat <<'YAML'
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: No language-specific checks yet
+        run: echo "No language was detected, so this workflow has no checks yet. Add jobs to .github/workflows/ci.yml, or add source code and re-run /sync."
+YAML
+)"
+
 # Output the enriched JSON.
 jq \
-  --arg epe  "$enabled_plugins_entries" \
+  --arg epe "$enabled_plugins_entries" \
   --arg ptuh "$pre_tool_use_hook" \
-  '. + {enabled_plugins_entries: $epe, pre_tool_use_hook: $ptuh}' \
+  --arg cijobs "$ci_jobs_section" \
+  'def truthy: . == true or . == "true";
+   ( ((.languages // []) | length) > 0
+     or ([.has_rust, .has_js, .has_go, .has_python, .has_svelte, .has_ruby,
+          .has_rails, .has_k8s_cue, .has_terraform] | map(truthy) | any)
+   ) as $has_language
+   | . + {enabled_plugins_entries: $epe, pre_tool_use_hook: $ptuh}
+   | if $has_language then . else . + {ci_jobs_section: $cijobs} end' \
   "$inputs"

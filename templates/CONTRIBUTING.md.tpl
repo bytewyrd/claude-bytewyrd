@@ -64,4 +64,4 @@ Fix any reported errors before pushing.
 
 ## RFC Process
 
-Significant changes (new features, architectural changes, breaking changes) go through the RFC process. See [docs/rfc-process.md](docs/rfc-process.md).
+Significant changes (new features, architectural changes, breaking changes) go through the RFC process. See [docs/rfc-process.md](rfc-process.md).

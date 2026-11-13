@@ -17,6 +17,14 @@ claude plugin install bytewyrd@bytewyrd --scope project
 
 Once installed, run `/bytewyrd:sync` in any project to bootstrap the conventions.
 
+### Requirements
+
+The plugin's skills run helper scripts with whichever `bash` comes first on your `PATH`. Those scripts need:
+
+- **bash 4 or newer.** macOS ships `/bin/bash` 3.2, which lacks features the scripts rely on. Install a current bash with `brew install bash` and make sure Homebrew's `bin` directory comes before `/bin` on your `PATH`; check with `bash --version`. On bash 3.2, `/sync`, `/rfc-approve`, `/rfc-drop`, and `/rfc-summary` stop with an error naming this requirement.
+- **git** and **jq**.
+- For `/sync`, also **python3 3.11 or newer** and **sha256sum** or **shasum**.
+
 ## What the plugin checks at session start
 
 Every time you start a session in any project, the plugin runs a one-shot requirement check via a `SessionStart` hook. The check is silent when everything is satisfied. When something is missing, you'll see one of two outputs:

@@ -76,21 +76,24 @@ case "$name" in
     ;;
   github-mcp)
     if plugin_enabled "github@claude-plugins-official"; then
-      emit_available "$name"; exit 0
+      emit_available "$name"
+      exit 0
     fi
     emit_missing "$name" "github@claude-plugins-official not enabled. Run: claude plugin install github@claude-plugins-official."
     exit 1
     ;;
   context7-mcp)
     if plugin_enabled "context7@claude-plugins-official"; then
-      emit_available "$name"; exit 0
+      emit_available "$name"
+      exit 0
     fi
     emit_missing "$name" "context7@claude-plugins-official not enabled. Run: claude plugin install context7@claude-plugins-official."
     exit 1
     ;;
   code-review-mcp)
     if plugin_enabled "code-review@claude-plugins-official"; then
-      emit_available "$name"; exit 0
+      emit_available "$name"
+      exit 0
     fi
     emit_missing "$name" "code-review@claude-plugins-official not enabled. Run: claude plugin install code-review@claude-plugins-official."
     exit 1

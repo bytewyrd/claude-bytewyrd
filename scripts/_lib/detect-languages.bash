@@ -59,7 +59,7 @@ _dl_svelte_in_package_json() {
     ' "$f" >/dev/null 2>&1; then
       return 0
     fi
-  done <<< "$package_files"
+  done <<<"$package_files"
   return 1
 }
 
@@ -113,7 +113,10 @@ detect_languages() {
   package_files="$(find . -name "package.json" -not -path "*/node_modules/*" 2>/dev/null | sort || true)"
   gomod_files="$(find . -name "go.mod" 2>/dev/null | sort || true)"
   # Python: combine pyproject.toml and setup.py. Dedupe via sort -u.
-  python_files="$( { find . -name "pyproject.toml" 2>/dev/null; find . -name "setup.py" 2>/dev/null; } | sort -u || true)"
+  python_files="$({
+    find . -name "pyproject.toml" 2>/dev/null
+    find . -name "setup.py" 2>/dev/null
+  } | sort -u || true)"
 
   # Stack-detection one-shots.
   local svelte_first gemfile_first rails_app_first k8s_cue_first tf_first terragrunt_first
@@ -161,7 +164,7 @@ detect_languages() {
             [ -n "$pkg_name" ] && member_name="$pkg_name"
           fi
           _dl_append_component "rust" "$member_path" "$member_name"
-        done <<< "$members"
+        done <<<"$members"
       fi
     else
       # Standalone crate(s). One entry per Cargo.toml.
@@ -172,7 +175,7 @@ detect_languages() {
           | sed -E 's/^name[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/' || true)"
         [ -z "$pkg_name" ] && pkg_name="$(basename "$(cd "$dir" && pwd)")"
         _dl_append_component "rust" "$dir" "$pkg_name"
-      done <<< "$cargo_files"
+      done <<<"$cargo_files"
     fi
   fi
 
@@ -184,7 +187,7 @@ detect_languages() {
       pkg_name="$(jq -r '.name // ""' "$f" 2>/dev/null || echo "")"
       [ -z "$pkg_name" ] && pkg_name="$(basename "$(cd "$dir" && pwd)")"
       _dl_append_component "js" "$dir" "$pkg_name"
-    done <<< "$package_files"
+    done <<<"$package_files"
   fi
 
   # Go: one component per go.mod. Use dirname for the name.
@@ -195,7 +198,7 @@ detect_languages() {
       dir="$(dirname "$f")"
       name="$(basename "$(cd "$dir" && pwd)")"
       _dl_append_component "go" "$dir" "$name"
-    done <<< "$gomod_files"
+    done <<<"$gomod_files"
   fi
 
   # Python: one component per pyproject.toml or setup.py.
@@ -206,15 +209,15 @@ detect_languages() {
       dir="$(dirname "$f")"
       name="$(basename "$(cd "$dir" && pwd)")"
       _dl_append_component "python" "$dir" "$name"
-    done <<< "$python_files"
+    done <<<"$python_files"
   fi
 
   # --- Compute stack flags ---
   local has_rust=false has_js=false has_go=false has_python=false
-  [ -n "$cargo_files" ]   && has_rust=true
+  [ -n "$cargo_files" ] && has_rust=true
   [ -n "$package_files" ] && has_js=true
-  [ -n "$gomod_files" ]   && has_go=true
-  [ -n "$python_files" ]  && has_python=true
+  [ -n "$gomod_files" ] && has_go=true
+  [ -n "$python_files" ] && has_python=true
 
   local has_svelte=false
   if [ -n "$svelte_first" ]; then
@@ -252,15 +255,18 @@ detect_languages() {
   done
 
   # --- Export results to caller via DL_* variables ---
-  DL_LANGUAGES="$languages_json"
-  DL_COMPONENT_ROOTS="$component_roots"
-  DL_HAS_RUST="$has_rust"
-  DL_HAS_JS="$has_js"
-  DL_HAS_GO="$has_go"
-  DL_HAS_PYTHON="$has_python"
-  DL_HAS_SVELTE="$has_svelte"
-  DL_HAS_RUBY="$has_ruby"
-  DL_HAS_RAILS="$has_rails"
-  DL_HAS_K8S_CUE="$has_k8s_cue"
-  DL_HAS_TERRAFORM="$has_terraform"
+  # shellcheck disable=SC2034 # DL_* are outputs, read by the scripts that source this file.
+  {
+    DL_LANGUAGES="$languages_json"
+    DL_COMPONENT_ROOTS="$component_roots"
+    DL_HAS_RUST="$has_rust"
+    DL_HAS_JS="$has_js"
+    DL_HAS_GO="$has_go"
+    DL_HAS_PYTHON="$has_python"
+    DL_HAS_SVELTE="$has_svelte"
+    DL_HAS_RUBY="$has_ruby"
+    DL_HAS_RAILS="$has_rails"
+    DL_HAS_K8S_CUE="$has_k8s_cue"
+    DL_HAS_TERRAFORM="$has_terraform"
+  }
 }

@@ -61,9 +61,9 @@ printf '%s' "$preflight_json" | jq '{
   has_rails:        (.has_rails // false),
   has_k8s_cue:      (.has_k8s_cue // false),
   has_terraform:    (.has_terraform // false)
-}' > "$classify_inputs"
+}' >"$classify_inputs"
 if enriched="$(bash "$SCRIPT_DIR/sync-compute-template-vars.sh" "$classify_inputs" 2>/dev/null)"; then
-  printf '%s' "$enriched" > "$classify_inputs"
+  printf '%s' "$enriched" >"$classify_inputs"
 fi
 
 classifications_json=""
@@ -96,7 +96,7 @@ fi
 
 # --- Phase 5: build the formatted change summary ---
 partial_json="$(jq -n \
-  --argjson preflight       "$preflight_json" \
+  --argjson preflight "$preflight_json" \
   --argjson classifications "$classifications_json" \
   '{preflight: $preflight, classifications: $classifications}')"
 
@@ -111,14 +111,14 @@ all_unchanged="$(printf '%s' "$classifications_json" \
 
 # --- Combine and emit ---
 jq -n \
-  --argjson preflight          "$preflight_json" \
-  --argjson classifications    "$classifications_json" \
-  --argjson brief_complete     "$brief_complete" \
-  --arg     brief_name         "$brief_name" \
-  --arg     brief_description  "$brief_description" \
-  --argjson rfc_process        "$rfc_process_json" \
-  --arg     summary_text       "$summary_text" \
-  --argjson all_unchanged      "$all_unchanged" \
+  --argjson preflight "$preflight_json" \
+  --argjson classifications "$classifications_json" \
+  --argjson brief_complete "$brief_complete" \
+  --arg brief_name "$brief_name" \
+  --arg brief_description "$brief_description" \
+  --argjson rfc_process "$rfc_process_json" \
+  --arg summary_text "$summary_text" \
+  --argjson all_unchanged "$all_unchanged" \
   '{
     preflight:         $preflight,
     classifications:   $classifications,

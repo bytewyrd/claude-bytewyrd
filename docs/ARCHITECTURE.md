@@ -32,7 +32,7 @@ Skills are organized by noun-first naming convention (e.g., `best-practices-extr
 **Location:** `agents/`
 **Key interfaces:** Each agent is a single `.md` file with YAML frontmatter (`name`, `description`, optional `model`). Claude Code discovers agents in this directory and makes them available as subagent targets.
 
-**Source:** Agent definitions originated from [VoltAgent/awesome-claude-code-subagents](https://github.com/VoltAgent/awesome-claude-code-subagents) (MIT) and are now permanently locally owned. The upstream repository is organized by category (`categories/{category}/{agent-name}.md`); this plugin flattens them into a single `agents/` directory for simpler discovery. Each locally modified file carries an attribution comment. Future upstream improvements are pulled manually, file by file, when a maintainer judges them worth applying.
+**Source:** Agent definitions originated from [VoltAgent/awesome-claude-code-subagents](https://github.com/VoltAgent/awesome-claude-code-subagents) (MIT) and are now permanently locally owned. The upstream repository is organized by category (`categories/{category}/{agent-name}.md`); this plugin flattens them into a single `agents/` directory for simpler discovery. Attribution lives in [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md), which carries the upstream MIT license text and lists the agents that still contain substantial upstream text; the agent files themselves generally carry no attribution comment. Future upstream improvements are pulled manually, file by file, when a maintainer judges them worth applying.
 
 ### Plugin-local skills (`.claude/skills/`)
 
@@ -52,7 +52,18 @@ Current plugin-local skills:
 
 **Purpose:** Shell-level automation that Claude Code executes in response to session lifecycle events. The plugin currently ships one hook: a `SessionStart` probe that runs once per session in every project where the plugin is enabled.
 **Location:** `hooks/hooks.json` (hook declarations) + `scripts/check-requirements.sh` (probe logic)
-**Key behavior:** The hook is silent when all requirements are met. It emits a warning bundle for soft-dependency gaps (companion plugins not enabled, MCP servers not configured, optional CLI tools absent, installed plugin older than the version that last ran `/sync` on the project) and exits with status 2 only for hard failures (`git` missing, or a stale `claude-plugins-official` reference that Claude Code would error on later). Individual warnings can be suppressed via `BYTEWYRD_SKIP_WARN=<id>` in the user's shell environment.
+**Key behavior:** The hook is silent when all requirements are met. It emits a warning bundle for soft-dependency gaps (companion plugins not enabled, MCP servers not configured, optional CLI tools absent) and exits with status 2 only for hard failures (`git` missing, or a stale `claude-plugins-official` reference that Claude Code would error on later). Individual warnings can be suppressed via `BYTEWYRD_SKIP_WARN=<id>` in the user's shell environment. The `plugin-version` probe, which compared the installed version with the one recorded by `/sync`, is inert now that `plugin.json` carries no `version`.
+
+### CI (`.github/workflows/ci.yml`, `.github/scripts/`)
+
+**Purpose:** Gates merges to `main`. The three jobs, `lint`, `validate`, and `test`, are the checks the branch ruleset is meant to require.
+**Location:** `.github/workflows/ci.yml`. The Python lint helpers `lint-frontmatter.py` and `check-links.py` live in `.github/scripts/` and are tested by `tests/scripts/ci-lint.bats`.
+**Key behavior:**
+- `lint` checks the JSON manifests, `bootstrap-manifest.json` freshness, strict-YAML agent and skill frontmatter, relative Markdown links, shellcheck warnings, and shfmt formatting (style in `.editorconfig`).
+- `validate` runs `claude plugin validate .` with a pinned Claude Code CLI.
+- `test` runs the bats suite.
+
+Actions are pinned to commit SHAs, and shellcheck and shfmt are pinned releases verified by sha256. Jobs run on `ubuntu-26.04` instead of `ubuntu-latest`; GitHub still updates that image weekly.
 
 ## Data Flow
 

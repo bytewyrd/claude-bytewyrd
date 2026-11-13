@@ -16,6 +16,19 @@ require_jq() {
   }
 }
 
+# require_bash_major <min> — exit 2 with a JSON error on stderr if the running
+# bash is older than <min>. Scripts that use bash 4 features (mapfile,
+# associative arrays) call `require_bash_major 4` right after require_jq, so
+# macOS's /bin/bash 3.2 fails with an actionable message instead of
+# "mapfile: command not found" halfway through. The error goes to stderr, not
+# stdout, so it stays visible when a caller captures stdout with $(...).
+require_bash_major() {
+  if [ "${BASH_VERSINFO[0]:-0}" -lt "$1" ]; then
+    emit_error "bytewyrd scripts require bash >= $1; this is bash ${BASH_VERSION:-unknown}. On macOS, install a newer bash (brew install bash) and make sure Homebrew's bin directory comes before /bin on PATH." >&2
+    exit 2
+  fi
+}
+
 # emit_error <message>
 emit_error() {
   jq -n --arg msg "$1" '{error: $msg}'
@@ -76,7 +89,7 @@ plugin_enabled() {
   local user_settings="$HOME/.claude/settings.json"
   local proj_settings=".claude/settings.json"
   if [ -f "$proj_settings" ] && grep -q "\"$id\"[[:space:]]*:[[:space:]]*false" "$proj_settings"; then return 1; fi
-  if [ -f "$proj_settings" ] && grep -q "\"$id\"[[:space:]]*:[[:space:]]*true"  "$proj_settings"; then return 0; fi
-  if [ -f "$user_settings" ] && grep -q "\"$id\"[[:space:]]*:[[:space:]]*true"  "$user_settings"; then return 0; fi
+  if [ -f "$proj_settings" ] && grep -q "\"$id\"[[:space:]]*:[[:space:]]*true" "$proj_settings"; then return 0; fi
+  if [ -f "$user_settings" ] && grep -q "\"$id\"[[:space:]]*:[[:space:]]*true" "$user_settings"; then return 0; fi
   return 1
 }
