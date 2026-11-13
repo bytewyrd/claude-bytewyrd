@@ -1,6 +1,8 @@
 #!/usr/bin/env bats
 # Tests for scripts/_lib/common.bash
 
+bats_require_minimum_version 1.5.0 # run --separate-stderr
+
 setup() {
   load "helpers"
   setup_common
@@ -23,11 +25,12 @@ teardown() {
   assert_output "still-running"
 }
 
-@test "require_bash_major: exits 2 with an actionable JSON error when bash is too old" {
-  run bash -c ". '$LIB' && require_bash_major 999 && echo still-running"
+@test "require_bash_major: exits 2 with an actionable JSON error on stderr when bash is too old" {
+  run --separate-stderr bash -c ". '$LIB' && require_bash_major 999 && echo still-running"
   assert_failure 2
-  refute_output --partial "still-running"
-  msg="$(echo "$output" | jq -r .error)"
+  # Nothing on stdout: callers that capture stdout with $(...) must not swallow it.
+  assert_equal "$output" ""
+  msg="$(echo "$stderr" | jq -r .error)"
   [[ "$msg" == *"require bash >= 999; this is bash ${BASH_VERSINFO[0]}."* ]] || fail "unexpected message: $msg"
   [[ "$msg" == *"brew install bash"* ]] || fail "missing the macOS hint: $msg"
 }
@@ -38,12 +41,23 @@ teardown() {
   # require_bash_major error rather than "mapfile: command not found". The
   # /sync preflight checks up front as well.
   cd "$SCRIPT_ROOT"
+  # mapfile/readarray, associative arrays and namerefs (declare/local/typeset
+  # -A, -gA, -n) and case-modifying expansions such as ${x,,} or ${x^^}.
+  bash4='\b(mapfile|readarray)\b|\b(declare|local|typeset)[[:space:]]+-[a-zA-Z]*[An]\b|\$\{[A-Za-z_][A-Za-z0-9_]*(,,?|\^\^?)\}'
+  uses_bash4() { grep -vE '^[[:space:]]*#' "$1" | grep -qE "$bash4"; }  # ignore comment lines
+  guarded() { grep -qE '^require_bash_major 4\b' "$1"; }
   missing=""
   for f in scripts/*.sh; do
-    if grep -qE '\b(mapfile|readarray)\b|(declare|local|typeset) -A' "$f" \
-        && ! grep -qE '^require_bash_major 4\b' "$f"; then
+    if uses_bash4 "$f" && ! guarded "$f"; then
       missing="$missing $f"
     fi
+  done
+  # A sourced library runs in its caller's bash, so callers must check too.
+  for lib in scripts/_lib/*.bash; do
+    uses_bash4 "$lib" || continue
+    for f in $(grep -lF "_lib/$(basename "$lib")" scripts/*.sh); do
+      guarded "$f" || missing="$missing $f(sources $(basename "$lib"))"
+    done
   done
   [ -z "$missing" ] || fail "scripts use bash 4 features without require_bash_major 4:$missing"
   grep -qE '^require_bash_major 4\b' scripts/sync-preflight.sh || fail "sync-preflight.sh must check the bash version"

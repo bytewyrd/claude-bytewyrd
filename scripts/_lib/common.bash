@@ -16,14 +16,15 @@ require_jq() {
   }
 }
 
-# require_bash_major <min> — exit 2 with a JSON error if the running bash is
-# older than <min>. Scripts that use bash 4 features (mapfile, associative
-# arrays) call `require_bash_major 4` right after require_jq, so macOS's
-# /bin/bash 3.2 fails with an actionable message instead of
-# "mapfile: command not found" halfway through.
+# require_bash_major <min> — exit 2 with a JSON error on stderr if the running
+# bash is older than <min>. Scripts that use bash 4 features (mapfile,
+# associative arrays) call `require_bash_major 4` right after require_jq, so
+# macOS's /bin/bash 3.2 fails with an actionable message instead of
+# "mapfile: command not found" halfway through. The error goes to stderr, not
+# stdout, so it stays visible when a caller captures stdout with $(...).
 require_bash_major() {
   if [ "${BASH_VERSINFO[0]:-0}" -lt "$1" ]; then
-    emit_error "bytewyrd scripts require bash >= $1; this is bash ${BASH_VERSION:-unknown}. On macOS, install a newer bash (brew install bash) and make sure Homebrew's bin directory comes before /bin on PATH."
+    emit_error "bytewyrd scripts require bash >= $1; this is bash ${BASH_VERSION:-unknown}. On macOS, install a newer bash (brew install bash) and make sure Homebrew's bin directory comes before /bin on PATH." >&2
     exit 2
   fi
 }

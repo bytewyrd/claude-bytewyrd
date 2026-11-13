@@ -36,7 +36,7 @@ rfcs="$(printf '%s' "$result" | jq -c '.rfcs')"
 warnings="$(printf '%s' "$result" | jq -r '.warnings[]?')"
 ```
 
-`$rfcs` is a JSON array sorted ascending by `created` then by `rfc` identifier. Iterate it with `printf '%s' "$rfcs" | jq -c '.[]'` to grab each row as an object for step 3's grouping. Print any per-file `$warnings` (incomplete frontmatter, unrecognized status) so the user sees them before the rendered summary. Exit code 2 only if `docs/rfcs/` does not exist — in that case `$result` contains `{"error":"..."}` (extract via `jq -r .error`) and step 1's "no RFC directory" message is shown.
+`$rfcs` is a JSON array sorted ascending by `created` then by `rfc` identifier. Iterate it with `printf '%s' "$rfcs" | jq -c '.[]'` to grab each row as an object for step 3's grouping. Print any per-file `$warnings` (incomplete frontmatter, unrecognized status) so the user sees them before the rendered summary. If the script exits non-zero, show the error and stop: either `.error` from `$result` (`jq -r .error`), or the message it wrote to stderr (for example, that bash >= 4 is required). A missing `docs/rfcs/` cannot be the cause here, because step 1 already checked for it.
 
 ### 3. Filter and group
 

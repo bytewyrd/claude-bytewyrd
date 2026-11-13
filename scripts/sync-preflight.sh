@@ -110,7 +110,7 @@ require_jq
 # /sync's helpers use mapfile and associative arrays, which macOS's stock
 # /bin/bash 3.2 lacks. Every script runs under the first `bash` on PATH, as
 # this one does, so check it once here and fail before any work starts.
-require_bash_major 4 >&2
+require_bash_major 4
 
 # --- Hard check 4: python3 >= 3.11 must be on PATH (used for TOML parsing). ---
 # TOML canonicalization (mise.toml) decodes via the stdlib `tomllib` module,
