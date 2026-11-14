@@ -90,8 +90,8 @@ tmp="$(mktemp)"
 trap 'rm -f "$tmp"' EXIT
 
 # The reason reaches awk through ENVIRON, not `-v`: `-v` processes backslash
-# escapes in its value, which would undo the YAML escaping done above (a `\"`
-# would turn back into `"`, a `\\` into `\`, a `\n` into a real newline).
+# escapes in its value, which would undo the YAML escaping done above (`\"`
+# would turn back into `"` and `\\` into `\`).
 RFC_DROP_REASON="$escaped_reason" awk -v new_status="$new_status" '
   BEGIN { fm = 0; wrote_dr = 0; drop_reason = ENVIRON["RFC_DROP_REASON"] }
   /^---$/ {

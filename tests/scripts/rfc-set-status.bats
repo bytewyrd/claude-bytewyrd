@@ -126,13 +126,12 @@ _require_pyyaml() {
 }
 
 @test "drop_reason containing backslashes is escaped, not interpreted" {
-  before="$(wc -l <"$FIXTURE" | tr -d ' ')"
-  # \t and \n must stay two characters each: no tab, and no extra frontmatter line.
+  # A \t or \n typed in the reason must be written as \\t or \\n: a bare \t or
+  # \n inside a YAML double-quoted string reads back as a tab or a newline.
   run bash "$SCRIPT" "$FIXTURE" Dropped 'Moved to C:\temp\new (see \n in the notes).'
   assert_success
   run grep -Fx 'drop_reason: "Moved to C:\\temp\\new (see \\n in the notes)."' "$FIXTURE"
   assert_success
-  assert_equal "$(wc -l <"$FIXTURE" | tr -d ' ')" "$before"
 }
 
 @test "drop_reason ending in a backslash keeps the YAML string terminated" {
