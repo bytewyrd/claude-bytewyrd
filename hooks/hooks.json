@@ -1,20 +1,5 @@
 {
   "hooks": {
-    "SubagentStop": [
-      {
-        "matcher": "(^|:)feature-engineer$",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "echo 'Post-feature-implementation: if this feature affects user-visible behavior (a new skill, an agent change, a new CLI flag, a new workflow), consider running /docs-review against the changed paths to check whether docs/guide/** needs updates.'"
-          },
-          {
-            "type": "command",
-            "command": "mkdir -p .bytewyrd && : > .bytewyrd/last-feature-engineer-stop"
-          }
-        ]
-      }
-    ],
     "SessionStart": [
       {
         "matcher": "compact",

@@ -60,3 +60,55 @@ teardown() {
   run bash -c "echo '$output' | jq -e .error"
   assert_success
 }
+
+# --- YAML double-quoted escapes ---------------------------------------------
+# rfc-set-status.sh writes drop_reason as a YAML double-quoted scalar and escapes
+# \ and " inside it. The reader must give back the original text.
+
+@test "unescapes \\\" and \\\\ in double-quoted values" {
+  cat > docs/rfcs/2026-01-01-escaped.md <<'EOS'
+---
+rfc: "2026-01-01-escaped"
+title: "Replace \"sync\" with scaffold"
+author: "Test User"
+status: "Dropped"
+created: "2026-01-01"
+drop_reason: "Superseded by the \"init\" RFC; see C:\\temp\\notes."
+---
+
+## Summary
+EOS
+  run bash "$SCRIPT" "docs/rfcs/2026-01-01-escaped.md"
+  assert_success
+  assert_equal "$(echo "$output" | jq -r .title)"       'Replace "sync" with scaffold'
+  assert_equal "$(echo "$output" | jq -r .drop_reason)" 'Superseded by the "init" RFC; see C:\temp\notes.'
+}
+
+@test "reads back exactly what rfc-set-status.sh wrote for quotes and backslashes" {
+  reason='Superseded by the "init" RFC; see C:\temp\notes, trailing\'
+  run bash "$SCRIPT_ROOT/scripts/rfc-set-status.sh" "$FIXTURE" Dropped "$reason"
+  assert_success
+  run bash "$SCRIPT" "$FIXTURE"
+  assert_success
+  assert_equal "$(echo "$output" | jq -r .drop_reason)" "$reason"
+}
+
+@test "a value that is not a clean double-quoted scalar still has its quotes dropped" {
+  # Plain and trailing-comment values are not unescaped: the old behaviour stays.
+  cat > docs/rfcs/2026-01-01-plain.md <<'EOS'
+---
+rfc: 2026-01-01-plain
+title: Plain "title"
+author: "Test User"
+status: "Draft" # still a draft
+created: 2026-01-01
+drop_reason: ~
+---
+EOS
+  run bash "$SCRIPT" "docs/rfcs/2026-01-01-plain.md"
+  assert_success
+  assert_equal "$(echo "$output" | jq -r .rfc)"     "2026-01-01-plain"
+  assert_equal "$(echo "$output" | jq -r .title)"   "Plain title"
+  assert_equal "$(echo "$output" | jq -r .status)"  "Draft # still a draft"
+  assert_equal "$(echo "$output" | jq -r .created)" "2026-01-01"
+}
