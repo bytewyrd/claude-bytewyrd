@@ -55,6 +55,8 @@ rm -f .bytewyrd/last-feature-engineer-stop
 
 This prevents the `SessionStart compact` hook from re-echoing the reminder after the review has been completed or explicitly skipped. If the user wants to dismiss the reminder manually (without running `/docs-review`), they can run `rm -f .bytewyrd/last-feature-engineer-stop` directly.
 
+The `SubagentStop` hook that wrote this sentinel is temporarily removed until PR 1 of RFC `2026-11-09-init-and-doctor` re-adds it safely, so the sentinel exists only if an earlier plugin version wrote it.
+
 ---
 
 # Documentation review protocol (passed as the subagent's prompt)

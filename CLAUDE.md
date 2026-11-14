@@ -167,7 +167,7 @@ The skill enforces a six-phase protocol: pre-flight (resolve scope, discover tes
 
 Run `/docs-review <scope-hint>` when:
 
-- A `/rfc-implement` just landed user-visible changes (a new skill, an agent change, a new flag, a new workflow) — check whether `docs/guide/**` needs updates to match. (A `SubagentStop` hook on `feature-engineer` surfaces a reminder at this moment.)
+- A `/rfc-implement` just landed user-visible changes (a new skill, an agent change, a new flag, a new workflow) — check whether `docs/guide/**` needs updates to match. (The `SubagentStop` reminder hook on `feature-engineer` is temporarily removed until PR 1 of RFC `2026-11-09-init-and-doctor` re-adds it safely, so nothing prompts for this today.)
 - `/sync` reports the docs-agent definition has improved — re-audit `docs/guide/**` with the updated checks.
 - A user reports a tutorial does not work, a how-to guide references a missing flag, or a reference page is out of date.
 - Before a release — sweep `docs/guide/**` to confirm no broken examples or stale references ship to users.

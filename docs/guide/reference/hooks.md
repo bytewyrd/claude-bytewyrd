@@ -6,6 +6,8 @@ Project-local hooks — defined in `.claude/settings.json` in the plugin's own c
 
 ## SubagentStop — feature-engineer reminder
 
+> **Temporarily removed** until PR 1 of RFC `2026-11-09-init-and-doctor` re-adds it safely: the hook wrote its sentinel through `.bytewyrd`, which a committed symlink can point outside the repository. The compact reminder below therefore fires only for a sentinel that an earlier plugin version wrote in the last 24 hours.
+
 **Trigger:** fires whenever a `bytewyrd:feature-engineer` subagent finishes.
 
 **Behavior:**
