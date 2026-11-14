@@ -101,5 +101,5 @@ If a finding seems to require editing one of these files, the plan will say so a
 
 ## Related
 
-- [Reference: Hooks](../reference/hooks.md) — the `SubagentStop` hook that reminds you to run `/docs-review` after a feature-engineer finishes.
+- [Reference: Hooks](../reference/hooks.md) — the `SubagentStop` hook that reminds you to run `/docs-review` after a feature-engineer finishes (temporarily removed until PR 1 of RFC `2026-11-09-init-and-doctor` re-adds it safely).
 - [Reference: Skills](../reference/skills.md) — full skill description for `/docs-review`.

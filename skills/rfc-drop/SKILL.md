@@ -1,6 +1,7 @@
 ---
 name: rfc-drop
 description: Use to drop an RFC that will not be implemented. Sets status to Dropped, records the reason, and commits. Triggered by "/rfc-drop [RFC number or filename] [reason]".
+disable-model-invocation: true
 ---
 
 # RFC Drop

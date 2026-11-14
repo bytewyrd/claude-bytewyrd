@@ -1,6 +1,7 @@
 ---
 name: best-practices-sync
 description: Use inside the bytewyrd plugin's checkout to promote vetted global best-practice entries into the plugin's sync content. Run after accumulating a few entries via /best-practices-record. For each candidate it detects whether a conceptually similar entry already exists in the sync file — if so, it shows both versions plus an Opus-generated combined version and asks the user to pick one. Approved entries are appended to skills/sync/SKILL.md and removed from ~/.claude/BEST_PRACTICES.md.
+disable-model-invocation: true
 ---
 
 # Sync Best Practices Into Plugin

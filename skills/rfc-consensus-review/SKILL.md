@@ -46,7 +46,7 @@ If this is a repeat invocation in an iteration loop, the caller provides a brief
 
 Format:
 > **Already addressed in prior iterations — do not re-raise unless the fix was incomplete or introduced a new problem.** If you believe a prior fix got something wrong, say specifically what changed and why it's still broken. Do not simply repeat the original concern.
-> Topics: [comma-separated list of fixed topics, e.g. "billing-admin fallback comment wording", "validation >= 1 on kill_switch_amount", "requirements-dev.txt runtime deps"]
+> Topics: [comma-separated list of fixed topics, e.g. "wording of the Rollback section", "missing exit code for the failure path", "AC-3 is not automatable as written"]
 
 If no prior context exists, omit this block entirely.
 
@@ -83,7 +83,7 @@ Once all five agents return:
 **4b. Verify and classify.** For each group, independently determine its type — do not rely solely on what reviewers labeled it.
 
 - Read the relevant RFC section.
-- For any finding that makes a factual claim about GCP behavior, provider semantics, library behavior, or code execution: verify it. Fetch the relevant doc page, grep the code, or read the file. This is mandatory when reviewer confidence is mixed or low, or when the claim is the sole basis for a Critical/Moderate classification.
+- For any finding that makes a factual claim about cloud-provider or other external-service behavior, library behavior, or code execution: verify it. Fetch the relevant doc page, grep the code, or read the file. This is mandatory when reviewer confidence is mixed or low, or when the claim is the sole basis for a Critical/Moderate classification.
 - Classify as `bug` (verified wrong), `needs-research` (plausible but unconfirmed after reading the RFC), `design` (RFC is defensible; this is a preference), or `nit` (clarity only).
 - If verification shows the RFC is already correct, close as `false-positive`. Note the evidence so it can be added to the previously-addressed context for the next iteration.
 
@@ -106,8 +106,6 @@ Without asking for confirmation, spawn a `bytewyrd:rfc-architect` agent (`model:
 - The RFC content
 - The complete list of verified bugs grouped by tier (Critical → Moderate → Minor)
 - Instruction: fix every bug in the list, run the self-review checklist after, do not change status, do not commit
-
-Run the reflow script after prose changes (see memory for the script).
 
 Then print a brief changelog:
 

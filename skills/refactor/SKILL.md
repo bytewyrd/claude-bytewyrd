@@ -2,6 +2,7 @@
 name: refactor
 description: Run a deliberate refactoring pass on a scoped set of files. The skill instructs the main agent to spawn the refactoring-specialist subagent on Opus with max effort, with the six-phase protocol as the prompt. Use when about to extend code that has thin test coverage, when a structural smell will be amplified by an upcoming feature, when reviewing a recent PR for cleanup before merge, or any time refactoring should be a first-class step rather than tacked-on cleanup. Not for tiny renames — for those, just edit the files. Triggered by "/refactor [scope-hint]".
 argument-hint: "[scope-hint]"
+disable-model-invocation: true
 ---
 
 # /refactor — Deliberate Refactoring Pass
@@ -208,4 +209,4 @@ Do not edit the report after returning it. The parent decides what to do with th
 - **Tiny renames** (one variable, one method) — just edit the files. The plan-and-approve gate adds more friction than the rename's reasoning is worth.
 - **Bug fixes** — a fix is a behavior change; use feature-engineer or an RFC instead.
 - **Greenfield code** — no existing behavior to preserve, no characterization tests to anchor; you want feature-engineer for fresh implementation, not refactoring-specialist.
-- **Cross-cutting architectural changes** that span unbounded scope (e.g., "introduce hexagonal architecture across the whole codebase") — write an RFC first via `/rfc-new`; the RFC implementation phase can then invoke `/refactor` against each subset.
+- **Cross-cutting architectural changes** that span unbounded scope (e.g., "introduce hexagonal architecture across the whole codebase") — write an RFC first via `/rfc-new`; while implementing the RFC the user can then run `/refactor` against each subset.

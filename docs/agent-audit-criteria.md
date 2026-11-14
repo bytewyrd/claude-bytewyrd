@@ -1,6 +1,6 @@
 ---
 version: v1
-last_updated: 2026-05-12
+last_updated: 2026-11-13
 ---
 
 # Agent Audit Criteria
@@ -21,7 +21,7 @@ The `tools:` frontmatter field must either be omitted (which inherits Claude Cod
 
 The complete set of Claude Code's surfaced tools is documented in the companion RFC `2026-05-10-claude-agent-author-agent`'s "Standard tool names" section, which is the single source of truth for H1 validation. The `claude-agent-author` agent inherits that list.
 
-As a quick reference, the v1 surfaced set includes: `Read`, `Write`, `Edit`, `MultiEdit`, `Bash`, `Grep`, `Glob`, `Agent` (`Task` is a legacy alias), `Skill`, `AskUserQuestion`, `ToolSearch`, `WebFetch`, `WebSearch`, `TodoWrite`, `NotebookEdit`, `EnterPlanMode`, `ExitPlanMode`, `TaskCreate`, `TaskGet`, `TaskList`, `ListMcpResourcesTool`, `ReadMcpResourceTool`, `CronCreate`, `CronDelete`, `CronList`, plus `mcp__*` prefixes for installed MCP servers.
+As a quick reference, the v1 surfaced set includes: `Read`, `Write`, `Edit`, `Bash`, `Grep`, `Glob`, `Agent` (`Task` is a legacy alias), `Skill`, `AskUserQuestion`, `ToolSearch`, `WebFetch`, `WebSearch`, `TodoWrite`, `NotebookEdit`, `EnterPlanMode`, `ExitPlanMode`, `TaskCreate`, `TaskGet`, `TaskList`, `ListMcpResourcesTool`, `ReadMcpResourceTool`, `CronCreate`, `CronDelete`, `CronList`, plus `mcp__*` prefixes for installed MCP servers. `MultiEdit` is not in the set: an earlier revision of this list included it, but Claude Code's tools reference has no such tool and its permissions docs call it legacy, so list `Edit` instead.
 
 External CLIs, SDKs, or libraries (`pytest`, `mypy`, `kubectl`, `terraform`, `wandb`, `langchain`, etc.) are **forbidden** in `tools:`. They silently restrict the subagent to a tool set that does not exist, which prevents the subagent from doing any work.
 

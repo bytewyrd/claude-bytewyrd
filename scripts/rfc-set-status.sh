@@ -89,8 +89,11 @@ esac
 tmp="$(mktemp)"
 trap 'rm -f "$tmp"' EXIT
 
-awk -v new_status="$new_status" -v drop_reason="$escaped_reason" '
-  BEGIN { fm = 0; wrote_dr = 0 }
+# The reason reaches awk through ENVIRON, not `-v`: `-v` processes backslash
+# escapes in its value, which would undo the YAML escaping done above (`\"`
+# would turn back into `"` and `\\` into `\`).
+RFC_DROP_REASON="$escaped_reason" awk -v new_status="$new_status" '
+  BEGIN { fm = 0; wrote_dr = 0; drop_reason = ENVIRON["RFC_DROP_REASON"] }
   /^---$/ {
     fm++
     # Before closing delimiter, inject drop_reason if not already written.

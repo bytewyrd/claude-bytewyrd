@@ -4,7 +4,7 @@
       "upstream_key": "bytewyrd/.claude/settings.json@632b4c58",
       "source": "templates/settings.json.tpl",
       "target": ".claude/settings.json",
-      "template_sha": "9eae2efbae44c42b2f7df3c8b242010c2e64b0aebd96d03decf6a700e1451ec7",
+      "template_sha": "a015e0275a46e54d89663daf0a08068b3935154f94fbd66f66a43e02e07421b6",
       "extension_strategy": "structured",
       "owned_paths": [
         "hooks"

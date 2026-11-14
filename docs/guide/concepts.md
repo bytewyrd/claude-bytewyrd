@@ -44,6 +44,8 @@ A second `SessionStart` hook checks whether a `feature-engineer` agent finished 
 
 **`SubagentStop` — feature-engineer reminder**
 
+> **Temporarily removed** until PR 1 of RFC `2026-11-09-init-and-doctor` re-adds it safely: it wrote its sentinel through `.bytewyrd`, which a committed symlink can point outside the repository. Until then the compact reminder above fires only for a sentinel that an earlier plugin version wrote in the last 24 hours. See the [Hooks reference](reference/hooks.md).
+
 Fires whenever a `bytewyrd:feature-engineer` subagent finishes. Prints a reminder to run `/docs-review` if the implemented feature affects user-visible behavior. Also creates a sentinel file (`.bytewyrd/last-feature-engineer-stop`) that the compact `SessionStart` hook reads.
 
 **Plugin-checkout hooks (project-local)**

@@ -45,15 +45,35 @@ fi
 
 # Parse fields into newline-separated key=value pairs, then convert to JSON via jq.
 parsed="$(awk '
+  # Drop the outer double quotes of a YAML double-quoted scalar and undo the two
+  # escapes rfc-set-status.sh writes (backslash-backslash and backslash-quote).
+  # Any other value keeps the old behaviour: every double quote is dropped.
+  function unq(s,    n, i, c, d, out) {
+    n = length(s)
+    if (n >= 2 && substr(s, 1, 1) == "\"" && substr(s, n, 1) == "\"") {
+      s = substr(s, 2, n - 2)
+      n = n - 2
+      out = ""
+      for (i = 1; i <= n; i++) {
+        c = substr(s, i, 1)
+        d = substr(s, i + 1, 1)
+        if (c == "\\" && (d == "\\" || d == "\"")) { out = out d; i++ }
+        else out = out c
+      }
+      return out
+    }
+    gsub(/"/, "", s)
+    return s
+  }
   BEGIN { fm = 0; rfc=""; title=""; author=""; status=""; created=""; drop_reason="" }
   /^---$/ { fm++; if (fm == 2) exit; next }
   fm == 1 {
-    if ($1 == "rfc:")         { sub(/^rfc: */, "");         gsub(/"/, ""); rfc = $0 }
-    else if ($1 == "title:")  { sub(/^title: */, "");       gsub(/"/, ""); title = $0 }
-    else if ($1 == "author:") { sub(/^author: */, "");      gsub(/"/, ""); author = $0 }
-    else if ($1 == "status:") { sub(/^status: */, "");      gsub(/"/, ""); status = $0 }
-    else if ($1 == "created:"){ sub(/^created: */, "");     gsub(/"/, ""); created = $0 }
-    else if ($1 == "drop_reason:") { sub(/^drop_reason: */, ""); gsub(/"/, ""); drop_reason = $0 }
+    if ($1 == "rfc:")         { sub(/^rfc: */, "");         rfc = unq($0) }
+    else if ($1 == "title:")  { sub(/^title: */, "");       title = unq($0) }
+    else if ($1 == "author:") { sub(/^author: */, "");      author = unq($0) }
+    else if ($1 == "status:") { sub(/^status: */, "");      status = unq($0) }
+    else if ($1 == "created:"){ sub(/^created: */, "");     created = unq($0) }
+    else if ($1 == "drop_reason:") { sub(/^drop_reason: */, ""); drop_reason = unq($0) }
   }
   END {
     # drop_reason: "~" is the canonical "unset" sentinel — normalize to empty.

@@ -10,7 +10,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-Everything merged after the 0.2.0 release notes were written: #94, #96, #110, #111, #112, and #113 (the release-hygiene PR that introduced this section).
+Everything merged after the 0.2.0 release notes were written: #94, #96, #110, #111, #112, #113 (the release-hygiene PR that introduced this section), and #116.
 
 ### Changed
 
@@ -27,6 +27,8 @@ Everything merged after the 0.2.0 release notes were written: #94, #96, #110, #1
   - `/docs-review` now covers `README.md`.
 - **Skill helper scripts** (#94): ten scripts under `scripts/`, each with a JSON stdout contract and bats tests, replace the inline bash/awk in eleven skills. bats-core and its libraries are vendored as submodules under `tests/`.
 - **RFC model tier** (#112): `rfc-process.md` documents Opus as the default rather than the highest available model, and `/rfc-new` can draft with Claude Fable 5 on opt-in.
+- **User-only skills** (#116): `/sync`, `/git-branch-cleanup`, `/rfc-approve`, `/rfc-drop`, `/rfc-implement`, `/refactor` and `/docs-review` carry `disable-model-invocation: true`, so Claude cannot start them on its own and you run them yourself. Claude Code versions around 2.1.138 are reported to ignore the flag for plugin skills ([anthropics/claude-code#22345](https://github.com/anthropics/claude-code/issues/22345)). `/sync` now also asks you to confirm before it does anything, because it is being replaced by scaffold + drift (RFC `2026-11-09-init-and-doctor`) and has known defects. `code-reviewer` and `security-engineer` no longer have the `Write`, `Edit` and `NotebookEdit` tools.
+- **The consumer settings template no longer ships the PreCompact gate** (#116). A blocked compaction can make a request fail when Claude Code was compacting to recover from a context-limit error. Repos that already have the gate lose it, along with any hooks they added under `hooks`, the next time `/sync` runs.
 
 ### Added
 
@@ -37,9 +39,15 @@ Everything merged after the 0.2.0 release notes were written: #94, #96, #110, #1
 
   Actions are pinned to commit SHAs, shellcheck and shfmt are pinned releases verified by sha256, jobs run on `ubuntu-26.04` instead of `ubuntu-latest`, and the token is read-only. See [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md#quality-gate) to run the same checks locally.
 - **Shell style.** `.editorconfig` records the shfmt style (2-space indent, indented case items, binary operators may start a line). The scripts were reformatted once, with no behavior change: their syntax trees are identical before and after.
+- **License section in the README** (#116).
 
 ### Fixed
 
+- **Security: a committed symlink could redirect a hook's write outside the repository** (#116). The `SubagentStop` hook for `feature-engineer` ran `mkdir -p .bytewyrd && : > .bytewyrd/last-feature-engineer-stop` in the project root, and plugin hooks run outside the sandbox. A repository that committed `.bytewyrd` (or the sentinel inside it) as a symlink therefore made the hook create or truncate a file elsewhere. The hook is removed, so the `/docs-review` reminder after a `feature-engineer` run is gone until RFC `2026-11-09-init-and-doctor` re-adds it through a writer that refuses symlinks. Update the plugin to pick up the fix.
+- Five agents (`deployment-engineer`, `microservices-architect`, `rust-engineer`, `sql-pro`, `websocket-engineer`) listed `MultiEdit`, which is not a Claude Code tool, so they had no `Edit`. They now list `Edit` (#116).
+- `/git-branch-cleanup` could delete work that git would have kept (#116). It now fetches before reading state, looks up each branch's PR on its own instead of from a list capped at 30, tries `git branch -d` and a plain `git worktree remove` before the forced forms, and asks per branch or worktree before deleting anything that can lose work: unmerged commits, ignored files in a worktree, or a remote branch with commits missing from main.
+- `rfc-set-status.sh` wrote a drop reason containing a double quote or a backslash as invalid YAML, and `rfc-frontmatter.sh` could not read the escaped form back. Both now handle `\"` and `\\` (#116).
+- `/rfc-consensus-review` told the model to run a "reflow script" that does not exist, and carried examples from another project (#116).
 - Skills invoked bundled scripts by relative path, which failed in consuming projects; they now use `${CLAUDE_PLUGIN_ROOT}/scripts/…` (#110).
 - `/sync` (#111):
   - The project slug is now derived correctly when `/sync` runs from a worktree.

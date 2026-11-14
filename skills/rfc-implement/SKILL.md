@@ -1,6 +1,7 @@
 ---
 name: rfc-implement
 description: Use to begin implementing an Approved RFC. Spawns a feature-engineer agent with the RFC as primary input and marks the RFC as Done when complete. Triggered by "/rfc-implement [RFC number or filename]".
+disable-model-invocation: true
 ---
 
 # RFC Implement
