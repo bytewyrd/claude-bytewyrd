@@ -106,3 +106,54 @@ EOF
   assert_equal "$(echo "$output" | jq -r .status)"      "Dropped"
   assert_equal "$(echo "$output" | jq -r .drop_reason)" "No longer needed."
 }
+
+# --- drop_reason escaping ---------------------------------------------------
+# The reason ends up inside a YAML double-quoted scalar. Each test checks the
+# exact line written, so the contract holds for any implementation of the script.
+
+_require_pyyaml() {
+  python3 -c 'import yaml' 2>/dev/null && return 0
+  # CI installs PyYAML; never let these tests skip there.
+  [ -z "${CI:-}" ] || fail "PyYAML is not importable, and CI must not skip these tests"
+  skip "python3 with PyYAML is required to parse the rewritten frontmatter"
+}
+
+@test "drop_reason containing double quotes is written as an escaped YAML string" {
+  run bash "$SCRIPT" "$FIXTURE" Dropped 'Superseded by the "init" RFC.'
+  assert_success
+  run grep -Fx 'drop_reason: "Superseded by the \"init\" RFC."' "$FIXTURE"
+  assert_success
+}
+
+@test "drop_reason containing backslashes is escaped, not interpreted" {
+  before="$(wc -l <"$FIXTURE" | tr -d ' ')"
+  # \t and \n must stay two characters each: no tab, and no extra frontmatter line.
+  run bash "$SCRIPT" "$FIXTURE" Dropped 'Moved to C:\temp\new (see \n in the notes).'
+  assert_success
+  run grep -Fx 'drop_reason: "Moved to C:\\temp\\new (see \\n in the notes)."' "$FIXTURE"
+  assert_success
+  assert_equal "$(wc -l <"$FIXTURE" | tr -d ' ')" "$before"
+}
+
+@test "drop_reason ending in a backslash keeps the YAML string terminated" {
+  run bash "$SCRIPT" "$FIXTURE" Dropped 'Folded into the parent RFC\'
+  assert_success
+  run grep -Fx 'drop_reason: "Folded into the parent RFC\\"' "$FIXTURE"
+  assert_success
+}
+
+@test "drop_reason with quotes and backslashes round-trips through a YAML parser" {
+  _require_pyyaml
+  export REASON='say "hi", C:\temp\new, a\nb, trailing\'
+  run bash "$SCRIPT" "$FIXTURE" Dropped "$REASON"
+  assert_success
+  run python3 - "$FIXTURE" <<'PY'
+import os, sys, yaml
+
+text = open(sys.argv[1], encoding="utf-8").read()
+front = yaml.safe_load(text.split("---\n")[1])
+assert front["status"] == "Dropped", front["status"]
+assert front["drop_reason"] == os.environ["REASON"], repr(front["drop_reason"])
+PY
+  assert_success
+}
