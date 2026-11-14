@@ -151,6 +151,10 @@ RFC docs, best-practices file, agent delegation table, and CI are set up in one 
 - [RFC Process](docs/rfc-process.md) — the design-first workflow (installed by `/sync`)
 - [Best Practices](docs/BEST_PRACTICES.md) — accumulated session learnings
 
+## License
+
+This plugin is licensed under the [Apache License 2.0](LICENSE). Material derived from third-party projects keeps its own license; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 <!--
 README audience: users — people who want to use or run this project.
 Update this file when:
