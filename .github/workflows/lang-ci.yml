@@ -1,0 +1,75 @@
+# Reusable CI for one language. A caller job runs this workflow through
+# `uses:`, sets `language` to go, js, python or rust, and may set `directory`
+# (the repository root by default); only the matching job runs.
+#
+# Pin bumps: callers in other repositories pin this file to the SHA of a main
+# commit, and a commit can't contain its own SHA. A change here therefore
+# merges to main in its own PR, and the callers' pins move to that main commit
+# afterwards.
+
+name: lang-ci
+on:
+  workflow_call:
+    inputs:
+      language:
+        type: string
+        required: true
+      directory:
+        type: string
+        default: "."
+permissions:
+  contents: read
+jobs:
+  go:
+    if: ${{ inputs.language == 'go' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.directory }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: ${{ inputs.directory }}/go.mod
+      - run: go build ./... && go test ./...
+  js:
+    if: ${{ inputs.language == 'js' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.directory }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - run: bun install && bun test
+  python:
+    if: ${{ inputs.language == 'python' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.directory }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - run: uv sync && uv run pytest
+  rust:
+    if: ${{ inputs.language == 'rust' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.directory }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+          components: clippy
+      - run: cargo build && cargo test && cargo clippy
