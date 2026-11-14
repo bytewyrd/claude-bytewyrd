@@ -151,3 +151,14 @@ jobs:
 
       - name: Run the bats suite
         run: tests/run.sh
+
+  # Not a required check: the ruleset requires only lint, validate and test.
+  # The local `./` call runs lang-ci.yml from this same commit, so it takes no
+  # pin. The header's ubuntu-26.04 rule covers the jobs defined in this file; a
+  # job that calls a reusable workflow can't set runs-on, so lang-ci.yml's jobs
+  # run on its ubuntu-latest, as they do for the repositories that call it.
+  lang-ci-fixture:
+    uses: ./.github/workflows/lang-ci.yml
+    with:
+      language: go
+      directory: tests/fixtures/lang-ci/go
