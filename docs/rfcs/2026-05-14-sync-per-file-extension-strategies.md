@@ -4,7 +4,7 @@ title: "Sync Per-File Extension Strategies"
 author: "Rodrigo Kochenburger"
 status: "Dropped"
 created: "2026-05-14"
-drop_reason: "Superseded by RFC 2026-11-09-init-and-doctor (approved 2026-11-13), which replaces /sync with scaffold + drift."
+drop_reason: "Superseded by RFC 2026-11-09-scaffold-and-drift (approved 2026-11-13), which replaces /sync with scaffold + drift."
 ---
 
 ## Summary
