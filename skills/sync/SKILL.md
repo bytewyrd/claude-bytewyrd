@@ -1,6 +1,7 @@
 ---
 name: sync
 description: Set up or refresh a project repository with all standard conventions — idempotent, safe to re-run whenever the plugin updates. Triggered by "/sync".
+disable-model-invocation: true
 ---
 
 <!-- bootstrap-content-version: 2026-05-12-b9f3e2a -->
@@ -79,7 +80,7 @@ The script also writes `.bytewyrd/docs-agent-version` as a side effect when the 
   The plugin's docs-agent has improved (project=<project_docs_ver>, plugin=<plugin_docs_ver>). Consider running /docs-review against docs/guide/** to re-audit user-facing documentation with the updated checks.
   ```
 
-  Do **not** auto-invoke `/docs-review` — `/sync` only prints the suggestion. The decision to run the review belongs to the main agent or the user.
+  Do **not** invoke `/docs-review` — `/sync` only prints the suggestion, and the skill can only be run by the user. The decision to run the review belongs to the user.
 
 `PROJECT_SLUG` is the raw directory name as-is (e.g., `tinywyrd`, `eve-platform`). It is never changed or asked about. It is used anywhere the machine-readable name is needed: CLI binary references, package name examples, `cd <project-slug>` in setup docs, etc.
 

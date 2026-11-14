@@ -2,6 +2,7 @@
 name: docs-review
 description: Run a scoped documentation review against the codebase. The skill instructs the main agent to spawn the docs-agent subagent on Sonnet, with a seven-phase protocol that audits docs/guide/** and README.md for drift (broken examples, stale references, workflow drift) and coverage gaps against the current code. Respects strict ownership — never touches ARCHITECTURE.md, CONTRIBUTING.md, BEST_PRACTICES.md, project-brief.md, or rfcs/. Use after a feature lands, when /sync reports the docs-agent has improved, or any time the user-facing docs may be out of step with the code. Triggered by "/docs-review [scope-hint]".
 argument-hint: "[scope-hint]"
+disable-model-invocation: true
 ---
 
 # /docs-review — Scoped Documentation Review

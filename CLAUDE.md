@@ -153,7 +153,7 @@ When you add a new skill or agent that depends on a specific external tool, deci
 
 ### Considering /refactor
 
-Before extending or modifying existing code, consider whether a deliberate refactoring pass would make the upcoming change cleaner. Run `/refactor <scope-hint>` when:
+Before extending or modifying existing code, consider whether a deliberate refactoring pass would make the upcoming change cleaner. Ask the user to run `/refactor <scope-hint>` when:
 
 - The area you are about to touch has thin test coverage, and adding characterization tests now will protect both the refactor and the subsequent feature work.
 - A structural smell (long method, fat conditional, primitive obsession, divergent change) will be amplified by the upcoming feature; refactor first so the new code has a clean place to land.
@@ -165,7 +165,7 @@ The skill enforces a six-phase protocol: pre-flight (resolve scope, discover tes
 
 ### Considering /docs-review
 
-Run `/docs-review <scope-hint>` when:
+Ask the user to run `/docs-review <scope-hint>` when:
 
 - A `/rfc-implement` just landed user-visible changes (a new skill, an agent change, a new flag, a new workflow) — check whether `docs/guide/**` needs updates to match. (The `SubagentStop` reminder hook on `feature-engineer` is temporarily removed until PR 1 of RFC `2026-11-09-init-and-doctor` re-adds it safely, so nothing prompts for this today.)
 - `/sync` reports the docs-agent definition has improved — re-audit `docs/guide/**` with the updated checks.

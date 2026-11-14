@@ -1,6 +1,7 @@
 ---
 name: rfc-approve
 description: Use to approve a Draft RFC. Updates status to Approved and commits. This is a human-invoked skill — only humans approve RFCs. Triggered by "/rfc-approve [RFC number or filename]".
+disable-model-invocation: true
 ---
 
 # RFC Approve

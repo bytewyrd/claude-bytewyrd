@@ -64,7 +64,7 @@ This plugin uses an RFC-driven workflow documented in `docs/rfc-process.md`. The
 When you encounter work that does not fit a refactor pass:
 
 - **Behavior changes (bug fixes, new features)** — surface them as "Behavior changes deferred" in the plan and recommend the user invoke `/rfc-new` (if the change requires design) or the `feature-engineer` agent (if the change is well-defined).
-- **Cross-cutting architectural changes** that span unbounded scope — recommend `/rfc-new` first; the RFC implementation phase can then invoke `/refactor` against each subset.
+- **Cross-cutting architectural changes** that span unbounded scope — recommend `/rfc-new` first; while implementing the RFC the user can then run `/refactor` against each subset.
 - **Tiny renames** (one variable, one method) — recommend the user just edit the files directly. The plan-and-approve gate adds more friction than the rename's reasoning is worth.
 - **Greenfield code** — recommend `feature-engineer` for fresh implementation; there is no existing behavior to preserve and no characterization tests to anchor.
 
