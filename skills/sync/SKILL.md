@@ -1,6 +1,6 @@
 ---
 name: sync
-description: Set up or refresh a project repository with all standard conventions — idempotent, safe to re-run whenever the plugin updates. Triggered by "/sync".
+description: Set up or refresh a project repository with all standard conventions. Triggered by "/sync".
 disable-model-invocation: true
 ---
 
@@ -10,7 +10,7 @@ disable-model-invocation: true
 
 **Deprecation guard — do this before anything else.** `/sync` is being replaced by scaffold + drift (RFC `2026-11-09-init-and-doctor`, Approved) and has known defects: it is not idempotent, it can delete user lines inside owned regions, it writes files before the consent gate, it writes hooks into the committed `.claude/settings.json`, and it crashes in a fresh repository. Tell the user this in a few sentences, then ask with `AskUserQuestion` whether to continue (`Continue` / `Cancel`). Stop on anything but an explicit `Continue` — a `Cancel`, a dismissed prompt, or free text that is not a clear yes — and run nothing and write nothing. This prompt comes before the interaction points below, and it is the one output allowed ahead of the output rule.
 
-Sets up or refreshes a project repository with all standard conventions. Idempotent — re-running computes a three-way diff for every plugin-managed artifact and presents a categorized summary (additions, fast-forward updates, conflicts, local-only edits, unchanged) before writing anything.
+Sets up or refreshes a project repository with all standard conventions. Re-running computes a three-way diff for every plugin-managed artifact and presents a categorized summary (additions, fast-forward updates, conflicts, local-only edits, unchanged) before writing anything.
 
 **Output rule:** do not narrate tool calls or internal implementation steps before executing them. The user does not know or care which scripts run internally. Only output the change summary and any required prompts.
 
