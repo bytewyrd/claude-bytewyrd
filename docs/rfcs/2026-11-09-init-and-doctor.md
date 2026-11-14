@@ -144,7 +144,7 @@ Risks:
 
 - **Uninvoked skills** [E13]: the rules and AGENTS.md name them.
 - **Unknown repos on the 0.2.x PreCompact hook** [R35]: the sentinel write stays, with a plain-sh fallback, and the hook's message documents a bypass.
-- **Unresolved dependencies after an update** [R57]: install docs give explicit dependency installs, and CI tests an update, though not the move from a pre-PR install (open; Appendix C).
+- **Unresolved dependencies after an update** [R57]: install docs give explicit dependency installs, and CI's update case re-adds the marketplace at the PR branch to test the move from a pre-PR install. If that can't work in CI, the gap stays open (Appendix C).
 - **Root discovery is wider than membership:** root `bun test` and `pytest` also run non-member packages' tests [R66, E78, E81] (B2).
 
 ## Relationship to other RFCs
@@ -515,7 +515,7 @@ Behaviour:
 3. Each write runs `os.makedirs(parent, exist_ok=True)`, then `create(path, stamp + "\n" + rendered)`.
 4. `main()` catches every exception. It first deletes the files this run created, then exits 1 with the failure lines below. Exceptions that escape anyway, including syntax errors, also exit 1 [R52].
 
-Output goes to stdout unless noted; columns are separated by two spaces, and every repo-derived string goes through `quote()`. The four kinds of CI note, for SKIPPED entries, Ruby, pnpm and pytest, are printed only when `ci.yml` is created, or would be, from `ci-caller.yml`:
+Output goes to stdout unless noted; columns are separated by two spaces, and every repo-derived string goes through `quote()`. The four kinds of CI note, for SKIPPED entries, Ruby, pnpm and pytest, are printed whenever scaffold creates `ci.yml`, or would, from either template. A repo whose manifests are all skipped therefore learns why it got the no-op CI, and a repo that keeps its own CI gets none:
 
 | Situation | Output | Exit |
 |---|---|---|
@@ -587,7 +587,7 @@ A consumer CI that runs drift must pin the plugin ref, since every template comm
 
 **`compact-reminder`**
 
-It works in cwd. If `.bytewyrd/last-feature-engineer-stop` exists and its mtime is less than 86,400 seconds old, it prints the reminder text from `hooks/hooks.json:L9` [R48] verbatim; otherwise it prints nothing. It always exits 0.
+It works in cwd. If `.bytewyrd/last-feature-engineer-stop` exists and its mtime is less than 86,400 seconds old, it prints the reminder text from `hooks/hooks.json:L9` [R48], with "Consider running /docs-review" changed to "Ask the user to run /docs-review", since #116 made that skill user-only [R77]. Otherwise it prints nothing. It always exits 0.
 
 **Frontmatter parsing** (port commits). `load_frontmatter(path)` in `bw.py` is the only code that parses YAML:
 
@@ -1082,7 +1082,7 @@ jobs:
 
 **`hooks/hooks.json`.** `|| true` keeps each Python hook at exit 0 when no Python 3.11 or newer is found (AC-20). The rules hook is a plain `cat` and needs no Python.
 
-- SubagentStop returns: #116 removed it with its unguarded write [R11, R77]. The entry is the one at `0745d32:hooks/hooks.json:L3-L17`, with its matcher and `echo` reminder, but its write becomes `sh "${CLAUDE_PLUGIN_ROOT}/scripts/bw" state-touch last-feature-engineer-stop || true`.
+- SubagentStop returns: #116 removed it with its unguarded write [R11, R77]. The entry is the one at `0745d32:hooks/hooks.json:L3-L17`, with its matcher and `echo` reminder. In the reminder, "consider running /docs-review" becomes "ask the user to run /docs-review", since #116 made that skill user-only [R77], and its write becomes `sh "${CLAUDE_PLUGIN_ROOT}/scripts/bw" state-touch last-feature-engineer-stop || true`.
 - The SessionStart `compact` entry's command becomes `sh "${CLAUDE_PLUGIN_ROOT}/scripts/bw" compact-reminder || true`.
 - The check-requirements entry is replaced by:
 
@@ -1129,7 +1129,7 @@ Outside Claude Code, `${CLAUDE_PLUGIN_ROOT}` is not substituted; use the directo
 - `compat` (new) runs bats and pytest on Python 3.11 under Linux and the latest 3.x under macOS [E57]. On macOS it installs Homebrew bash first, because the image's bash is 3.2 [E68] and the helpers need bash 4 until the retire commit [R49].
 - `history` (new) checks out full history, which `actions/checkout` skips by default [E64], sets up Python as `test` does, and runs the B4 every-commit loop first, then the pin checks with `if: ${{ !cancelled() }}`, since a step without a status function is skipped once an earlier one fails [E87]. A bats run takes about a minute [R69], so the loop's cost grows with the PR's commit count: 120 minutes cover about 100 commits, and a longer PR raises the timeout. On a push to `main` the commit range is empty.
 - `lang-ci-fixture` (from #115) runs `lang-ci.yml` from the same commit against each fixture, one matrix leg per language [E65, E72].
-- `install-check` (new) installs the plugin into a temporary HOME. A second case installs from the GitHub marketplace's `main`, adds the dependencies explicitly as the docs say, and updates with `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` [R57]. The installer and its path come from [E35], and the version argument from [E44]; the checkout pin comes from [R44] and its inputs from [E31]. The fixture job's local `./` call runs the same commit, so it takes no pin [E65]. Open risk: on the implementation PR, the update case moves `main` to `main`, so nothing tests the update from a pre-PR install that brings the hard dependencies. A local clone at `origin/main` as the marketplace, checked out to the PR's commit before `plugin update`, can't stand in, because Claude Code loads a local-path marketplace's relative-path plugin in place, from its working tree, with no update step [E102]; R57's manual run and the explicit dependency installs carry that transition.
+- `install-check` (new) installs the plugin into a temporary HOME. A second case installs from the GitHub marketplace's `main`, adds the dependencies explicitly as the docs say, and updates with `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` [R57]. The installer and its path come from [E35], and the version argument from [E44]; the checkout pin comes from [R44] and its inputs from [E31]. The fixture job's local `./` call runs the same commit, so it takes no pin [E65]. Before `plugin update`, the update case re-adds the marketplace at the PR branch, `bytewyrd/claude-bytewyrd#${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}` [E43]. An install of `main` therefore updates to the PR's commit and the hard dependencies it brings; on a push to `main`, it updates `main` to itself. A local clone can't stand in, because Claude Code loads a local-path marketplace's relative-path plugin in place, from its working tree, with no update step [E102]. The implementation PR verifies the re-add in CI. If no form of it works, the PR drops the step and records the gap under Risks; R57's manual run and the explicit dependency installs then carry the transition.
 
 ```yaml
 jobs:
@@ -1243,6 +1243,7 @@ jobs:
           "$CLAUDE" plugin marketplace add bytewyrd/claude-bytewyrd
           for dep in github context7 code-review; do "$CLAUDE" plugin install "$dep@claude-plugins-official"; done
           "$CLAUDE" plugin install bytewyrd@bytewyrd
+          "$CLAUDE" plugin marketplace add "bytewyrd/claude-bytewyrd#${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
           CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 "$CLAUDE" plugin update bytewyrd@bytewyrd
           "$CLAUDE" plugin list --json | jq -e 'all(.[]; (.errors // []) | length == 0)'
 ```
@@ -1375,7 +1376,7 @@ The user also chose the lean review for this amendment.
 | SIM-A2 | SIM | Major | Re-based on main: SubagentStop returns through state-touch and its three "Temporarily removed" notes go; R65 and its two uses are deleted; R4, R11, R13, R20, R25, R61 and R63 are corrected; moved lines are re-cited | A; B1; B2; C; D2 |
 | SIM-A3 | SIM | Major | Fix lines print one root-anchored `attr_line()` per manifest [R79] | B2; AC-25 |
 | SIM-A4 | SIM | Minor | Manifests are grouped by (language, directory) in step 1, so a collision is two directories with one job id | B2; S39 |
-| SIM-A5 | SIM | Minor | Partly accepted: CI notes and `ci-skipped` appear only with the caller template | B2 |
+| SIM-A5 | SIM | Minor | Partly accepted: `ci-skipped` appears only with the caller template. After the fold, A3 prints scaffold's CI notes with either template | B2 |
 | SIM-A6 | SIM | Minor | `ci-variant` compares the stamp's template with the target table's pick and has its own fix line, and `template-changed` skips that file; `render` never makes a zero-job caller; the `@@job@@` block comes first | B2 |
 | SIM-A7 | SIM | Minor | Partly accepted: SKIPPED reasons are worded; `pin-changed` finds one per distinct value, other refs included; one CR rule; S-steps say "committed". Attribute values are rejected below | B2; B4 |
 | SIM-A8 | SIM | Minor | The job-id loop stays only in #115; `test_bw.py` checks the ids against the jobs, the fixture matrix and the AGENTS.md tags; the header-comment clause is dropped | B1; B4; B5; C |
@@ -1399,7 +1400,7 @@ The user also chose the lean review for this amendment.
 | OPS-A8 | OPS | Minor | The job-id loop checks each job's `if:`, `lint` counts the Rust `--workspace` flags, and the guard job is U2(d) | B4; C |
 | OPS-A9 | OPS | Minor | `history` copies `test`'s setup, logs failing commits in groups, moves submodules and allows 120 minutes; B1 pairs each deletion with its tests [R85, E91] | B1; B4; C |
 | OPS-A10 | OPS | Minor | Rollback reverts only the implementation PR, fixes `lang-ci.yml` forward, re-lands with `git revert <revert-sha>`, and notes the AGENTS.md links [E84] | Rollback |
-| OPS, outside | OPS | Not counted | Recorded as an open risk: the docs say a local-path marketplace loads the plugin in place, so a local clone can't test the update [E102] | Risks; C |
+| OPS, outside | OPS | Not counted | A local clone can't test the update, because a local-path marketplace loads the plugin in place [E102]. After the fold, A4 tries a re-add at the PR branch [E43] and keeps the open risk only if that fails | Risks; C |
 
 Rejected or partly rejected:
 
@@ -1407,6 +1408,13 @@ Rejected or partly rejected:
 - **SIM-A7's "a value counts as unspecified".** A skip with a reason is used instead, so a natural `bytewyrd-ci=false` can't silently act as a no-op.
 - **SEC-A7's optional `bun-version-file`.** The user accepted ignoring subdirectory Bun pins, so the risk is recorded instead.
 - **OPS-A4's timeout input.** Kept, not rejected: U2(b) made it depend on the docs, and the contexts table allows `inputs` in `jobs.<job_id>.timeout-minutes` [E86].
+
+After the fold, the user decided (2026-11-13):
+
+- **A1.** `--frozen-lockfile` stays limited to Bun lockfiles. npm, Yarn and pnpm lockfiles install without it, because Bun 1.4.4's in-memory check of them wasn't run here [E94, R83].
+- **A2.** Both reminders ask the user to run /docs-review, since #116 made it user-only [R77].
+- **A3.** scaffold prints its CI notes whenever it creates `ci.yml`, from either template.
+- **A4.** install-check's update case re-adds the marketplace at the PR branch [E43]. The gap stays an open risk only if that can't work in CI.
 
 ## Appendix E — Related RFCs and PRs
 
