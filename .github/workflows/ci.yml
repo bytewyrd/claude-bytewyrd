@@ -77,6 +77,10 @@ jobs:
       - name: Relative Markdown links resolve
         run: python .github/scripts/check-links.py
 
+      - name: lang-ci.yml checkouts do not persist credentials
+        run: |
+          test "$(grep -c 'uses: actions/checkout@' .github/workflows/lang-ci.yml)" = "$(grep -c 'persist-credentials: false' .github/workflows/lang-ci.yml)"
+
       - name: Install shellcheck and shfmt
         run: |
           bin="$RUNNER_TEMP/bin"
