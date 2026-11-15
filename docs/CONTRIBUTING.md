@@ -91,19 +91,25 @@ chore(scope): tooling, deps, config
 
 ## Quality Gate
 
-CI (`.github/workflows/ci.yml`) runs three jobs on every pull request to `main`. Their names are the checks the branch ruleset is meant to require:
+CI (`.github/workflows/ci.yml`) runs eight jobs on every pull request to `main`. Three of them are the checks the branch ruleset is meant to require:
 
 - **`lint`**:
   - The JSON manifests parse, and `bootstrap-manifest.json` is current.
   - Agent and skill frontmatter is strict YAML.
   - Relative Markdown links resolve.
+  - The `lang-ci-<id>.yml` workflows pass their checks, each named by a comment in the step: one file and one job per language, each with a `lang-ci-fixture-<id>` job, SHA-pinned actions, only `contents: read`, and no secrets.
+  - CI's shellcheck, shfmt and actionlint versions match the pins in `mise.toml`.
   - The shell scripts have no shellcheck warnings and match the shfmt style in `.editorconfig`.
+  - The workflows pass actionlint, which also runs shellcheck on their `run:` blocks.
 - **`validate`**: `claude plugin validate .` with the pinned Claude Code CLI.
 - **`test`**: the bats suite.
 
-To run the same checks locally before pushing (shellcheck, shfmt, and PyYAML must be installed; CI uses shellcheck 0.11.0 and shfmt 3.14.1, and other versions can report differently):
+The other five, `lang-ci-fixture-<id>`, run each `lang-ci-<id>.yml` on its fixture in `tests/fixtures/lang-ci/<id>/`, and are not required.
+
+To run the same checks locally before pushing (PyYAML must be installed; `mise install --locked` installs CI's shellcheck, shfmt and actionlint versions, needs [mise](https://mise.jdx.dev/) 2026.11.1 or newer, and `mise activate` puts them first on `PATH`):
 
 ```bash
+mise install --locked                     # mise.lock covers linux-x64 and macos-arm64; elsewhere, run mise lock --platform <yours> first
 git submodule update --init --recursive   # once: the bats libraries
 tests/run.sh
 scripts/build-manifest.sh --check
@@ -112,6 +118,7 @@ python3 .github/scripts/check-links.py
 SHELL_FILES=$(git ls-files -- 'scripts/*.sh' 'scripts/_lib/*.bash' 'hooks/pre-commit/*.sh' tests/run.sh tests/scripts/helpers.bash)
 shellcheck -x --source-path=SCRIPTDIR --severity=warning $SHELL_FILES
 shfmt -d $SHELL_FILES   # shfmt -w applies the fixes
+actionlint -config-file .github/actionlint.yaml .github/workflows/*.yml
 claude plugin validate .
 ```
 

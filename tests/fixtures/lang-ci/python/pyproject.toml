@@ -1,0 +1,10 @@
+[project]
+name = "lang-ci-fixture"
+version = "0.1.0"
+requires-python = ">=3.11"
+
+[dependency-groups]
+dev = ["pytest==9.2.0"]
+
+[tool.uv.workspace]
+members = ["member"]

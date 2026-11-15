@@ -1,0 +1,41 @@
+# Reusable CI for Rust. A caller job runs this workflow through `uses:` and may
+# set `directory` (the repository root by default) and `timeout-minutes` (30 by
+# default).
+#
+# Pin bumps: callers in other repositories pin the lang-ci-<id>.yml files to
+# the SHA of one main commit, and a commit can't contain its own SHA. A change
+# here therefore merges to main in its own PR, and the callers' pins move to
+# that main commit afterwards.
+
+name: lang-ci-rust
+on:
+  workflow_call:
+    inputs:
+      directory:
+        type: string
+        default: "."
+      timeout-minutes:
+        type: number
+        default: 30
+permissions:
+  contents: read
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.directory }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+          components: clippy
+      - run: |
+          locked=; if [ -f Cargo.lock ]; then locked=--locked; fi
+          cargo build --workspace ${locked:+"$locked"}
+          cargo test --workspace ${locked:+"$locked"}
+          cargo clippy --workspace ${locked:+"$locked"}
