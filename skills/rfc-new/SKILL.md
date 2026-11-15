@@ -1,6 +1,7 @@
 ---
 name: rfc-new
 description: Use to create a new RFC. Generates a date-based identifier, creates the file from template, spawns rfc-architect to fill it in, runs review agents, runs consensus review, fixes critical findings, and presents the finished Draft to the human. Triggered by "/rfc-new <description>".
+compatibility: "Claude Code only: relies on Claude Code subagents, AskUserQuestion or ~/.claude paths. Helper scripts need git, jq, bash >= 4 and python3 >= 3.11."
 ---
 
 # RFC New
@@ -19,6 +20,8 @@ If no argument is provided:
 result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-braindump-list.sh")"
 entries_count="$(printf '%s' "$result" | jq '.entries | length')"
 ```
+
+Outside Claude Code, `${CLAUDE_PLUGIN_ROOT}` is not substituted; use the directory two levels above this SKILL.md.
 
 If `$entries_count` is greater than 0, iterate with `printf '%s' "$result" | jq -r '.entries[] | "\(.n)\t\(.body)"'` to present them as a numbered list and ask "Pick a number to promote, or describe a new RFC." If the user picks a number `N`, use `printf '%s' "$result" | jq -r --argjson n "$N" '.entries[] | select(.n == $n) | .body'` as the description. If they type something else, use that as the description.
 

@@ -20,6 +20,8 @@ RFC_PATH="$(printf '%s' "$result" | jq -r .path)"
 label="$(printf '%s' "$result" | jq -r .label)"
 ```
 
+Outside Claude Code, `${CLAUDE_PLUGIN_ROOT}` is not substituted; use the directory two levels above this SKILL.md.
+
 `$RFC_PATH` is the resolved absolute path; `$label` is a one-line summary such as `RFC 2026-05-12-foo (unique modified file)`. Show `$label` and ask "Use this RFC? (yes/no)" — accept blank as yes. If the user declines, ask "Which RFC?" and re-run with their answer as `$ARG`. If the script exited non-zero, `result` will contain `{"error":"..."}` — extract with `jq -r .error` and show it. `$RFC_PATH` is used by subsequent steps to identify the file being acted on.
 
 ### 2. Verify status

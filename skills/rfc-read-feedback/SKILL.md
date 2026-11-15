@@ -2,6 +2,7 @@
 name: rfc-read-feedback
 description: >-
   Use to address inline FEEDBACK: comments that humans have added to an RFC file. Spawns rfc-architect to incorporate each comment, removes the markers, and runs the self-review checklist. Triggered by "/rfc-read-feedback [RFC number or filename]".
+compatibility: "Claude Code only: relies on Claude Code subagents, AskUserQuestion or ~/.claude paths. Helper scripts need git, jq, bash >= 4 and python3 >= 3.11."
 ---
 
 # RFC Read Feedback
@@ -29,6 +30,8 @@ result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-resolve.sh" "${ARG:-}")"
 RFC_PATH="$(printf '%s' "$result" | jq -r .path)"
 label="$(printf '%s' "$result" | jq -r .label)"
 ```
+
+Outside Claude Code, `${CLAUDE_PLUGIN_ROOT}` is not substituted; use the directory two levels above this SKILL.md.
 
 Show `$label` and ask "Use this RFC? (yes/no)" — accept blank as yes. If the script exited non-zero, extract `.error` from `$result` and show it.
 

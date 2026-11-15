@@ -3,6 +3,7 @@ name: refactor
 description: Run a deliberate refactoring pass on a scoped set of files. The skill instructs the main agent to spawn the refactoring-specialist subagent on Opus with max effort, with the six-phase protocol as the prompt. Use when about to extend code that has thin test coverage, when a structural smell will be amplified by an upcoming feature, when reviewing a recent PR for cleanup before merge, or any time refactoring should be a first-class step rather than tacked-on cleanup. Not for tiny renames — for those, just edit the files. Triggered by "/refactor [scope-hint]".
 argument-hint: "[scope-hint]"
 disable-model-invocation: true
+compatibility: "Claude Code only: relies on Claude Code subagents, AskUserQuestion or ~/.claude paths. Helper scripts need git, jq, bash >= 4 and python3 >= 3.11."
 ---
 
 # /refactor — Deliberate Refactoring Pass
@@ -15,6 +16,8 @@ This skill optionally invokes the `/review` slash command (from the `code-review
 result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/tool-probe.sh" code-review-mcp)"; status=$?
 cr_result="$(printf '%s' "$result" | jq -r .result)"
 ```
+
+Outside Claude Code, `${CLAUDE_PLUGIN_ROOT}` is not substituted; use the directory two levels above this SKILL.md.
 
 - `status=0` (and `$cr_result` = `available`) → run the pre-pass as designed.
 - `status=1` (and `$cr_result` = `missing`) → print exactly: `code-review@claude-plugins-official not enabled — running /refactor without pre-pass review.` and proceed directly to the analysis phase. (`printf '%s' "$result" | jq -r .hint` returns the install hint if the agent wants a longer message.)

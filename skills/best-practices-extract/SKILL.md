@@ -2,6 +2,7 @@
 name: best-practices-extract
 description: >-
   Use at the end of a meaningful session to extract non-obvious learnings into the project's docs/BEST_PRACTICES.md. Generalizable entries can optionally be promoted to the global cross-project pool (~/.claude/BEST_PRACTICES.md) via a single bulk-checkbox prompt in the same approval flow — the agent pre-selects defaults from portability triage and the user confirms or adjusts in one step. Project-specific entries stay project-local under ## Project-Specific.
+compatibility: "Claude Code only: relies on Claude Code subagents, AskUserQuestion or ~/.claude paths. Helper scripts need git, jq, bash >= 4 and python3 >= 3.11."
 ---
 
 # Extract Best Practices
@@ -14,6 +15,8 @@ This skill optionally enriches its output with PR context from the GitHub CLI. T
 result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/tool-probe.sh" gh)"; gh_status=$?
 gh_result="$(printf '%s' "$result" | jq -r .result)"
 ```
+
+Outside Claude Code, `${CLAUDE_PLUGIN_ROOT}` is not substituted; use the directory two levels above this SKILL.md.
 
 - `gh_status=0` (and `$gh_result` = `available`) → use `gh` for PR context as designed.
 - `gh_status=1` and `$gh_result` = `missing` → print exactly: `gh CLI not on PATH — extracting without PR context.` and continue. (Use `printf '%s' "$result" | jq -r .hint` if a longer remediation hint is needed.)

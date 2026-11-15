@@ -1,6 +1,7 @@
 ---
 name: rfc-consensus-review
 description: Spawns 5 parallel independent reviewer agents on an RFC, synthesizes findings by consensus, verifies factual claims, auto-fixes all verified bugs, then walks the human through design decisions one-by-one with RFC context. Critical = 4-5/5 reviewers; Moderate = 3/5; Minor = 1-2/5. Triggered by "/rfc-consensus-review [RFC number or filename]".
+compatibility: "Claude Code only: relies on Claude Code subagents, AskUserQuestion or ~/.claude paths. Helper scripts need git, jq, bash >= 4 and python3 >= 3.11."
 ---
 
 # RFC Consensus Review
@@ -35,6 +36,8 @@ result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-resolve.sh" "${ARG:-}")"
 RFC_PATH="$(printf '%s' "$result" | jq -r .path)"
 label="$(printf '%s' "$result" | jq -r .label)"
 ```
+
+Outside Claude Code, `${CLAUDE_PLUGIN_ROOT}` is not substituted; use the directory two levels above this SKILL.md.
 
 Show `$label` and ask "Use this RFC? (yes/no)" — accept blank as yes. If the script exited non-zero, extract `.error` from `$result` and show it.
 

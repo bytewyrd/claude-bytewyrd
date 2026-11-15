@@ -2,6 +2,7 @@
 name: rfc-implement
 description: Use to begin implementing an Approved RFC. Spawns a feature-engineer agent with the RFC as primary input and marks the RFC as Done when complete. Triggered by "/rfc-implement [RFC number or filename]".
 disable-model-invocation: true
+compatibility: "Claude Code only: relies on Claude Code subagents, AskUserQuestion or ~/.claude paths. Helper scripts need git, jq, bash >= 4 and python3 >= 3.11."
 ---
 
 # RFC Implement
@@ -16,6 +17,8 @@ gh_out="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/tool-probe.sh" gh)";           gh_
 mcp_result="$(printf '%s' "$mcp_out" | jq -r .result)"
 gh_result="$(printf '%s' "$gh_out"  | jq -r .result)"
 ```
+
+Outside Claude Code, `${CLAUDE_PLUGIN_ROOT}` is not substituted; use the directory two levels above this SKILL.md.
 
 - `mcp_status=0` (i.e. `$mcp_result` = `available`) → use the GitHub MCP server's `create_pull_request` tool. Print: `Using GitHub MCP for PR creation.`
 - `mcp_status!=0 && gh_status=0` → fall back to `gh pr create`. Print: `GitHub MCP not enabled — using gh CLI for PR creation.`

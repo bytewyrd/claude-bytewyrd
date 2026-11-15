@@ -29,6 +29,8 @@ Stop.
 result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-summary.sh")"
 ```
 
+Outside Claude Code, `${CLAUDE_PLUGIN_ROOT}` is not substituted; use the directory two levels above this SKILL.md.
+
 `$result` is a JSON object `{"rfcs": [...], "warnings": [...]}`. Extract:
 
 ```bash

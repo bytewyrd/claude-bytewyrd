@@ -20,6 +20,8 @@ RFC_PATH="$(printf '%s' "$result" | jq -r .path)"
 label="$(printf '%s' "$result" | jq -r .label)"
 ```
 
+Outside Claude Code, `${CLAUDE_PLUGIN_ROOT}` is not substituted; use the directory two levels above this SKILL.md.
+
 (Same confirmation flow as rfc-approve: show `$label`, ask the user to confirm. On non-zero exit, parse `.error` from `$result` and show it. `$RFC_PATH` carries the resolved absolute path into the steps below.)
 
 If the drop reason is not provided, ask: "Why is this RFC being dropped? (one sentence)"
