@@ -30,6 +30,7 @@ import bw_rfc_braindump_remove  # noqa: E402
 import bw_rfc_feedback_list  # noqa: E402
 import bw_rfc_frontmatter  # noqa: E402
 import bw_rfc_resolve  # noqa: E402
+import bw_rfc_set_status  # noqa: E402
 
 BRAINDUMP = Path("docs/rfc-braindump.md")
 IS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
@@ -505,3 +506,113 @@ def test_resolve_prints_a_directory_that_isn_t_utf_8_with_u_fffd(tmp_path, monke
     proc = bw_run("rfc-resolve", "x")
     want = bw.jq_string(os.fsdecode(os.getcwd())) + "/docs/rfcs/x.md"
     assert (proc.returncode, json.loads(proc.stdout)["path"], proc.stderr) == (0, want, b"")
+
+
+# --- rfc-set-status ----------------------------------------------------------
+
+RFC = "docs/rfcs/x.md"
+
+
+def status_set(old, new):
+    return ('{\n  "file": "docs/rfcs/x.md",\n  "old_status": "%s",\n  "new_status": "%s"\n}\n' % (old, new)).encode()
+
+
+def test_set_status_rewrites_lines_as_the_bash_script_s_awk_did(call):
+    # Kept from the bash script: every "status:" line in the block is
+    # rewritten, indented or not, the reason goes before the closing "---",
+    # later "---" lines are left alone, and every line ends with a newline.
+    Path(RFC).write_bytes(b'---\nrfc: x\nstatus: "Draft" # c\nmeta:\n  status: indented\n---\nbody\n---\nstatus: body\n---')
+    assert call(bw_rfc_set_status, RFC, "Dropped", 'say "hi" C:\\temp\\') == (0, status_set("Draft", "Dropped"), b"")
+    assert Path(RFC).read_bytes() == (
+        b'---\nrfc: x\nstatus: "Dropped"\nmeta:\nstatus: "Dropped"\ndrop_reason: "say \\"hi\\" C:\\\\temp\\\\"\n'
+        b"---\nbody\n---\nstatus: body\n---\n"
+    )
+
+
+@pytest.mark.parametrize(
+    "lines, status, want",
+    [
+        ("status: Dropped\ndrop_reason: \"old\"\n", "Draft", 'status: "Draft"\ndrop_reason: ~\n'),
+        ("status: Dropped\ndrop_reason: \"old\"\n", "Dropped", 'status: "Dropped"\ndrop_reason: "new"\n'),
+        ("status: Draft\ndrop_reason:\n", "Done", 'status: "Done"\ndrop_reason: ~\n'),
+    ],
+)
+def test_set_status_rewrites_drop_reason_lines(call, lines, status, want):
+    Path(RFC).write_text("---\n%s---\n" % lines)
+    reason = ["new"] if status == "Dropped" else []
+    assert call(bw_rfc_set_status, RFC, status, *reason)[0] == 0
+    assert Path(RFC).read_text() == "---\n%s---\n" % want
+
+
+@pytest.mark.parametrize("line, old", [('status: "Draft" # still a draft', "Draft"), ("status: 'Approved'", "Approved")])
+def test_set_status_reads_the_old_status_with_load_frontmatter(call, line, old):
+    # The bash script's awk dropped only the double quotes: "Draft # still a
+    # draft" and "'Approved'".
+    Path(RFC).write_text("---\n%s\n---\n" % line)
+    code, out, _ = call(bw_rfc_set_status, RFC, "Done")
+    assert (code, json.loads(out)["old_status"]) == (0, old)
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["---\nstatus: ~\n---\n", "---\nrfc: a\n---\n", '---\n"status": Draft\n---\n', "---\nstatus : Draft\n---\n", "---\n{status: Draft}\n---\n"],
+)
+def test_set_status_without_a_status_or_a_line_to_rewrite_leaves_the_file_alone(call, text):
+    Path(RFC).write_text(text)
+    message = "rfc-set-status: docs/rfcs/x.md has no 'status:' line in its frontmatter"
+    assert call(bw_rfc_set_status, RFC, "Approved") == (2, error(message), b"")
+    assert Path(RFC).read_text() == text
+
+
+def test_set_status_prints_load_frontmatter_s_error(call):
+    Path(RFC).write_text("# Title\n---\nstatus: Draft\n---\n")
+    message = "rfc-set-status: docs/rfcs/x.md does not begin with a YAML frontmatter delimiter"
+    assert call(bw_rfc_set_status, RFC, "Approved") == (2, error(message), b"")
+
+
+@pytest.mark.parametrize(
+    "argv, message",
+    [
+        ([], "usage: rfc-set-status.sh <path-to-rfc.md> <Draft|Approved|Done|Dropped> [<drop-reason>]"),
+        ([RFC], "usage: rfc-set-status.sh <path-to-rfc.md> <Draft|Approved|Done|Dropped> [<drop-reason>]"),
+        (["", "Done"], "usage: rfc-set-status.sh <path-to-rfc.md> <Draft|Approved|Done|Dropped> [<drop-reason>]"),
+        (["missing.md", "done"], "rfc-set-status: invalid status 'done' (allowed: Draft, Approved, Done, Dropped)"),
+        (["missing.md", "Dropped"], "rfc-set-status: drop_reason is required when status=Dropped"),
+        (["missing.md", "Dropped", ""], "rfc-set-status: drop_reason is required when status=Dropped"),
+        (["missing.md", "Done", "why"], "rfc-set-status: drop_reason is only allowed when status=Dropped"),
+        (["missing.md", "Dropped", "a\nb"], "rfc-set-status: file not found: missing.md"),
+        (["docs/rfcs/none.md", "Dropped", "a\nb"], "rfc-set-status: docs/rfcs/none.md has no 'status:' line in its frontmatter"),
+        ([RFC, "Dropped", "a\nb"], "rfc-set-status: drop_reason must not contain newlines"),
+    ],
+)
+def test_set_status_checks_in_the_bash_script_s_order(call, argv, message):
+    Path(RFC).write_text("---\nstatus: Draft\n---\n")
+    Path("docs/rfcs/none.md").write_text("---\nrfc: none\n---\n")
+    assert call(bw_rfc_set_status, *argv) == (2, error(message), b"")
+    assert Path(RFC).read_text() == "---\nstatus: Draft\n---\n"
+
+
+def test_set_status_writes_a_reason_s_bytes_as_given():
+    Path(RFC).write_text("---\nstatus: Draft\n---\n")
+    proc = bw_run("rfc-set-status", RFC, "Dropped", b'caf\xe9 "q" \\ \r')
+    assert (proc.returncode, proc.stdout, proc.stderr) == (0, status_set("Draft", "Dropped"), b"")
+    assert Path(RFC).read_bytes() == b'---\nstatus: "Dropped"\ndrop_reason: "caf\xe9 \\"q\\" \\\\ \r"\n---\n'
+
+
+def test_set_status_names_a_file_that_isn_t_utf_8_with_u_fffd():
+    proc = bw_run("rfc-set-status", b"caf\xe9.md", "Approved")
+    assert (proc.returncode, json.loads(proc.stdout), proc.stderr) == (
+        2,
+        {"error": "rfc-set-status: file not found: caf\ufffd.md"},
+        b"",
+    )
+
+
+@pytest.mark.skipif(IS_ROOT, reason="root writes any file")
+def test_set_status_reports_a_failed_write_as_a_json_error(call):
+    # The bash script printed the status change and exited 0 here.
+    Path(RFC).write_text("---\nstatus: Draft\n---\n")
+    Path(RFC).chmod(0o444)
+    message = "rfc-set-status: Permission denied: docs/rfcs/x.md"
+    assert call(bw_rfc_set_status, RFC, "Approved") == (2, error(message), b"")
+    assert Path(RFC).read_text() == "---\nstatus: Draft\n---\n"
