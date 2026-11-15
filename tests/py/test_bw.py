@@ -228,8 +228,9 @@ def test_bw_main_parses_as_old_python_3():
 
 def test_launcher_and_bw_main_agree_on_classes_and_message():
     text = (REPO / "scripts" / "bw").read_text()
-    class_a = re.search(r"^(scaffold \| .*)\) class=A ;;$", text, re.M).group(1)
-    class_b = re.search(r"^(rfc-.*)\) class=B ;;$", text, re.M).group(1)
+    # shfmt indents case items (switch_case_indent in .editorconfig).
+    class_a = re.search(r"^[ \t]*(scaffold \| .*)\) class=A ;;$", text, re.M).group(1)
+    class_b = re.search(r"^[ \t]*(rfc-.*)\) class=B ;;$", text, re.M).group(1)
     assert tuple(class_a.split(" | ")) == bw_main.CLASS_A
     assert tuple(class_b.split(" | ")) == bw_main.CLASS_B
     assert "msg='%s'" % bw_main.NEEDS_PYTHON in text
