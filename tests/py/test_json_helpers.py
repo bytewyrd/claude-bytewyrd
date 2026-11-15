@@ -31,6 +31,7 @@ import bw_rfc_feedback_list  # noqa: E402
 import bw_rfc_frontmatter  # noqa: E402
 import bw_rfc_resolve  # noqa: E402
 import bw_rfc_set_status  # noqa: E402
+import bw_rfc_summary  # noqa: E402
 
 BRAINDUMP = Path("docs/rfc-braindump.md")
 IS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
@@ -616,3 +617,82 @@ def test_set_status_reports_a_failed_write_as_a_json_error(call):
     message = "rfc-set-status: Permission denied: docs/rfcs/x.md"
     assert call(bw_rfc_set_status, RFC, "Approved") == (2, error(message), b"")
     assert Path(RFC).read_text() == "---\nstatus: Draft\n---\n"
+
+
+# --- rfc-summary -------------------------------------------------------------
+
+
+def write_rfc(name, block):
+    Path("docs/rfcs", name).write_text("---\n%s---\n" % block)
+
+
+def test_summary_prints_rows_and_warnings_as_jq_did(call):
+    write_rfc("b.md", "rfc: b\ntitle: B\nauthor: A\nstatus: Done\ncreated: 2026-02-01\n")
+    write_rfc("a.md", 'rfc: a\ntitle: "T"\nauthor: A\nstatus: Draft\ncreated: 2026-01-01\n')
+    write_rfc("c.md", "rfc: c\nstatus: Pending\n")
+    row = '    {\n      "status": "%s",\n      "created": "%s",\n      "rfc": "%s",\n      "title": "%s",\n      "author": "A"\n    }'
+    want = '{\n  "rfcs": [\n%s,\n%s\n  ],\n  "warnings": [\n    "%s"\n  ]\n}\n' % (
+        row % ("Draft", "2026-01-01", "a", "T"),
+        row % ("Done", "2026-02-01", "b", "B"),
+        'Warning: docs/rfcs/c.md — unrecognized status \\"Pending\\"; skipping.',
+    )
+    assert call(bw_rfc_summary) == (0, want.encode(), b"")
+
+
+def test_summary_of_no_rfcs_is_empty(call):
+    assert call(bw_rfc_summary) == (0, b'{\n  "rfcs": [],\n  "warnings": []\n}\n', b"")
+
+
+def test_summary_sorts_by_created_then_rfc_and_keeps_file_order_for_ties(call):
+    for name, rfc, created in (("a.md", "same", "2026-01-01"), ("b.md", "same", "2026-01-01"), ("c.md", "B", "2026-01-01"), ("d.md", "a", "2025-12-31")):
+        write_rfc(name, "rfc: %s\nstatus: Draft\ncreated: %s\ntitle: %s\n" % (rfc, created, name))
+    rows = json.loads(call(bw_rfc_summary)[1])["rfcs"]
+    assert [r["title"] for r in rows] == ["d.md", "c.md", "a.md", "b.md"]
+
+
+def test_summary_takes_each_field_as_jq_r_gave_it(call):
+    # Kept: $(jq -r ...) dropped NUL bytes and trailing newlines.
+    write_rfc("a.md", 'rfc: "a\\n\\n"\nstatus: "Done\\n"\ntitle: |\n  Block\ncreated: "2026\\x00-01"\nauthor: "x\\ny"\n')
+    rows = json.loads(call(bw_rfc_summary)[1])["rfcs"]
+    assert rows == [{"status": "Done", "created": "2026-01", "rfc": "a", "title": "Block", "author": "x\ny"}]
+
+
+def test_summary_leaves_out_with_a_warning(call):
+    write_rfc("a.md", "rfc: a\n")
+    write_rfc("b.md", 'rfc: "\\n"\nstatus: Draft\n')
+    Path("docs/rfcs/c.md").write_text("# no frontmatter\n")
+    write_rfc("d.md", "rfc: d\nstatus: Draft\ncreated: !!int abc\n")  # load_frontmatter() raises ValueError
+    write_rfc("e.md", 'rfc: e\nstatus: "Dr\\naft"\n')
+    Path("docs/rfcs/f.md").mkdir()
+    write_rfc(".g.md", "rfc: g\nstatus: Draft\n")
+    write_rfc("h.MD", "rfc: h\nstatus: Draft\n")
+    code, out, err = call(bw_rfc_summary)
+    assert (code, err) == (0, b"")
+    assert json.loads(out) == {
+        "rfcs": [],
+        "warnings": [
+            "Warning: docs/rfcs/a.md — frontmatter incomplete; skipping.",
+            "Warning: docs/rfcs/b.md — frontmatter incomplete; skipping.",
+            "Warning: docs/rfcs/c.md — frontmatter unparseable; skipping.",
+            "Warning: docs/rfcs/d.md — frontmatter unparseable; skipping.",
+            # Kept: jq -R made one warning per line.
+            'Warning: docs/rfcs/e.md — unrecognized status "Dr',
+            'aft"; skipping.',
+        ],
+    }
+
+
+def test_summary_names_a_file_that_isn_t_utf_8_with_u_fffd():
+    try:
+        with open(b"docs/rfcs/caf\xe9.md", "wb") as f:
+            f.write(b"# no frontmatter\n")
+    except OSError:
+        pytest.skip("this filesystem refuses a name that isn't UTF-8")
+    proc = bw_run("rfc-summary")
+    want = {"rfcs": [], "warnings": ["Warning: docs/rfcs/caf\ufffd.md — frontmatter unparseable; skipping."]}
+    assert (proc.returncode, json.loads(proc.stdout), proc.stderr) == (0, want, b"")
+
+
+def test_summary_without_docs_rfcs_is_an_error_naming_the_directory(call):
+    shutil.rmtree("docs")
+    assert call(bw_rfc_summary) == (2, error("no docs/rfcs/ directory in " + os.getcwd()), b"")
