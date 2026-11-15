@@ -34,7 +34,7 @@ status="$(printf '%s' "$fm" | jq -r .status)"
 drop_reason="$(printf '%s' "$fm" | jq -r .drop_reason)"
 ```
 
-If this fails, show the error and stop: either the `.error` field of the printed JSON, or the message the script wrote to stderr (for example, that bash >= 4 is required).
+If this fails, show the error and stop: either the `.error` field of the printed JSON, or the message the script wrote to stderr (for example, that Python 3.11 or newer is required).
 
 If `$status` is `Done` → "This RFC is already done — it cannot be dropped." If `Dropped` → "Already dropped: $drop_reason." Stop in either case. Only `Draft` and `Approved` RFCs can be dropped.
 
