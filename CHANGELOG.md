@@ -14,6 +14,12 @@ Everything merged after the 0.2.0 release notes were written: #94, #96, #110, #1
 
 ### Changed
 
+- **Python 3.11 or newer runs the new commands and hooks** (RFC `2026-11-09-scaffold-and-drift`). `scripts/bw`, a POSIX-sh launcher, runs `scaffold`, `drift`, `state-touch` and `compact-reminder` under `$BYTEWYRD_PYTHON` when it is 3.11 or newer, else the first of `python3.15` … `python3.11` on `PATH`, else `python3` when it is 3.11 or newer. It passes `-I -S -B`, so `PYTHON*` variables, a virtualenv's `.pth` files and bytecode stay out. Without such an interpreter the commands exit 1, the hooks still exit 0, and the PreCompact sentinel is still written. The helper scripts behind the RFC skills are still bash.
+- **`github`, `context7` and `code-review` are hard dependencies.** `plugin.json` declares them from `claude-plugins-official`, `code-review` at `^1.0.1` since it is the only one that publishes a version, and `marketplace.json` allows that marketplace, so installing bytewyrd installs them. Claude Code doesn't load bytewyrd while one is missing or disabled. The `claude plugin` commands never register the official marketplace on their own; see Upgrading.
+- **The SessionStart requirement check is removed**, with `scripts/check-requirements.sh` and `BYTEWYRD_SKIP_WARN`. The companion plugins are dependencies now, Exa and Firefox are MCP servers whose tools degrade where they are used, and scaffold and drift exit 1 without git.
+- **`.bytewyrd/` sentinels go through `bw state-touch`.** `/best-practices-extract` writes its PreCompact sentinel, and `/docs-review` removes the SubagentStop one, through a no-follow directory descriptor that refuses symlinks.
+- **Agents and skills cite the `rfc-process` skill** instead of `docs/rfc-process.md`, and `feature-engineer` takes a `docs/rfcs/` directory at the repository root as the RFC opt-in. Agents and skills name MCP tools in prose instead of by `mcp__` ID, and the nine skills that need Claude Code declare `compatibility:`.
+
 - **No version number; users track commits.** `version` is removed from `plugin.json` and `metadata.version` from `marketplace.json`. Side effects:
   - The `plugin-version` SessionStart warning (installed plugin older than the one that last ran `/sync`) no longer fires.
   - `/sync` no longer writes `.bytewyrd/plugin-version`.
@@ -32,6 +38,14 @@ Everything merged after the 0.2.0 release notes were written: #94, #96, #110, #1
 
 ### Added
 
+- **`/bytewyrd:scaffold` and `/bytewyrd:drift`** (RFC `2026-11-09-scaffold-and-drift`).
+  - scaffold seeds `AGENTS.md`, a `CLAUDE.md` that imports it, a PR template and `.github/workflows/ci.yml`, each only if missing and stamped on line 1. It is a dry run unless `--apply`, writes only at the top of the work tree and never under `.claude/`, never overwrites or writes through a symlink, and refuses a dirty tree unless `--allow-dirty`.
+  - The seeded CI is a no-op job, or one job per tracked (language, directory) that calls this repository's `lang-ci-<id>.yml` reusable workflows (#115) at a pinned commit SHA.
+  - drift is read-only. It compares the seeded files with the current templates, checks the CI pins, and lists leftover 0.2.x `/sync` artifacts, each with a one-line fix. It exits 0 when clean, 2 on drift (with `--strict`, also on warnings) and 1 when it cannot run.
+- **Always-on rules.** A SessionStart hook on `startup|clear|compact` adds five workflow conventions, from `hooks/always-on-rules.json`, as `additionalContext`. CI caps them at 2,000 characters.
+- **`rfc-process` and `best-practices` skills.** The RFC process and the curated best practices per stack (general, go, js-ts, python, rust, svelte, ruby, rails, k8s-cue, terraform) ship in the plugin and are read at runtime, so repositories don't need copies.
+- **More CI.** `test` also runs pytest over `tests/py` and `tests/e2e`. New jobs, not required: `compat` runs bats and pytest on Python 3.11 under Linux and on the latest 3.x under macOS; `history` runs bats at every commit of a pull request and checks the scaffold caller's pin; `install-check` installs the plugin into a temporary HOME and updates an install of `main`.
+
 - **CI that gates merges.** Three jobs replace the stub workflow:
   - `lint`: JSON manifests parse, `bootstrap-manifest.json` is current, agent and skill frontmatter is strict YAML, relative Markdown links resolve, and the shell scripts pass shellcheck (warning level) and shfmt.
   - `validate`: `claude plugin validate` with a pinned CLI.
@@ -42,6 +56,8 @@ Everything merged after the 0.2.0 release notes were written: #94, #96, #110, #1
 - **License section in the README** (#116).
 
 ### Fixed
+
+- **The `/docs-review` reminder after a `feature-engineer` run is back** (#116 removed it; see below). The SubagentStop hook now writes its sentinel through `bw state-touch`, which refuses a symlinked `.bytewyrd` or sentinel. Its reminder and the post-compact one ask you to run `/docs-review`, which is user-only, and the post-compact reminder no longer needs GNU or BSD `stat`.
 
 - **Security: a committed symlink could redirect a hook's write outside the repository** (#116). The `SubagentStop` hook for `feature-engineer` ran `mkdir -p .bytewyrd && : > .bytewyrd/last-feature-engineer-stop` in the project root, and plugin hooks run outside the sandbox. A repository that committed `.bytewyrd` (or the sentinel inside it) as a symlink therefore made the hook create or truncate a file elsewhere. The hook is removed, so the `/docs-review` reminder after a `feature-engineer` run is gone until RFC `2026-11-09-scaffold-and-drift` re-adds it through a writer that refuses symlinks. Update the plugin to pick up the fix.
 - Five agents (`deployment-engineer`, `microservices-architect`, `rust-engineer`, `sql-pro`, `websocket-engineer`) listed `MultiEdit`, which is not a Claude Code tool, so they had no `Edit`. They now list `Edit` (#116).
@@ -63,14 +79,18 @@ Everything merged after the 0.2.0 release notes were written: #94, #96, #110, #1
 
 ### Upgrading
 
-Existing installs are pinned to the cached 0.2.0 copy. Refresh the marketplace and update once:
+Existing installs are pinned to the cached 0.2.0 copy, and bytewyrd now loads only once its three dependencies are installed. Add the official marketplace, install the dependencies explicitly so that updates keep them resolved, then refresh the marketplace and update once:
 
 ```bash
+claude plugin marketplace add anthropics/claude-plugins-official
+claude plugin install github@claude-plugins-official
+claude plugin install context7@claude-plugins-official
+claude plugin install code-review@claude-plugins-official
 claude plugin marketplace update bytewyrd
 claude plugin update bytewyrd@bytewyrd
 ```
 
-Restart Claude Code afterwards. From then on, each `claude plugin update` (or marketplace auto-update, if you turn it on) picks up the latest commit on `main`.
+The first four commands succeed without changing anything when the marketplace or plugin is already there. Restart Claude Code afterwards. From then on, each `claude plugin update` (or marketplace auto-update, if you turn it on) picks up the latest commit on `main`. The hooks and scaffold and drift need Python 3.11 or newer on `PATH`, or in `BYTEWYRD_PYTHON`.
 
 ---
 
