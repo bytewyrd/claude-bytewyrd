@@ -58,29 +58,6 @@ hash_string() {
   fi
 }
 
-# compute_upstream_key <manifest-entry-json>
-# Output: bytewyrd/<target>@<8-char fingerprint>
-#
-# The fingerprint is sha256[:8] of the canonical JSON of extension_strategy +
-# strategy config (owned_paths, owned_sections, owned_boundaries). Template
-# content is deliberately excluded: content changes are tracked by the sha12
-# in the marker; the key only needs to capture ownership semantics. When
-# strategy or config changes the fingerprint changes, invalidating existing
-# consumer markers and forcing a legacy re-classification on the next /sync.
-compute_upstream_key() {
-  local entry="$1"
-  local target fingerprint_input fingerprint
-  target="$(printf '%s' "$entry" | jq -r '.target')"
-  fingerprint_input="$(printf '%s' "$entry" | jq -Sc '{
-    extension_strategy,
-    owned_boundaries: (.owned_boundaries // []),
-    owned_paths:      (.owned_paths      // [] | sort),
-    owned_sections:   (.owned_sections   // [] | sort)
-  }')"
-  fingerprint="$(hash_string "$fingerprint_input" | cut -c1-8)"
-  printf 'bytewyrd/%s@%s' "$target" "$fingerprint"
-}
-
 # plugin_enabled <plugin-id>
 # Returns 0 if enabled, 1 if explicitly disabled or not found.
 # Precedence: project-false > project-true > user-true.

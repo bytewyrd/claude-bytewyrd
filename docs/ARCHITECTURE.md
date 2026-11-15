@@ -75,7 +75,7 @@ Current plugin-local skills:
 **Purpose:** Gates merges to `main`. Three of its jobs, `lint`, `validate`, and `test`, are the checks the branch ruleset is meant to require.
 **Location:** `.github/workflows/ci.yml`. The Python lint helpers `lint-frontmatter.py` and `check-links.py` live in `.github/scripts/` and are tested by `tests/scripts/ci-lint.bats`. `.github/workflows/lang-ci-<id>.yml` (go, js, python, ruby, rust) are reusable workflows, one per language, which consumer repositories' CI calls by commit SHA (RFC `2026-11-09-scaffold-and-drift`). `.github/actionlint.yaml` configures actionlint.
 **Key behavior:**
-- `lint` checks the JSON manifests, `bootstrap-manifest.json` freshness, strict-YAML agent and skill frontmatter, relative Markdown links, the `lang-ci-<id>.yml` workflows' pins, permissions and fixtures, the lint tools' versions against `mise.toml`, shellcheck warnings, shfmt formatting (style in `.editorconfig`), and actionlint on every workflow.
+- `lint` checks the JSON manifests, strict-YAML agent and skill frontmatter, relative Markdown links, the `lang-ci-<id>.yml` workflows' pins, permissions and fixtures, the lint tools' versions against `mise.toml`, shellcheck warnings, shfmt formatting (style in `.editorconfig`), and actionlint on every workflow.
 - `validate` runs `claude plugin validate .` with a pinned Claude Code CLI.
 - `test` runs the bats suite, then pytest over `tests/py` and `tests/e2e`.
 - `lang-ci-fixture-<id>` runs each `lang-ci-<id>.yml` on its fixture in `tests/fixtures/lang-ci/<id>/`.

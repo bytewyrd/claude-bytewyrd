@@ -98,7 +98,7 @@ chore(scope): tooling, deps, config
 CI (`.github/workflows/ci.yml`) runs eleven jobs on every pull request to `main`. Three of them are the checks the branch ruleset is meant to require:
 
 - **`lint`**:
-  - The JSON manifests parse, and `bootstrap-manifest.json` is current.
+  - The JSON manifests parse.
   - Agent and skill frontmatter is strict YAML.
   - Relative Markdown links resolve.
   - The `lang-ci-<id>.yml` workflows pass their checks, each named by a comment in the step: one job per file, named by its language, each with a `lang-ci-fixture-<id>` job, SHA-pinned actions, only `contents: read`, and no secrets.
@@ -122,7 +122,6 @@ mise install --locked                     # mise.lock covers linux-x64 and macos
 git submodule update --init --recursive   # once: the bats libraries
 tests/run.sh
 python3 -m pytest -q tests/py tests/e2e
-scripts/build-manifest.sh --check
 python3 .github/scripts/lint-frontmatter.py agents/*.md skills/*/SKILL.md .claude/skills/*/SKILL.md
 python3 .github/scripts/check-links.py
 SHELL_FILES=$(git ls-files -- scripts/bw 'scripts/*.sh' 'scripts/_lib/*.bash' 'hooks/pre-commit/*.sh' tests/run.sh tests/scripts/helpers.bash)
