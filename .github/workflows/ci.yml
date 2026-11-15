@@ -32,6 +32,7 @@ concurrency:
 env:
   PYTHON_VERSION: "3.13"
   PYYAML_VERSION: "6.0.3"
+  PYTEST_VERSION: "9.2.0"
   NODE_VERSION: "24"
   # Claude Code CLI used by the validate job. Bump deliberately: newer releases
   # can add validation checks.
@@ -45,7 +46,7 @@ jobs:
     env:
       # Shell files held to shellcheck and shfmt, as git pathspecs. Formatting
       # style comes from .editorconfig.
-      SHELL_FILES: scripts/*.sh scripts/_lib/*.bash hooks/pre-commit/*.sh tests/run.sh tests/scripts/helpers.bash
+      SHELL_FILES: scripts/bw scripts/*.sh scripts/_lib/*.bash hooks/pre-commit/*.sh tests/run.sh tests/scripts/helpers.bash
       # sha256 values are the digests GitHub records for these release assets.
       SHELLCHECK_VERSION: "0.11.0"
       SHELLCHECK_SHA256: "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
@@ -83,7 +84,6 @@ jobs:
       - name: The lang-ci workflows pass their checks
         run: |
           w=.github/workflows
-          test "$(printf '%s\n' "$w"/lang-ci*)" = "$(printf '.github/workflows/lang-ci-%s.yml\n' go js python ruby rust)"  # a language without its file, or another lang-ci file
           for f in "$w"/lang-ci-*.yml; do
             l=${f#"$w"/lang-ci-}; l=${l%.yml}
             test "$(sed '1,/^jobs:$/d' "$f" | grep -E '^  [^ #]')" = "  $l:"  # a job not named by the file's id, or a second job
@@ -185,14 +185,26 @@ jobs:
       # PyYAML lets the ci.yml rendering tests parse their output instead of
       # skipping.
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        id: py
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install PyYAML
         run: python -m pip install --disable-pip-version-check "pyyaml==${PYYAML_VERSION}"
 
+      # BYTEWYRD_PYTHON makes scripts/bw run the interpreter set up above.
       - name: Run the bats suite
+        env:
+          BYTEWYRD_PYTHON: ${{ steps.py.outputs.python-path }}
         run: tests/run.sh
+
+      - name: Install pytest
+        run: python -m pip install --disable-pip-version-check "pytest==${PYTEST_VERSION}"
+
+      - name: Run pytest
+        env:
+          BYTEWYRD_PYTHON: ${{ steps.py.outputs.python-path }}
+        run: python -m pytest -q tests/py tests/e2e
 
   # Not required checks: the ruleset requires only lint, validate and test.
   # One job per lang-ci-<id>.yml runs that file on its fixture; they are
@@ -221,3 +233,127 @@ jobs:
     uses: ./.github/workflows/lang-ci-rust.yml
     with:
       directory: tests/fixtures/lang-ci/rust
+
+  # bats and pytest on the oldest supported Python under Linux and the latest
+  # 3.x under macOS. macOS gets Homebrew bash: its image has bash 3.2, and the
+  # helpers need bash 4 until the port's retire commit. PyYAML is installed
+  # too, since under CI ci-lint.bats and rfc-set-status.bats fail without it.
+  compat:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-26.04
+            python: "3.11"
+          - os: macos-15
+            python: "3.x"
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        id: py
+        with:
+          python-version: ${{ matrix.python }}
+      - if: runner.os == 'macOS'
+        run: brew install bash
+      - run: python -m pip install --disable-pip-version-check "pytest==${PYTEST_VERSION}" "pyyaml==${PYYAML_VERSION}"
+      - env:
+          BYTEWYRD_PYTHON: ${{ steps.py.outputs.python-path }}
+        run: |
+          tests/run.sh
+          python -m pytest -q tests/py tests/e2e
+
+  # bats at every commit of the pull request, and the caller template's pin.
+  # A bats run takes about a minute, so 120 minutes cover about 100 commits.
+  history:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        id: py
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: python -m pip install --disable-pip-version-check "pyyaml==${PYYAML_VERSION}"
+      - name: bats passes at every commit, and no port commit edits tests/scripts
+        env:
+          BYTEWYRD_PYTHON: ${{ steps.py.outputs.python-path }}
+        run: |
+          base=$(git merge-base origin/main HEAD); h=$(git rev-parse HEAD); bad=0
+          for c in $(git rev-list --reverse "$base..HEAD"); do
+            git checkout -q --recurse-submodules "$c"
+            if ! tests/run.sh > "$RUNNER_TEMP/bats-$c.log" 2>&1; then
+              echo "::group::bats fails at $c"; cat "$RUNNER_TEMP/bats-$c.log"; echo "::endgroup::"; bad=1
+            fi
+          done
+          git checkout -q --recurse-submodules "$h"
+          for c in $(git rev-list --grep='^refactor(scripts): port ' "$base..HEAD"); do git diff --quiet "$c^" "$c" -- tests/scripts || { echo "::error::$c edits tests/scripts"; bad=1; }; done
+          exit "$bad"
+      - name: The caller template pins a main commit that has every lang-ci file
+        if: ${{ !cancelled() }}
+        run: |
+          tpl=templates/scaffold/ci-caller.yml.tpl
+          pin=$(sed -n 's|^@@job@@     uses: bytewyrd/claude-bytewyrd/\.github/workflows/lang-ci-@@job_language@@\.yml@\([0-9a-f]\{40\}\)$|\1|p' "$tpl")
+          test "$(grep -c 'uses:' "$tpl")" = 1
+          test "${#pin}" = 40
+          git merge-base --is-ancestor "$pin" origin/main
+          for f in .github/workflows/lang-ci-*.yml; do git cat-file -e "$pin:$f"; done
+      - name: No lang-ci change is waiting for its pin bump
+        if: ${{ !cancelled() }}
+        run: |
+          tpl=templates/scaffold/ci-caller.yml.tpl
+          pin=$(sed -n 's|^@@job@@     uses: bytewyrd/claude-bytewyrd/\.github/workflows/lang-ci-@@job_language@@\.yml@\([0-9a-f]\{40\}\)$|\1|p' "$tpl")
+          if ! git diff --quiet "$pin" HEAD -- '.github/workflows/lang-ci*'; then
+            if git diff --quiet origin/main HEAD -- "$tpl"; then
+              echo "::warning::the lang-ci files differ from the pinned $pin; bump the pin after this merges"
+            else
+              echo "::error::the new pin $pin does not match this commit's lang-ci files"; exit 1
+            fi
+          fi
+
+  # Installs the plugin into a temporary HOME, from this checkout and as an
+  # update of an install of main, and fails on any plugin load error.
+  install-check:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: curl -fsSL https://claude.ai/install.sh | bash -s "$CLAUDE_CODE_VERSION"
+      - name: Install from this checkout
+        run: |
+          CLAUDE="$HOME/.local/bin/claude"
+          HOME=$(mktemp -d)
+          export HOME
+          "$CLAUDE" plugin marketplace add anthropics/claude-plugins-official
+          "$CLAUDE" plugin marketplace add "$GITHUB_WORKSPACE"
+          "$CLAUDE" plugin install bytewyrd@bytewyrd
+          "$CLAUDE" plugin list --json | jq -e 'all(.[]; (.errors // []) | length == 0)'
+      # A local clone can't stand in for the update: Claude Code loads a
+      # local-path marketplace's plugin in place, with no update step.
+      - name: Update an install of main
+        run: |
+          CLAUDE="$HOME/.local/bin/claude"
+          HOME=$(mktemp -d)
+          export HOME
+          ref=${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}
+          "$CLAUDE" plugin marketplace add anthropics/claude-plugins-official
+          "$CLAUDE" plugin marketplace add bytewyrd/claude-bytewyrd
+          for dep in github context7 code-review; do "$CLAUDE" plugin install "$dep@claude-plugins-official"; done
+          "$CLAUDE" plugin install bytewyrd@bytewyrd
+          # marketplace add refuses a source that differs from the marketplace's
+          # extraKnownMarketplaces entry, so the entry gets the ref first.
+          jq --arg ref "$ref" '.extraKnownMarketplaces.bytewyrd.source.ref = $ref' "$HOME/.claude/settings.json" > "$RUNNER_TEMP/settings.json"
+          mv "$RUNNER_TEMP/settings.json" "$HOME/.claude/settings.json"
+          "$CLAUDE" plugin marketplace add "bytewyrd/claude-bytewyrd#$ref"
+          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 "$CLAUDE" plugin update bytewyrd@bytewyrd
+          "$CLAUDE" plugin list --json | jq -e 'all(.[]; (.errors // []) | length == 0)'
