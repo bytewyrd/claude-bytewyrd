@@ -50,10 +50,10 @@ SETTINGS_MARKERS = (
     "Consider running /sync",
 )
 
-# The 0.2.x header and banner forms [R15]: the marker that sync-marker-read.sh
-# reads, as an HTML or a # comment, and the banners that sync-write-header.sh
-# writes and recognizes ("Managed by the Bytewyrd plugin." or "... plugin -",
-# and "Bootstrapped by the Bytewyrd plugin.").
+# The 0.2.x header and banner forms [R15]: the marker that 0.2.x's
+# sync-marker-read.sh read, as an HTML or a # comment, and the banners that its
+# sync-write-header.sh wrote and recognized ("Managed by the Bytewyrd plugin."
+# or "... plugin -", and "Bootstrapped by the Bytewyrd plugin.").
 _HEADER = re.compile(r"(?:<!--|#)[ \t]*bootstrap-content-version:")
 _BANNER = re.compile(r"<!-- (?:Managed|Bootstrapped) by the Bytewyrd plugin")
 _TAG = "# bytewyrd:"  # a .gitignore block tag, such as "# bytewyrd:base"

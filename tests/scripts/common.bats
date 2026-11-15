@@ -38,8 +38,7 @@ teardown() {
 @test "require_bash_major: every script using bash 4 features calls it" {
   # mapfile/readarray and associative arrays do not exist in bash 3.2, the
   # stock /bin/bash on macOS. Any script using them must fail with the clear
-  # require_bash_major error rather than "mapfile: command not found". The
-  # /sync preflight checks up front as well.
+  # require_bash_major error rather than "mapfile: command not found".
   cd "$SCRIPT_ROOT"
   # mapfile/readarray, associative arrays and namerefs (declare/local/typeset
   # -A, -gA, -n) and case-modifying expansions such as ${x,,} or ${x^^}.
@@ -60,7 +59,6 @@ teardown() {
     done
   done
   [ -z "$missing" ] || fail "scripts use bash 4 features without require_bash_major 4:$missing"
-  grep -qE '^require_bash_major 4\b' scripts/sync-preflight.sh || fail "sync-preflight.sh must check the bash version"
   # rfc-summary.sh tolerates per-file rfc-frontmatter.sh failures, which would
   # hide the guard's error behind "unparseable" warnings.
   grep -qE '^require_bash_major 4\b' scripts/rfc-summary.sh || fail "rfc-summary.sh must check the bash version"
