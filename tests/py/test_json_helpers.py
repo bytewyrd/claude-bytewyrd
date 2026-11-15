@@ -28,6 +28,7 @@ import bw_rfc_braindump_append  # noqa: E402
 import bw_rfc_braindump_list  # noqa: E402
 import bw_rfc_braindump_remove  # noqa: E402
 import bw_rfc_feedback_list  # noqa: E402
+import bw_rfc_frontmatter  # noqa: E402
 
 BRAINDUMP = Path("docs/rfc-braindump.md")
 IS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
@@ -309,5 +310,68 @@ def test_feedback_list_names_a_path_that_isn_t_utf_8_with_u_fffd():
     assert (proc.returncode, json.loads(proc.stdout), proc.stderr) == (
         2,
         {"error": "rfc-feedback-list: file not found: caf\ufffd.md"},
+        b"",
+    )
+
+
+# --- rfc-frontmatter ---------------------------------------------------------
+
+
+def test_frontmatter_prints_the_six_fields_as_jq_did(call):
+    Path("x.md").write_text('---\nrfc: "a"\ntitle: "T \\"q\\""\nauthor: A\nstatus: Draft\ncreated: 2026-01-01\ndrop_reason: ~\n---\n')
+    want = (
+        b'{\n  "rfc": "a",\n  "title": "T \\"q\\"",\n  "author": "A",\n  "status": "Draft",\n'
+        b'  "created": "2026-01-01",\n  "drop_reason": ""\n}\n'
+    )
+    assert call(bw_rfc_frontmatter, "x.md") == (0, want, b"")
+
+
+@pytest.mark.parametrize(
+    "argv, message",
+    [
+        ([], "usage: rfc-frontmatter.sh <path-to-rfc.md>"),
+        ([""], "usage: rfc-frontmatter.sh <path-to-rfc.md>"),
+        (["missing.md"], "rfc-frontmatter: file not found: missing.md"),
+        (["docs"], "rfc-frontmatter: file not found: docs"),
+    ],
+)
+def test_frontmatter_errors(call, argv, message):
+    assert call(bw_rfc_frontmatter, *argv) == (2, error(message), b"")
+
+
+@pytest.mark.parametrize(
+    "text, message",
+    [
+        ("# none\n", "x.md does not begin with a YAML frontmatter delimiter"),
+        ("---\ntitle: RFC: x\n---\n", "x.md:2: frontmatter is not valid YAML (mapping values are not allowed here)"),
+        ("---\ntitle: [a]\n---\n", "x.md: title is a list, not a string"),
+    ],
+)
+def test_frontmatter_prints_load_frontmatter_s_error(call, text, message):
+    Path("x.md").write_text(text)
+    assert call(bw_rfc_frontmatter, "x.md") == (2, error("rfc-frontmatter: " + message), b"")
+
+
+@pytest.mark.parametrize("value", ["!!int abc", "!!bool maybe", "!!timestamp nope", '"\\U00110000"'])
+def test_frontmatter_prints_a_json_error_for_what_the_loader_can_t_build(call, value):
+    # load_frontmatter() lets these out as ValueError, KeyError or
+    # AttributeError, not BwError; json_main() still makes them an error object.
+    Path("x.md").write_text("---\ncreated: %s\n---\n" % value)
+    code, out, err = call(bw_rfc_frontmatter, "x.md")
+    assert (code, err) == (2, b"")
+    assert json.loads(out)["error"].startswith("rfc-frontmatter: ")
+
+
+def test_frontmatter_prints_a_lone_surrogate_escape_as_u_fffd(call):
+    Path("x.md").write_text('---\ntitle: "a\\ud800b"\n---\n')
+    code, out, _ = call(bw_rfc_frontmatter, "x.md")
+    assert (code, json.loads(out)["title"]) == (0, "a\ufffdb")
+
+
+def test_frontmatter_names_a_path_that_isn_t_utf_8_with_u_fffd():
+    proc = bw_run("rfc-frontmatter", b"caf\xe9.md")
+    assert (proc.returncode, json.loads(proc.stdout), proc.stderr) == (
+        2,
+        {"error": "rfc-frontmatter: file not found: caf\ufffd.md"},
         b"",
     )

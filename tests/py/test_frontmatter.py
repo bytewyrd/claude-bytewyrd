@@ -1,14 +1,14 @@
 """Tests for bw.load_frontmatter() (RFC 2026-11-09-scaffold-and-drift, B2
 "Frontmatter parsing"): one fixture per row of B2's conversion table, the
 errors that rfc-frontmatter reports with exit 2, and every RFC under
-docs/rfcs/ against the six values scripts/rfc-frontmatter.sh prints.
+docs/rfcs/, which must parse, and which rfc-frontmatter must print as
+load_frontmatter() reads it.
 
 The cases run in this process, with scripts/_lib and scripts/_vendor at the
 front of sys.path as bw_main.py puts them, so load_frontmatter() imports the
 vendored PyYAML; test_vendor.py checks that import under the launcher's flags.
 """
 
-import json
 import os
 import subprocess
 import sys
@@ -301,11 +301,11 @@ def test_docs_rfcs_holds_the_rfcs():
 
 
 @pytest.mark.parametrize("rfc", RFCS, ids=lambda p: p.name)
-def test_each_rfc_gives_the_six_values_rfc_frontmatter_sh_prints(rfc):
+def test_each_rfc_parses_and_rfc_frontmatter_prints_what_load_frontmatter_reads(rfc):
+    fields = bw.load_frontmatter(rfc)
+    assert list(fields) == list(FIELDS)
     proc = subprocess.run(
-        ["bash", str(REPO / "scripts" / "rfc-frontmatter.sh"), str(rfc)],
+        [sys.executable, "-I", "-S", "-B", str(LIB / "bw_main.py"), "rfc-frontmatter", str(rfc)],
         capture_output=True,
-        encoding="utf-8",
     )
-    assert proc.returncode == 0, proc.stdout + proc.stderr
-    assert bw.load_frontmatter(rfc) == json.loads(proc.stdout)
+    assert (proc.returncode, proc.stdout, proc.stderr) == (0, bw.jq_dumps(fields).encode("utf-8"), b"")
