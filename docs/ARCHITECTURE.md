@@ -43,7 +43,7 @@ Two skills hold reference content in a `references/` directory, read at runtime 
 **Key interfaces:** Same `SKILL.md` discovery as `skills/`, but these are not exported in `plugin.json` and are therefore invisible to consumers.
 
 Current plugin-local skills:
-- `best-practices-sync` — promotes entries from the global `~/.claude/BEST_PRACTICES.md` into `skills/sync/SKILL.md`
+- `best-practices-sync` — promotes entries from the global `~/.claude/BEST_PRACTICES.md` into `skills/best-practices/references/<stack>.md`
 
 ### Plugin manifest (`.claude-plugin/`)
 
@@ -97,7 +97,7 @@ Agents → spawned as subtask processes. Receive a goal and a tool allow-list fr
 
 `/bytewyrd:scaffold` (skill) → `bw scaffold` → `templates/scaffold/*.tpl` → `AGENTS.md`, `CLAUDE.md`, `.github/PULL_REQUEST_TEMPLATE.md` and `.github/workflows/ci.yml` in the consumer repository, each only if missing.
 
-`/bytewyrd:drift` (skill) → `bw drift` → a read-only report comparing those files with the current templates, plus the 0.2.x `/sync` leftovers, each with a one-line fix.
+`/bytewyrd:drift` (skill) → `bw drift` → a read-only report comparing those files with the current templates, plus the 0.2.x leftovers, each with a one-line fix.
 
 `rfc-process` and `best-practices` (skills) → read from the plugin at runtime. A scaffolded `AGENTS.md` links to the RFC process and the always-on rules for contributors without the plugin.
 
@@ -105,9 +105,7 @@ Agents → spawned as subtask processes. Receive a goal and a tool allow-list fr
 
 `best-practices-record` (skill) → `~/.claude/BEST_PRACTICES.md` (user-global file).
 
-`~/.claude/BEST_PRACTICES.md` → `best-practices-sync` (plugin-local skill) → `skills/sync/SKILL.md` → future `/sync` runs in consumer projects.
-
-`/sync` (skill) → `$CLAUDE_PLUGIN_ROOT/rfc-process.md` (canonical template) → `docs/rfc-process.md` in consumer project (created or updated with upstream sync markers).
+`~/.claude/BEST_PRACTICES.md` → `best-practices-sync` (plugin-local skill) → `skills/best-practices/references/<stack>.md` → the `best-practices` skill in consumer projects, read at runtime.
 
 ## Design Decisions
 
@@ -116,34 +114,33 @@ Agents → spawned as subtask processes. Receive a goal and a tool allow-list fr
 | Agent source | Permanently local copies in `agents/`, originally from awesome-claude-code-subagents (MIT) | Consumers get agents without a network call at install time; local ownership prevents silent upstream clobber of customizations; upstream improvements pulled manually when desired |
 | Skill naming | Noun-first (`rfc-new`, `best-practices-extract`) | Groups related skills alphabetically; matches `rfc-*` family already established |
 | Plugin-local vs exported skills | Plugin-local in `.claude/skills/`, exported in `skills/` | Keeps maintenance tools out of consumer installs; plugin.json is the explicit export declaration |
-| Best-practices flow | Record → global file → manual sync to `/sync` content | Puts human review between personal capture and distribution; prevents one user's project-specific notes from polluting the sync content of every future project |
-| RFC process distribution | Canonical template at plugin root; `/sync` creates/updates `docs/rfc-process.md` with upstream sync markers | Eliminates separate `/rfc-install` step; RFC setup is idempotent and automatic on every `/sync` run |
-| Sync marker `upstream_key` | `bytewyrd/<target>@<sha256[:8] of strategy+config>` — computed by `build-manifest.sh`, never manually set | Encodes ownership semantics in the key so changing `extension_strategy` or strategy config (owned_paths/sections/boundaries) automatically invalidates consumer markers and forces a legacy re-classification on the next `/sync`. Template content is deliberately excluded: content changes are tracked by the sha12 in the marker; the key only needs to change when the canonicalization method changes, making old sha12 values incompatible. |
-| Script language | Python 3.11 or newer with the standard library, behind the POSIX-sh launcher `scripts/bw`; nothing installs at run time | `/sync` already needed Python 3.11 for `tomllib`, while the bash scripts needed bash 4, jq and GNU/BSD workarounds, and Claude Code installs only npm and Bun packages for a plugin (RFC `2026-11-09-scaffold-and-drift`, Language policy) |
-| Repository seeding | `scaffold` seeds at most four stamped files once; `drift` checks them, read-only, with CI exit codes | Merging plugin content into consumer files on every run caused `/sync`'s defects; a seeded file belongs to the project, and drift reports what changed instead of rewriting it |
+| Best-practices flow | Record → global file → manual sync into the `best-practices` skill's references | Puts human review between personal capture and distribution; prevents one user's project-specific notes from polluting the practices that every project reads |
+| RFC process distribution | The `rfc-process` skill, read from the plugin at runtime; a `docs/rfcs/` directory opts a repository in | No install or update step: repositories keep no copy, since per-repository copies drift from the plugin's (RFC `2026-11-09-scaffold-and-drift`, Options) |
+| Script language | Python 3.11 or newer with the standard library, behind the POSIX-sh launcher `scripts/bw`; nothing installs at run time | The 0.2.x sync scripts already needed Python 3.11 for `tomllib`, while the bash scripts needed bash 4, jq and GNU/BSD workarounds, and Claude Code installs only npm and Bun packages for a plugin (RFC `2026-11-09-scaffold-and-drift`, Language policy) |
+| Repository seeding | `scaffold` seeds at most four stamped files once; `drift` checks them, read-only, with CI exit codes | Merging plugin content into consumer files on every run caused the 0.2.x defects; a seeded file belongs to the project, and drift reports what changed instead of rewriting it |
 | Always-on conventions | Five factual statements in `hooks/always-on-rules.json`, emitted as SessionStart `additionalContext` and capped at 2,000 characters in CI | A small always-on context serves better than a large one, and skills alone often go uninvoked, so the rules name the skills that hold the detail |
 | Companion plugins | `github`, `context7` and `code-review` are hard `dependencies` | Installing bytewyrd installs them; the cost is that bytewyrd doesn't load while one is missing or disabled |
-| Plugin installation scope | User scope only (`~/.claude/settings.json`); `/sync` does not write `enabledPlugins` or `extraKnownMarketplaces` to project settings | See note below |
+| Plugin installation scope | User scope only (`~/.claude/settings.json`); `/bytewyrd:scaffold` does not write `enabledPlugins` or `extraKnownMarketplaces` to project settings | See note below |
 
 ### Plugin installation scope — extended note
 
-The plugin is installed once per developer at user scope. `/sync` explicitly does not write `bytewyrd@bytewyrd` to `enabledPlugins` or `bytewyrd` to `extraKnownMarketplaces` in the project's `.claude/settings.json`.
+The plugin is installed once per developer at user scope. `/bytewyrd:scaffold` explicitly does not write `bytewyrd@bytewyrd` to `enabledPlugins` or `bytewyrd` to `extraKnownMarketplaces` in the project's `.claude/settings.json`.
 
 **Why not project scope?**
 
-The motivation for user-scope-first is maintenance. If every `/sync`-bootstrapped project carries `enabledPlugins` + `extraKnownMarketplaces` entries, those entries become per-project artifacts that must be updated whenever the plugin's name, marketplace identifier, or GitHub path changes. The entries are also redundant for developers who already have the plugin installed: they get the plugin twice (user + project scope) with no benefit.
+The motivation for user-scope-first is maintenance. If every `/bytewyrd:scaffold`-seeded project carries `enabledPlugins` + `extraKnownMarketplaces` entries, those entries become per-project artifacts that must be updated whenever the plugin's name, marketplace identifier, or GitHub path changes. The entries are also redundant for developers who already have the plugin installed: they get the plugin twice (user + project scope) with no benefit.
 
 **Why not use the `SessionStart` hook to warn collaborators?**
 
-A `SessionStart` hook is a natural place to surface a "plugin not installed" warning for new collaborators who open a project that has been bootstrapped with `/sync`. The problem is circular: the hook is shipped by the plugin and is registered in `hooks/hooks.json`, so it only runs in sessions where the plugin is already loaded. A developer who does not have the plugin installed will see none of the hook's output — the hook simply does not execute for them.
+A `SessionStart` hook is a natural place to surface a "plugin not installed" warning for new collaborators who open a project that has been seeded with `/bytewyrd:scaffold`. The problem is circular: the hook is shipped by the plugin and is registered in `hooks/hooks.json`, so it only runs in sessions where the plugin is already loaded. A developer who does not have the plugin installed will see none of the hook's output — the hook simply does not execute for them.
 
 **What covers new collaborators instead?**
 
-`/sync` adds an explicit install hint to the consumer project's `CONTRIBUTING.md` (see the CONTRIBUTING.md rendering section in `skills/sync/SKILL.md`). A developer who clones the repo, reads the contributing guide, and follows the one-line install command gets the plugin and all its session-start validation from that point on.
+`/bytewyrd:scaffold` seeds the consumer project's `CLAUDE.md` with the install commands. A developer who clones the repo and runs them gets the plugin and its session-start hooks from that point on.
 
 **Optional project-scope enforcement**
 
-Teams that want Claude Code to auto-install the plugin for any collaborator who opens the repo — bypassing the CONTRIBUTING.md manual step — can add both `enabledPlugins` and `extraKnownMarketplaces` entries to `.claude/settings.json` and commit them. Both entries are required: `enabledPlugins` alone is not enough because Claude Code needs `extraKnownMarketplaces` to resolve the marketplace source before it can prompt the install. Teams that choose this path own the maintenance of those entries. See `docs/guide/installation.md` for the exact JSON.
+Teams that want Claude Code to auto-install the plugin for any collaborator who opens the repo — bypassing the manual install step — can add both `enabledPlugins` and `extraKnownMarketplaces` entries to `.claude/settings.json` and commit them. Both entries are required: `enabledPlugins` alone is not enough because Claude Code needs `extraKnownMarketplaces` to resolve the marketplace source before it can prompt the install. Teams that choose this path own the maintenance of those entries. See `docs/guide/installation.md` for the exact JSON.
 
 ## Dependencies
 

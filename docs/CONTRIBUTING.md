@@ -64,9 +64,9 @@ Never overwrite a local file wholesale — the upstream file won't have any loca
 
 To add a new agent not yet in the plugin, copy it from upstream into `agents/`, add a row for it to the table in `THIRD_PARTY_NOTICES.md`, and commit.
 
-## Sync
+## Scaffold and drift
 
-Run `/sync` in any project to set up or refresh the Claude Code environment — CLAUDE.md, BEST_PRACTICES.md, CI, RFC process, and all. The skill is idempotent: existing files are skipped, missing files are created, name/description are kept in sync. Re-run after the plugin updates to pick up new best-practice entries.
+Run `/bytewyrd:scaffold` in any project to set up the Claude Code environment: `AGENTS.md`, a `CLAUDE.md` that imports it, a PR template and CI. Existing files are skipped and missing files are created, and nothing is written without `--apply`. After the plugin updates, run `/bytewyrd:drift` to check those files against the new templates; it never edits files.
 
 
 ## Development Workflow
@@ -140,4 +140,4 @@ claude plugin validate .
 
 ## RFC Process
 
-Significant changes (new features, architectural changes, breaking changes) go through the RFC process. See [docs/rfc-process.md](rfc-process.md).
+Significant changes (new features, architectural changes, breaking changes) go through the RFC process. See the [`rfc-process` skill](../skills/rfc-process/references/rfc-process.md).

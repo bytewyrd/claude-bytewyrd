@@ -45,7 +45,7 @@ When you add a skill or agent that depends on a specific external tool, add a pr
 
 ### During work
 
-- Use the RFC process (`/rfc-new`) for changes requiring design decisions — check for `docs/rfc-process.md` first.
+- Use the RFC process (`/rfc-new`) for changes requiring design decisions — read the `rfc-process` skill first.
 - Prefer specialized agents over direct implementation in the main context.
 - Each parallel agent needs its own worktree. Sub-agents share the parent worktree.
 - Never start long-running processes — ask the user to run in a separate terminal.
@@ -68,11 +68,11 @@ The skill enforces a six-phase protocol: pre-flight (resolve scope, discover tes
 Ask the user to run `/docs-review <scope-hint>` when:
 
 - A `/rfc-implement` just landed user-visible changes (a new skill, an agent change, a new flag, a new workflow) — check whether `docs/guide/**` needs updates to match.
-- `/sync` reports the docs-agent definition has improved — re-audit `docs/guide/**` with the updated checks.
+- The docs-agent definition has improved — re-audit `docs/guide/**` with the updated checks.
 - A user reports a tutorial does not work, a how-to guide references a missing flag, or a reference page is out of date.
 - Before a release — sweep `docs/guide/**` to confirm no broken examples or stale references ship to users.
 
-`/docs-review` spawns the `docs-agent` subagent on Sonnet. It is scoped to `docs/guide/**`, the contributor section, and `README.md` (bootstrap-once: written by `/sync` at project creation, then project-owned) — it never touches `docs/ARCHITECTURE.md`, `docs/CONTRIBUTING.md`, `docs/BEST_PRACTICES.md`, `docs/project-brief.md`, or anything under `docs/rfcs/`. Those files have separate owners.
+`/docs-review` spawns the `docs-agent` subagent on Sonnet. It is scoped to `docs/guide/**`, the contributor section, and `README.md` (project-owned) — it never touches `docs/ARCHITECTURE.md`, `docs/CONTRIBUTING.md`, `docs/BEST_PRACTICES.md`, `docs/project-brief.md`, or anything under `docs/rfcs/`. Those files have separate owners.
 
 The skill enforces a seven-phase protocol: resolve scope → coverage audit → drift detection → plan → **approval gate** → apply → report. The approval gate stops the subagent before any mutation; review the plan, approve specific findings, and the subagent applies them one commit at a time.
 
