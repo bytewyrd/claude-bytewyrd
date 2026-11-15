@@ -930,9 +930,12 @@ def test_plugin_sha_from_a_cache_directory_name(tmp_path, monkeypatch):
         ("a" * 41, "unknown"),
         ("plugin", "unknown"),
     ]
-    for name, want in cases:
-        (tmp_path / name).mkdir()
-        assert bw.plugin_sha(str(tmp_path / name)) == want, name
+    # Each case gets its own parent directory: on a case-insensitive file system
+    # (macOS's default APFS), 0123456789ab and 0123456789AB are one name.
+    for i, (name, want) in enumerate(cases):
+        path = tmp_path / str(i) / name
+        path.mkdir(parents=True)
+        assert bw.plugin_sha(str(path)) == want, name
 
 
 def test_plugin_sha_from_a_git_checkout(tmp_path, monkeypatch):
