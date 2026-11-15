@@ -132,6 +132,12 @@ class Sim:
             "HOME": str(home),
             "GIT_CONFIG_GLOBAL": os.devnull,
             "GIT_CONFIG_NOSYSTEM": "1",
+            # Each git commit starts automatic maintenance, which detaches and
+            # takes .git/objects/maintenance.lock in the background; the lock
+            # appearing or vanishing mid-snapshot fails drift's S6 check.
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "maintenance.auto",
+            "GIT_CONFIG_VALUE_0": "false",
             "BYTEWYRD_PYTHON": sys.executable,
         }
         if os.environ.get("TMPDIR"):
