@@ -844,7 +844,9 @@ def _yaml():
         """A SafeLoader with no implicit resolvers, so every plain scalar stays
         the string as written (2026-11-09, yes, 12, ~). Its composer refuses
         aliases: a few hundred bytes of them can expand to hundreds of
-        megabytes [R55]."""
+        megabytes [R55]. A value that its explicit tag can't hold, and an
+        escape past U+10FFFF, are YAML errors at their line, where
+        SafeLoader lets other exceptions out."""
 
         yaml_implicit_resolvers = {}
 
@@ -852,6 +854,28 @@ def _yaml():
             if self.check_event(yaml.AliasEvent):
                 raise _Alias(self.peek_event().start_mark)
             return super().compose_node(parent, index)
+
+        def construct_object(self, node, deep=False):
+            # SafeConstructor raises these, not a ConstructorError, for a
+            # value such as !!int abc (ValueError), !!int '' (IndexError),
+            # !!bool maybe (KeyError) or !!timestamp nope (AttributeError).
+            try:
+                return super().construct_object(node, deep)
+            except (AttributeError, LookupError, ValueError) as e:
+                tag = node.tag.replace("tag:yaml.org,2002:", "!!", 1)
+                problem = "%r is not a valid %s" % (node.value, tag)
+                raise yaml.constructor.ConstructorError(None, None, problem, node.start_mark) from e
+
+        def scan_flow_scalar_non_spaces(self, double, start_mark):
+            # chr() raises ValueError, not a ScannerError, for a double-quoted
+            # escape of 8 hex digits past U+10FFFF.
+            try:
+                return super().scan_flow_scalar_non_spaces(double, start_mark)
+            except ValueError as e:
+                problem = "found an escape sequence past U+10FFFF"
+                raise yaml.scanner.ScannerError(
+                    "while scanning a double-quoted scalar", start_mark, problem, self.get_mark()
+                ) from e
 
     return yaml, FrontmatterLoader
 
@@ -922,9 +946,10 @@ def load_frontmatter(path):
 
     Raises BwError, with a one-line message that names PATH, when PATH is not
     a regular file or can't be read, when it has no such block, or when the
-    block is over 64 KiB, not UTF-8, not valid YAML, uses an alias, nests too
-    deeply or is not a mapping, or gives one of the six fields a list, a
-    mapping or an explicitly tagged non-string value.
+    block is over 64 KiB, not UTF-8, not valid YAML (which includes a value
+    that its explicit tag can't hold, such as !!int abc), uses an alias,
+    nests too deeply or is not a mapping, or gives one of the six fields a
+    list, a mapping or an explicitly tagged non-string value.
 
     Contract: docs/rfcs/2026-11-09-scaffold-and-drift.md, B2 "Frontmatter
     parsing".

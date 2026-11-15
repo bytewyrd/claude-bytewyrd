@@ -358,12 +358,12 @@ def test_frontmatter_prints_load_frontmatter_s_error(call, text, message):
 
 @pytest.mark.parametrize("value", ["!!int abc", "!!bool maybe", "!!timestamp nope", '"\\U00110000"'])
 def test_frontmatter_prints_a_json_error_for_what_the_loader_can_t_build(call, value):
-    # load_frontmatter() lets these out as ValueError, KeyError or
-    # AttributeError, not BwError; json_main() still makes them an error object.
+    # load_frontmatter() reports each as invalid YAML; test_frontmatter.py
+    # pins the messages.
     Path("x.md").write_text("---\ncreated: %s\n---\n" % value)
     code, out, err = call(bw_rfc_frontmatter, "x.md")
     assert (code, err) == (2, b"")
-    assert json.loads(out)["error"].startswith("rfc-frontmatter: ")
+    assert json.loads(out)["error"].startswith("rfc-frontmatter: x.md:2: frontmatter is not valid YAML (")
 
 
 def test_frontmatter_prints_a_lone_surrogate_escape_as_u_fffd(call):
@@ -662,7 +662,7 @@ def test_summary_leaves_out_with_a_warning(call):
     write_rfc("a.md", "rfc: a\n")
     write_rfc("b.md", 'rfc: "\\n"\nstatus: Draft\n')
     Path("docs/rfcs/c.md").write_text("# no frontmatter\n")
-    write_rfc("d.md", "rfc: d\nstatus: Draft\ncreated: !!int abc\n")  # load_frontmatter() raises ValueError
+    write_rfc("d.md", "rfc: d\nstatus: Draft\ncreated: !!int abc\n")  # not valid YAML: !!int can't hold abc
     write_rfc("e.md", 'rfc: e\nstatus: "Dr\\naft"\n')
     Path("docs/rfcs/f.md").mkdir()
     write_rfc(".g.md", "rfc: g\nstatus: Draft\n")

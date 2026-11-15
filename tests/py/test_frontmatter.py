@@ -190,6 +190,36 @@ def test_an_explicitly_tagged_non_string_field_is_an_error(block):
     assert error(block).startswith("x.md: created is a tagged ")
 
 
+@pytest.mark.parametrize(
+    "block, problem",
+    [
+        ("created: !!int abc\n", "'abc' is not a valid !!int"),
+        ("created: !!float x\n", "'x' is not a valid !!float"),
+        ("created: !!bool maybe\n", "'maybe' is not a valid !!bool"),
+        ("created: !!timestamp nope\n", "'nope' is not a valid !!timestamp"),
+    ],
+)
+def test_a_value_that_its_explicit_tag_can_t_hold_is_invalid_yaml(block, problem):
+    # SafeConstructor raises ValueError, KeyError or AttributeError for these,
+    # not a YAMLError; FrontmatterLoader makes them YAML errors at their line.
+    assert error('rfc: "a"\n' + block) == "x.md:3: frontmatter is not valid YAML (%s)" % problem
+
+
+def test_a_value_that_its_explicit_tag_can_t_hold_is_invalid_under_any_key():
+    # An empty !!int raises IndexError.
+    message = "x.md:4: frontmatter is not valid YAML ('' is not a valid !!int)"
+    assert error("notes:\n  - ok\n  - !!int ''\n") == message
+
+
+def test_a_double_quoted_escape_past_u_10ffff_is_invalid_yaml():
+    # chr() raises ValueError for it, not a YAMLError; FrontmatterLoader makes
+    # it a YAML error at its line. U+10FFFF itself is the last code point.
+    escape = chr(92) + "U%08X"
+    message = "x.md:3: frontmatter is not valid YAML (while scanning a double-quoted scalar, found an escape sequence past U+10FFFF)"
+    assert error('rfc: "a"\ntitle: "%s"\n' % (escape % 0x110000)) == message
+    assert load('title: "%s"\n' % (escape % 0x10FFFF))["title"] == chr(0x10FFFF)
+
+
 def test_explicit_str_and_null_tags_are_strings():
     assert load("rfc: !!str 12\ntitle: !!null ''\n") == dict(EMPTY, rfc="12")
 
