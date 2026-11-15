@@ -18,8 +18,9 @@ is resolved against the linking file's directory (or the repository
 root when it starts with "/") after dropping any "#fragment" or
 "?query"; the check passes when that file or directory exists.
 
-Templates under templates/*.tpl are not Markdown files and are never
-passed in: their links resolve where /sync renders them, not here.
+Templates under templates/scaffold/*.tpl are not Markdown files and are
+never passed in: their links resolve where /bytewyrd:scaffold renders them,
+not here.
 
 Exit status: 0 when every link resolves, 1 otherwise.
 """
