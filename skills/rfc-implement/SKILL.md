@@ -17,7 +17,7 @@ mcp_result="$(printf '%s' "$mcp_out" | jq -r .result)"
 gh_result="$(printf '%s' "$gh_out"  | jq -r .result)"
 ```
 
-- `mcp_status=0` (i.e. `$mcp_result` = `available`) → use the `mcp__plugin_github_github__create_pull_request` MCP tool. Print: `Using GitHub MCP for PR creation.`
+- `mcp_status=0` (i.e. `$mcp_result` = `available`) → use the GitHub MCP server's `create_pull_request` tool. Print: `Using GitHub MCP for PR creation.`
 - `mcp_status!=0 && gh_status=0` → fall back to `gh pr create`. Print: `GitHub MCP not enabled — using gh CLI for PR creation.`
 - both nonzero → abort PR creation with: `Cannot create PR: neither GitHub MCP nor gh CLI is available. Fix: install github@claude-plugins-official OR install gh CLI and run gh auth login.` (Use `printf '%s' "$gh_out" | jq -r .hint` and the matching hint from `$mcp_out` to phrase the remediation precisely.)
 

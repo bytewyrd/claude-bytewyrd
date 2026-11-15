@@ -127,8 +127,8 @@ The inventory itself does not need to be perfect at this stage — its purpose i
 For each claim in the inventory (and for each new claim that surfaces during drafting):
 
 1. **Select the source mechanism.**
-   - Library / framework / SDK / CLI tool docs → Context7 (`mcp__plugin_context7_context7__resolve-library-id` then `mcp__plugin_context7_context7__query-docs`).
-   - Everything else web-reachable (vendor docs, error messages, release notes, GitHub issues, standards documents) → Exa (`mcp__exa__web_search_exa` for a search, `mcp__exa__crawling_exa` for a known URL).
+   - Library / framework / SDK / CLI tool docs → Context7's `resolve-library-id` and `query-docs` tools, in that order.
+   - Everything else web-reachable (vendor docs, error messages, release notes, GitHub issues, standards documents) → Exa (Exa's search tool for a search, Exa's page-fetch tool for a known URL).
    - Project-internal facts → `Read`, `Grep`, or `Glob` against the file in the repo.
    - `WebFetch` and `WebSearch` are fallbacks only — use them when Exa is unreachable. Prefer Exa otherwise, as instructed in `CLAUDE.md` ("Use Exa as the default for any web lookup. Do not use `WebSearch` unless Exa is unavailable.").
 
