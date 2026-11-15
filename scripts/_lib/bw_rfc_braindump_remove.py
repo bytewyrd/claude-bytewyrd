@@ -21,8 +21,8 @@ import os
 import bw
 
 FILE = "docs/rfc-braindump.md"
-# The bash script's wording, its name included.
-USAGE = "usage: rfc-braindump-remove.sh <full-bullet-body-without-leading-star-space>"
+# The bash script's wording, with the command named as scripts/bw runs it.
+USAGE = "usage: bw rfc-braindump-remove <full-bullet-body-without-leading-star-space>"
 
 
 def run(argv):

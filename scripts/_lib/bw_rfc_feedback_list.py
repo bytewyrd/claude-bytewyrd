@@ -21,8 +21,8 @@ import re
 import bw
 
 MARKER = re.compile(rb"\s*[-*>]*\s*FEEDBACK:")  # for bytes, \s is [ \t\n\r\f\v]
-# The bash script's wording, its name included.
-USAGE = "usage: rfc-feedback-list.sh <path-to-rfc.md>"
+# The bash script's wording, with the command named as scripts/bw runs it.
+USAGE = "usage: bw rfc-feedback-list <path-to-rfc.md>"
 
 
 def markers(data):

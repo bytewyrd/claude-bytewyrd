@@ -86,7 +86,7 @@ def test_the_closing_delimiter_may_end_the_file():
     assert bw.load_frontmatter(write("x.md", "---\nrfc: a\n---")) == dict(EMPTY, rfc="a")
 
 
-def test_a_later_key_wins_as_in_rfc_frontmatter_sh():
+def test_a_later_key_wins_as_it_did_in_bash():
     assert load("rfc: a\nrfc: b\n")["rfc"] == "b"
 
 
@@ -261,7 +261,7 @@ def test_a_body_that_is_not_utf_8_is_never_read():
         "--- \nrfc: a\n---\n",
         "----\nrfc: a\n----\n",
         "\ufeff---\nrfc: a\n---\n",
-        # A CRLF file, which rfc-frontmatter.sh also refuses: its first line is "---\r".
+        # A CRLF file, which the bash rfc-frontmatter also refused: its first line is "---\r".
         "---\r\nrfc: a\r\n---\r\n",
         "",
     ],

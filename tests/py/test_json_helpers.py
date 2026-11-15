@@ -112,7 +112,7 @@ def test_append_through_a_dangling_symlink_creates_its_target(call):
 
 @pytest.mark.parametrize("argv", [[], [""]])
 def test_append_without_a_body_is_a_usage_error(call, argv):
-    usage = "usage: rfc-braindump-append.sh <full-bullet-body-without-leading-star-space>"
+    usage = "usage: bw rfc-braindump-append <full-bullet-body-without-leading-star-space>"
     assert call(bw_rfc_braindump_append, *argv) == (2, error(usage), b"")
     assert not BRAINDUMP.exists()
 
@@ -217,8 +217,8 @@ def test_remove_matches_the_bytes_of_a_body_that_isn_t_utf_8():
 @pytest.mark.parametrize(
     "argv, message",
     [
-        ([], "usage: rfc-braindump-remove.sh <full-bullet-body-without-leading-star-space>"),
-        ([""], "usage: rfc-braindump-remove.sh <full-bullet-body-without-leading-star-space>"),
+        ([], "usage: bw rfc-braindump-remove <full-bullet-body-without-leading-star-space>"),
+        ([""], "usage: bw rfc-braindump-remove <full-bullet-body-without-leading-star-space>"),
         (["x"], "rfc-braindump-remove: docs/rfc-braindump.md not found"),
     ],
 )
@@ -299,8 +299,8 @@ def test_feedback_list_decodes_each_line_on_its_own(call):
 @pytest.mark.parametrize(
     "argv, message",
     [
-        ([], "usage: rfc-feedback-list.sh <path-to-rfc.md>"),
-        ([""], "usage: rfc-feedback-list.sh <path-to-rfc.md>"),
+        ([], "usage: bw rfc-feedback-list <path-to-rfc.md>"),
+        ([""], "usage: bw rfc-feedback-list <path-to-rfc.md>"),
         (["missing.md"], "rfc-feedback-list: file not found: missing.md"),
         (["docs"], "rfc-feedback-list: file not found: docs"),
     ],
@@ -333,8 +333,8 @@ def test_frontmatter_prints_the_six_fields_as_jq_did(call):
 @pytest.mark.parametrize(
     "argv, message",
     [
-        ([], "usage: rfc-frontmatter.sh <path-to-rfc.md>"),
-        ([""], "usage: rfc-frontmatter.sh <path-to-rfc.md>"),
+        ([], "usage: bw rfc-frontmatter <path-to-rfc.md>"),
+        ([""], "usage: bw rfc-frontmatter <path-to-rfc.md>"),
         (["missing.md"], "rfc-frontmatter: file not found: missing.md"),
         (["docs"], "rfc-frontmatter: file not found: docs"),
     ],
@@ -575,9 +575,9 @@ def test_set_status_prints_load_frontmatter_s_error(call):
 @pytest.mark.parametrize(
     "argv, message",
     [
-        ([], "usage: rfc-set-status.sh <path-to-rfc.md> <Draft|Approved|Done|Dropped> [<drop-reason>]"),
-        ([RFC], "usage: rfc-set-status.sh <path-to-rfc.md> <Draft|Approved|Done|Dropped> [<drop-reason>]"),
-        (["", "Done"], "usage: rfc-set-status.sh <path-to-rfc.md> <Draft|Approved|Done|Dropped> [<drop-reason>]"),
+        ([], "usage: bw rfc-set-status <path-to-rfc.md> <Draft|Approved|Done|Dropped> [<drop-reason>]"),
+        ([RFC], "usage: bw rfc-set-status <path-to-rfc.md> <Draft|Approved|Done|Dropped> [<drop-reason>]"),
+        (["", "Done"], "usage: bw rfc-set-status <path-to-rfc.md> <Draft|Approved|Done|Dropped> [<drop-reason>]"),
         (["missing.md", "done"], "rfc-set-status: invalid status 'done' (allowed: Draft, Approved, Done, Dropped)"),
         (["missing.md", "Dropped"], "rfc-set-status: drop_reason is required when status=Dropped"),
         (["missing.md", "Dropped", ""], "rfc-set-status: drop_reason is required when status=Dropped"),
@@ -757,8 +757,8 @@ def test_probe_of_gh_runs_gh_auth_status(call, bin_dir, tmp_path):
 @pytest.mark.parametrize(
     "argv, message",
     [
-        ([], "usage: tool-probe.sh <gh|git|jq>"),
-        ([""], "usage: tool-probe.sh <gh|git|jq>"),
+        ([], "usage: bw tool-probe <gh|git|jq>"),
+        ([""], "usage: bw tool-probe <gh|git|jq>"),
         (["nonsense"], "unrecognized probe name 'nonsense'"),
         (["github-mcp"], "unrecognized probe name 'github-mcp'"),
     ],

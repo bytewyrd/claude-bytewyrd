@@ -61,7 +61,7 @@ teardown() {
 }
 
 # --- YAML double-quoted escapes ---------------------------------------------
-# rfc-set-status.sh writes drop_reason as a YAML double-quoted scalar and escapes
+# rfc-set-status writes drop_reason as a YAML double-quoted scalar and escapes
 # \ and " inside it. The reader must give back the original text.
 
 @test "unescapes \\\" and \\\\ in double-quoted values" {
@@ -83,7 +83,7 @@ EOS
   assert_equal "$(echo "$output" | jq -r .drop_reason)" 'Superseded by the "init" RFC; see C:\temp\notes.'
 }
 
-@test "reads back exactly what rfc-set-status.sh wrote for quotes and backslashes" {
+@test "reads back exactly what rfc-set-status wrote for quotes and backslashes" {
   reason='Superseded by the "init" RFC; see C:\temp\notes, trailing\'
   run bw rfc-set-status "$FIXTURE" Dropped "$reason"
   assert_success

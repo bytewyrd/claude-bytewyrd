@@ -23,8 +23,8 @@ MISSING = {
     "jq": "Install jq: https://stedolan.github.io/jq/download/",
 }
 UNAUTHENTICATED = "gh CLI present but not authenticated. Run: gh auth login."
-# The bash script's wording, its name included.
-USAGE = "usage: tool-probe.sh <gh|git|jq>"
+# The bash script's wording, with the command named as scripts/bw runs it.
+USAGE = "usage: bw tool-probe <gh|git|jq>"
 
 
 def logged_in(gh):

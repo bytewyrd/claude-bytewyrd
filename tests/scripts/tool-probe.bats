@@ -28,7 +28,7 @@ teardown() {
   run bw tool-probe gh
   # Both exit codes 0 and 1 are valid; exit 2 would be an error.
   if [ "$status" -eq 2 ]; then
-    fail "tool-probe.sh gh exited 2 (usage error): $output"
+    fail "bw tool-probe gh exited 2 (usage error): $output"
   fi
   result="$(echo "$output" | jq -r .result)"
   case "$result" in

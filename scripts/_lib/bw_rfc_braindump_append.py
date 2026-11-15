@@ -20,8 +20,8 @@ import bw
 
 FILE = "docs/rfc-braindump.md"
 HEADER = b"# RFC Braindump\n\nPotential RFC ideas. Add with `/rfc-braindump`, promote to full RFC with `/rfc-new`.\n\n"
-# The bash script's wording, its name included.
-USAGE = "usage: rfc-braindump-append.sh <full-bullet-body-without-leading-star-space>"
+# The bash script's wording, with the command named as scripts/bw runs it.
+USAGE = "usage: bw rfc-braindump-append <full-bullet-body-without-leading-star-space>"
 
 
 def run(argv):

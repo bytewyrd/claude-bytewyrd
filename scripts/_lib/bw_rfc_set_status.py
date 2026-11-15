@@ -27,8 +27,8 @@ import re
 import bw
 
 STATUSES = ("Draft", "Approved", "Done", "Dropped")
-# The bash script's wording, its name included.
-USAGE = "usage: rfc-set-status.sh <path-to-rfc.md> <Draft|Approved|Done|Dropped> [<drop-reason>]"
+# The bash script's wording, with the command named as scripts/bw runs it.
+USAGE = "usage: bw rfc-set-status <path-to-rfc.md> <Draft|Approved|Done|Dropped> [<drop-reason>]"
 
 _FIRST_FIELD = re.compile(rb"[ \t]*([^ \t]*)")  # awk's $1, split at blanks
 

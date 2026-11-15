@@ -11,8 +11,8 @@ Contract: docs/rfcs/2026-11-09-scaffold-and-drift.md, Appendix B2
 
 import bw
 
-# The bash script's wording, its name included.
-USAGE = "usage: rfc-frontmatter.sh <path-to-rfc.md>"
+# The bash script's wording, with the command named as scripts/bw runs it.
+USAGE = "usage: bw rfc-frontmatter <path-to-rfc.md>"
 
 
 def run(argv):
