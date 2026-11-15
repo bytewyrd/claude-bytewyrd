@@ -1,4 +1,3 @@
-# bootstrap-content-version: bytewyrd/.github/workflows/ci.yml@bc393baf:e3b0c44298fc
 
 # Required checks: the job names below (lint, validate, test) are the checks
 # the branch ruleset is meant to require. A renamed job leaves its old name
