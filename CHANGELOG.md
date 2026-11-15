@@ -55,6 +55,14 @@ Everything merged after the 0.2.0 release notes were written: #94, #96, #110, #1
 - **Shell style.** `.editorconfig` records the shfmt style (2-space indent, indented case items, binary operators may start a line). The scripts were reformatted once, with no behavior change: their syntax trees are identical before and after.
 - **License section in the README** (#116).
 
+### Removed
+
+- **`/sync`** (RFC `2026-11-09-scaffold-and-drift`), with its 18 `scripts/sync-*.sh` helpers, the sync-only libraries `scripts/_lib/{chunks,detect-languages,plugin}.bash` and their bats tests. Run `/bytewyrd:scaffold` to seed a repository instead, and `/bytewyrd:drift` to check it: drift prints each 0.2.x leftover with its fix.
+- **The bootstrap manifest:** `bootstrap-manifest.json`, `scripts/build-manifest.sh`, the `hooks/pre-commit/manifest-check.sh` pre-commit hook and CI's manifest check. If a plugin clone's `.git/hooks/pre-commit` links to that hook, remove it with `rm .git/hooks/pre-commit`.
+- **The 0.2.x templates** in `templates/`, and the root `rfc-process.md`. scaffold's seed templates are in `templates/scaffold/`, and the RFC process and the curated practices are in the `rfc-process` and `best-practices` skills, read from the plugin at runtime.
+- **`scripts/rfc-legacy-detect.sh`**, which nothing called, and its tests.
+- **The companion-plugin probes** `github-mcp`, `context7-mcp` and `code-review-mcp` in `scripts/tool-probe.sh`. The three plugins are hard dependencies, so they can't be missing while bytewyrd loads. `/rfc-implement` opens its pull request with the GitHub MCP server's `create_pull_request` tool, without the `gh` fallback, and `/refactor` always runs the `/review` pre-pass.
+
 ### Fixed
 
 - **The `/docs-review` reminder after a `feature-engineer` run is back** (#116 removed it; see below). The SubagentStop hook now writes its sentinel through `bw state-touch`, which refuses a symlinked `.bytewyrd` or sentinel. Its reminder and the post-compact one ask you to run `/docs-review`, which is user-only, and the post-compact reminder no longer needs GNU or BSD `stat`.
