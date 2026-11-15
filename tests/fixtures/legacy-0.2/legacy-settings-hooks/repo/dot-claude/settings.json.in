@@ -1,0 +1,56 @@
+{
+  "enabledPlugins": {
+    "github@claude-plugins-official": true
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "rm -f \"${CLAUDE_PROJECT_DIR:-$PWD}/.bytewyrd/precompact-extraction-done\""
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Bootstrap content has new entries. Consider running /sync to refresh docs/BEST_PRACTICES.md.'"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git commit*)",
+            "command": "echo 'Post-commit: does this change component structure → ARCHITECTURE.md? Update before pushing if so.'"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'our own hook'"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Session ending: (1) /best-practices-extract — if non-obvious learnings were not yet captured.'"
+          }
+        ]
+      }
+    ]
+  }
+}

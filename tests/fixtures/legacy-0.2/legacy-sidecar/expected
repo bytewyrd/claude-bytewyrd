@@ -1,0 +1,6 @@
+warn  AGENTS.md  missing
+warn  CLAUDE.md  missing
+warn  .github/PULL_REQUEST_TEMPLATE.md  missing
+warn  .github/workflows/ci.yml  missing
+drift  .bytewyrd/.bootstrap-versions.json  legacy-sidecar
+drift  .claude/.bootstrap-versions.json  legacy-sidecar

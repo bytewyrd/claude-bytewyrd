@@ -1,0 +1,9 @@
+warn  AGENTS.md  missing
+drift  CLAUDE.md  legacy-header
+drift  .github/PULL_REQUEST_TEMPLATE.md  legacy-header
+drift  .github/workflows/ci.yml  legacy-header
+drift  README.md  legacy-header
+drift  docs/ARCHITECTURE.md  legacy-header
+drift  docs/BEST_PRACTICES.md  legacy-header
+drift  docs/CONTRIBUTING.md  legacy-header
+drift  mise.toml  legacy-header

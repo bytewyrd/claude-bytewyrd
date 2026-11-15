@@ -1,0 +1,16 @@
+# bootstrap-content-version: bytewyrd/.github/workflows/ci.yml@bc393baf:e3b0c44298fc
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: go test ./...

@@ -1,0 +1,56 @@
+<!-- bootstrap-content-version: bytewyrd/CLAUDE.md@6cbeb80b:61f9b5c01dba -->
+<!-- Managed by the Bytewyrd plugin. /sync refreshes the plugin-owned sections (see owned_sections in bootstrap-manifest.json) on each run and merges in updates; the rest of this file is project-owned — maintain it as part of your codebase. -->
+
+# legacy-app
+
+A service that `/sync` 0.2.x set up.
+
+## Toolchain
+
+- Go 1.27: `go build ./...`, `go test ./...`
+
+## Agent delegation
+
+| Task | Agent |
+|------|-------|
+| New features | feature-engineer |
+
+## Auto Mode
+
+Auto mode grants execution speed, not decision authority.
+
+## Tool Usage
+
+Use Exa for web lookups.
+
+## RFC Process
+
+Design changes start as RFCs.
+
+## Evidence-Based Development
+
+Claims rest on evidence.
+
+## Model Usage Optimization
+
+Use the cheapest model that fits the task.
+
+## Claude Code Sandbox — Container Tool Compatibility
+
+Add wrapper scripts to sandbox.excludedCommands.
+
+## Security
+
+Never commit secrets.
+
+## File structure
+
+- `cmd/`: the binaries
+
+## Git
+
+Merge, never squash.
+
+## Conventions
+
+Conventional Commits.

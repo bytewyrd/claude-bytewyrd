@@ -3,7 +3,8 @@ bw.py's shared functions and detection, bw_main.py's checks and dispatch, and
 the scaffold, drift, state-touch and compact-reminder commands.
 
 Detection cases build real throwaway git repositories, with the developer's
-git configuration kept out (see hermetic_git).
+git configuration kept out (see hermetic_git). tests/e2e/test_consumer_sim.py
+runs scaffold and drift end to end; the cases here cover their parts.
 """
 
 import ast

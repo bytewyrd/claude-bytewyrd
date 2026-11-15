@@ -1,0 +1,28 @@
+<!-- bootstrap-content-version: bytewyrd/docs/BEST_PRACTICES.md@896a1c6d:92988cef4e78 -->
+<!-- Bootstrapped by the Bytewyrd plugin. This file is now owned by this project — /sync will not update it. Maintain it as part of your codebase. -->
+
+# Best Practices
+
+## Project entries
+
+- Our own lesson: retry the flaky upstream twice.
+
+## Pitfall
+
+- A plugin entry.
+
+## Testing
+
+- Another plugin entry.
+
+## Go
+
+- A Go entry.
+
+## Terraform / Terragrunt
+
+- The last plugin section.
+
+## Project-Specific
+
+- Another lesson of our own.

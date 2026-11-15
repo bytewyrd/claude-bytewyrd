@@ -1,0 +1,6 @@
+<!-- bootstrap-content-version: bytewyrd/docs/ARCHITECTURE.md@9a0b1c2d:0123456789ab -->
+<!-- Bootstrapped by the Bytewyrd plugin. This file is now owned by this project — /sync will not update it. Maintain it as part of your codebase. -->
+
+# Architecture
+
+One binary and one database.

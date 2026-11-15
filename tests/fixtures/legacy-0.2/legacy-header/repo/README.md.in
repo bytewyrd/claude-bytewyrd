@@ -1,0 +1,6 @@
+<div align="center">
+<!-- bootstrap-content-version: bytewyrd/README.md@v1:7cc82158eace -->
+  <h1>legacy-app</h1>
+</div>
+
+A service that `/sync` 0.2.x set up.
