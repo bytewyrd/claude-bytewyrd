@@ -1,10 +1,9 @@
 #!/usr/bin/env bats
 # The plugin ships without a `version` in .claude-plugin/plugin.json so users
 # track commits (a pinned version keeps every install on the cached copy).
-# These tests pin down what that does to the three readers of the field: each
+# These tests pin down what that does to the two readers of the field: each
 # must degrade to a silent no-op, never an error.
 #
-#   scripts/check-requirements.sh  — "plugin out of date" SessionStart warning
 #   scripts/sync-preflight.sh      — `plugin_version` in the preflight JSON
 #   skills/sync/SKILL.md (Step 1)  — records .bytewyrd/plugin-version
 #
@@ -19,8 +18,8 @@ setup() {
   mkdir -p "$FAKE_HOME/.claude"
   export HOME="$FAKE_HOME"
 
-  # A plugin root the scripts can resolve: CLAUDE_PLUGIN_ROOT for the hook and
-  # the skill snippet, the ~/.claude "home" branch for preflight.
+  # A plugin root the scripts can resolve: CLAUDE_PLUGIN_ROOT for the skill
+  # snippet, the ~/.claude "home" branch for preflight.
   PLUGIN_DIR="$FAKE_HOME/.claude"
   mkdir -p "$PLUGIN_DIR/.claude-plugin"
   printf '{"artifacts":[]}\n' > "$PLUGIN_DIR/bootstrap-manifest.json"
@@ -44,13 +43,6 @@ _plugin_json() {
   fi
 }
 
-# Run check-requirements.sh with every other probe suppressed, so the only
-# warning that can appear is the plugin-version one.
-_check_requirements() {
-  BYTEWYRD_SKIP_WARN="github,context7,code-review,exa,firefox-devtools,gh-cli" \
-    bash "$SCRIPT_ROOT/scripts/check-requirements.sh" 2>/dev/null
-}
-
 # The Step 1 snippet that records the plugin version, extracted verbatim from
 # skills/sync/SKILL.md so the test runs what the skill tells the agent to run.
 _sync_record_version_snippet() {
@@ -58,22 +50,6 @@ _sync_record_version_snippet() {
        found && /^```bash$/ {inside=1; next}
        inside && /^```$/ {exit}
        inside {print}' "$SCRIPT_ROOT/skills/sync/SKILL.md"
-}
-
-@test "check-requirements: no version in plugin.json -> no plugin-version warning, silent success" {
-  _plugin_json ""
-  run _check_requirements
-  assert_success
-  assert_equal "$(echo "$output" | jq -r .systemMessage)" ""
-  assert_equal "$(echo "$output" | jq -r .suppressOutput)" "true"
-}
-
-@test "check-requirements control: an older pinned version still warns" {
-  _plugin_json "0.1.0"
-  run _check_requirements
-  assert_success
-  [[ "$(echo "$output" | jq -r .systemMessage)" == *"Plugin out of date: installed 0.1.0, project last synced with 0.2.0"* ]] \
-    || fail "expected the plugin-version warning, got: $output"
 }
 
 @test "sync-preflight: no version in plugin.json -> plugin_version is an empty string" {
