@@ -57,7 +57,7 @@ A Python script does all seeding; `/bytewyrd:scaffold` only runs it. **Seeds**, 
 - `AGENTS.md`: at most 100 lines of tool-neutral facts plus a workflow pointer.
 - `CLAUDE.md`: `@AGENTS.md` plus Claude-only lines. Without the import, Claude ignores AGENTS.md [E4].
 - `.github/PULL_REQUEST_TEMPLATE.md`, unless GitHub finds a template [E47].
-- `ci.yml`, unless a workflow exists: a no-op job [E30], or a caller of this repo's `lang-ci.yml` pinned to a commit SHA [E29], with a job per tracked (language, directory) that detection keeps (B2).
+- `ci.yml`, unless a workflow exists: a no-op job [E30], or a caller of this repo's per-language `lang-ci-<id>.yml` workflows, pinned to one commit SHA [E29], with a job per tracked (language, directory) that detection keeps (B2).
 
 **Safety:** dry run unless `--apply`; never overwrites or follows symlinks; a symlinked parent directory exits 1. A dirty tree [E33] exits 3 unless `--allow-dirty`. Writes go to the top level [E32], never `.claude/`.
 
@@ -83,7 +83,7 @@ Deterministic, read-only and LLM-free. Exits: 0 clean, 2 drift, 1 cannot run (cr
 
 Two PRs, then the apps (Appendix D):
 
-1. **#115, merged first:** `lang-ci.yml` with the multi-language changes (B1), its fixture jobs, and this amendment.
+1. **#115, merged first:** one reusable workflow per language, `lang-ci-<id>.yml`, with the multi-language changes (B1), their fixture jobs, the lint-tool pins and actionlint, and this amendment.
 2. **Implementation PR**, whose commits run in this order, bats passing at each:
    - **add:** scaffold, drift, hooks (SubagentStop returns), both skills, dependencies and CI; the caller pins #115's merge commit, and `check-requirements.sh` goes.
    - **migrate:** this repo, by the B4 procedure.
@@ -103,7 +103,7 @@ Each is automated; B5 maps it to its check.
 - **AC-6** Subdirectory runs write at the top level; outside a work tree, both exit 1.
 - **AC-7** A mid-apply failure exits 1 and leaves none of its files.
 - **AC-8** The no-language `ci.yml` equals `scaffold-noop-fixture.yml` from line 2, which passes on GitHub.
-- **AC-9** The caller and every `lang-ci.yml` job pin every `uses:` by SHA, set `persist-credentials: false`, request only `contents: read`, and use no `secrets:` or `pull_request_target`.
+- **AC-9** The caller and every `lang-ci-<id>.yml` pin every `uses:` by SHA, set `persist-credentials: false`, request only `contents: read`, and use no `secrets:` or `pull_request_target`.
 - **AC-10** Apply, commit, apply → `0 created`, a clean tree, drift exit 0.
 - **AC-11** drift leaves fixtures unchanged and exits 0, 2 or 1 as specified (1 on crashes). `--strict` makes warnings exit 2.
 - **AC-12** A template edit → `template-changed`, and a caller `uses:` other than the template's pinned call → `pin-changed`, both exit 2; the printed stamp restores 0.
@@ -118,16 +118,17 @@ Each is automated; B5 maps it to its check.
 - **AC-21** Vendored PyYAML matches its sdist, imports with `__with_libyaml__` false, and parses only via B2's hardened loader, whose conversions fixtures pin.
 - **AC-22** No port commit changes `tests/scripts/`, and bats passes at every commit of the implementation PR.
 - **AC-23** Detection yields a caller job per tracked (language, directory) that B2 keeps and none for root-workspace members; each skipped or opted-out manifest gets a note instead, and unsafe manifests declare no workspace.
-- **AC-24** Each language id has a `lang-ci.yml` job that passes on its fixture.
+- **AC-24** Each language id has a `lang-ci-<id>.yml` whose one job passes on its fixture.
 - **AC-25** scaffold and drift print no byte below 0x20 but newlines, and each printed `.gitattributes` line opts out exactly its manifest.
+- **AC-26** Every workflow passes actionlint with shellcheck, and CI's shellcheck, shfmt and actionlint versions equal the `mise.toml` pins.
 
 ## Test plan
 
-CI extends main's `lint`, `validate` and `test` jobs [R49], and `lang-ci-fixture` runs every `lang-ci.yml` job; B4 lists the commands.
+CI extends main's `lint`, `validate` and `test` jobs [R49], and a `lang-ci-fixture-<id>` job runs each `lang-ci-<id>.yml` on its fixture; B4 lists the commands.
 
 ## Rollback
 
-Revert only the implementation PR, with `git revert -m 1 <sha>`. #115 stays: `lang-ci.yml` runs only when called [R86], callers pin it, and reverting #115 would revert this amendment too; a `lang-ci.yml` defect is fixed forward (fix, merge, bump the pin). Consumers get the revert on their next update [E42], and scaffolded AGENTS.md links to `skills/rfc-process/…` and `hooks/always-on-rules.json` then return 404. Re-landing takes `git revert <revert-sha>`, since a re-merge brings nothing back [E84].
+Revert only the implementation PR, with `git revert -m 1 <sha>`. #115 stays: the `lang-ci-<id>.yml` files, like `lang-ci.yml` [R86], run only when called, callers pin them, and reverting #115 would revert this amendment too; a defect in one is fixed forward (fix, merge, bump the pin). Consumers get the revert on their next update [E42], and scaffolded AGENTS.md links to `skills/rfc-process/…` and `hooks/always-on-rules.json` then return 404. Re-landing takes `git revert <revert-sha>`, since a re-merge brings nothing back [E84].
 
 ## Security considerations
 
@@ -138,7 +139,7 @@ Revert only the implementation PR, with `git revert -m 1 <sha>`. #115 stays: `la
 
 ## Decisions and risks
 
-The user's decisions of 2026-11-13 are in Appendix D.
+The user's decisions of 2026-11-13 and 2026-11-14 are in Appendix D.
 
 Risks:
 
@@ -157,7 +158,8 @@ Status values:
 
 - **Verified (pack):** confirmed by the orchestrator's brief pack on 2026-11-13.
 - **Verified (ledger):** confirmed by the orchestrator while checking review findings on 2026-11-13.
-- **Verified (session):** re-checked while drafting on 2026-11-13.
+- **Verified (session):** re-checked while drafting on 2026-11-13, or, for rows dated 2026-11-14, on that day.
+- **Verified (orchestrator):** run by the orchestrator on 2026-11-14 and not re-run while drafting.
 - **Reproduced (reviewer):** reproduced by a lens reviewer in the re-review or the amendment review, and not re-run while drafting.
 
 Repo `path:Lnnn` citations are against origin/main at d9ae47e, which includes PRs #113 and #116 [R49, R77], and were re-checked there on 2026-11-13. A citation of a line that #116 removed names the commit it was read at, as in `0745d32:hooks/hooks.json:L13`; rows that cite #115's head name 4d9d384.
@@ -255,6 +257,10 @@ Repo facts and local reproductions:
 | R85 | `tests/scripts/ci-lint.bats:L21-L23` and `tests/scripts/rfc-set-status.bats:L115-L117` fail, rather than skip, under `CI` when `python3 -c 'import yaml'` fails | `git show origin/main:<path>` | 2026-11-13 | Verified (session) |
 | R86 | `lang-ci.yml`'s only trigger is `workflow_call`, so it runs only when a caller's job runs it | `4d9d384:.github/workflows/lang-ci.yml:L11-L12` | 2026-11-13 | Verified (session) |
 | R87 | bash(1) of bash 5.3.20: under `-e`, "The shell does not exit if the command that fails is part of … any command executed in a `&&` or `\|\|` list except the command following the final `&&` or `\|\|` … or if the command's return value is being inverted with `!`". Locally, a pin check written as `test 2 = 1 && test …` let the script finish with exit 0, while the same tests on separate lines exit 1. The Appendix C `lang-ci.yml`, written to a scratch file, parses with PyYAML, its `run:` scripts pass shellcheck 0.11.0, and the B4 #115 lint passes on it and fails on each of 13 seeded defects, one per comment there plus a deleted job, an extra permission and a `pull_request_target` trigger | `/usr/share/man/man1/bash.1.bz2`; local runs | 2026-11-13 | Verified (session) |
+| R88 | The five Appendix C `lang-ci-<id>.yml` sketches, the rendered caller example, the `mise.toml`, `actionlint.yaml` and `lint` fragments, and the full #115 `ci.yml` built from them parse with PyYAML 6.0.3. In a scratch tree of those files and a Ruby `Gemfile.lock` stub, the B4 #115 `lint` block, run with `bash -e`, GNU grep 3.12 and GNU sed 4.10, exits 0 under `C.UTF-8` and `en_US.UTF-8`, and exits non-zero on each of 74 seeded defects, one at a time, each at the check whose comment names it: 13 per-file defects in each of the five files, and nine others. The version-check step fails for each of the three tools when `mise.toml` disagrees. The B4 pin checks, the same commands as Appendix C's `history` steps, pass, warn and fail as B4 says in nine cases in a scratch repository. A model of B2's caller checks gives `pin-changed` for each S24 decoy. shellcheck and actionlint weren't run in this session | local runs | 2026-11-14 | Verified (session) |
+| R89 | `lang-ci.yml` exists only on #115's branch: e6eb962 (2026-11-13) added it, and `origin/main` at d9ae47e has no `.github/workflows/lang-ci.yml` | `git log --diff-filter=A`; `git cat-file -e origin/main:.github/workflows/lang-ci.yml` exits 128 | 2026-11-14 | Verified (session) |
+| R90 | This repo's `mise.toml` is a 0.2.x header (L1), three comment lines and an empty `[tools]` (L6), and its template says "The [tools] table is yours to maintain" (L2). `/sync` applies the file's `tools[]:union` path by keeping the local file verbatim and restamping its marker | `mise.toml:L1-L6`; `templates/mise.toml.tpl:L2`; `bootstrap-manifest.json` (the `mise.toml` entry); `scripts/sync-apply-batch.sh:L580-L590` | 2026-11-14 | Verified (session) |
+| R91 | actionlint 1.7.12 on the branch's `ci.yml` reports `label "ubuntu-26.04" is unknown [runner-label]` for each of its three jobs. With shellcheck 0.11.0 on `PATH` it also reports `SC2086:info` for the `run:` blocks at `4d9d384:.github/workflows/ci.yml:L100,L106`, the two steps where `$SHELL_FILES` is unquoted under `set -f`. The branch's `lang-ci.yml` gives no finding | the orchestrator's local runs; both files are unchanged since 4d9d384 | 2026-11-14 | Verified (orchestrator) |
 
 External sources:
 
@@ -330,7 +336,7 @@ External sources:
 | E69 | PyYAML 6.0.3's sdist is `pyyaml-6.0.3.tar.gz`, sha256 `d76623373421df22fb4cf8817020cbb7ef15c725b9d5e45f17e189bfc384190f`, at https://files.pythonhosted.org/packages/05/8e/961c0007c59b8dd7729d542c61a4d537767a59645b82a0b521206e1e25c2/pyyaml-6.0.3.tar.gz. Under `pyyaml-6.0.3/`, `lib/yaml/` holds 17 `.py` files; the extension sources are `yaml/_yaml.pyx` and `yaml/_yaml.pxd`, outside it | https://pypi.org/pypi/PyYAML/6.0.3/json; local download, `sha256sum`, `tar -tzf` | 2026-11-13 | Verified (session) |
 | E70 | A `<job_id>` "must start with a letter or `_` and contain only alphanumeric characters, `-`, or `_`", and is unique in `jobs` | https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax | 2026-11-13 | Verified (session) |
 | E71 | A job that calls a reusable workflow may use only `name`, `uses`, `with`, `secrets`, `strategy`, `needs`, `if`, `concurrency`, `permissions` and `cache-mode`, so it can't add `services:`. The called workflow gets `github.token`, whose permissions it can only lower | https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations | 2026-11-13 | Verified (session) |
-| E72 | `jobs.<job_id>.with.<with_id>` may use the `matrix` context | https://docs.github.com/en/actions/reference/workflows-and-actions/contexts | 2026-11-13 | Verified (session) |
+| E72 | `jobs.<job_id>.with.<with_id>` may use the `matrix` context | https://docs.github.com/en/actions/reference/workflows-and-actions/contexts | 2026-11-13 | Verified (session). No longer used: the fixture jobs dropped their matrix (D4) |
 | E73 | setup-go v7.0.0 at `b7ad1dad…`: `cache` defaults to true. Without `cache-dependency-path` it looks only for `go.mod` in `GITHUB_WORKSPACE`, else throws "Dependencies file is not found in ${workspace}. Supported file pattern: go.mod", and when caching fails it "logs a warning and continues". `cache-dependency-path` takes repo-relative paths such as `subdir/go.sum`, globs and multi-line values. `go-version-file` takes `go.mod`, `go.work`, `.go-version` or `.tool-versions`; `token` defaults to `github.token` | `action.yml`, `src/cache-restore.ts`, `README.md` and `docs/advanced-usage.md` at that commit, via `gh api` | 2026-11-13 | Verified (session) |
 | E74 | setup-uv v10.3.3 at `68559e99…`: `working-directory` ("The directory to execute all commands in and look for files such as pyproject.toml") defaults to `github.workspace`, and the version file and `cache-dependency-glob` (default `**/uv.lock`, `**/pyproject.toml` and requirements and constraints patterns) resolve against it with `path.resolve` | `action.yml` and `src/utils/inputs.ts` at that commit, via `gh api` | 2026-11-13 | Verified (session) |
 | E75 | setup-bun v2.2.0 at `0c5077e5…`: the Bun version comes from `bun-version`, else `bun-version-file`, else silently from `package.json` in `GITHUB_WORKSPACE` (`packageManager: bun@…` or `engines.bun`), else the latest release ("If no version specified, default is "latest""). `no-cache` covers only the Bun executable; `token` defaults to `github.token` | `action.yml`, `src/index.ts`, `src/utils.ts` and `src/action.ts` at that commit, via `gh api` | 2026-11-13 | Verified (session) |
@@ -361,6 +367,15 @@ External sources:
 | E100 | `ubuntu-latest` is Ubuntu 24.04, whose image lists Node.js 22.23.4, Npm 10.9.9 and Yarn 1.22.22, and neither Bun nor pnpm | actions/runner-images `README.md` and `images/ubuntu/Ubuntu2404-Readme.md` at 95e6f51, via `gh api` | 2026-11-13 | Verified (session) |
 | E101 | The React Native community template's `template/Gemfile` lists cocoapods, activesupport, xcodeproj and other gems, but not rake, and `template/` has no Rakefile and no `.ruby-version` | react-native-community/template at 3c1a5b2, via `gh api` | 2026-11-13 | Verified (session); OPS saw the same |
 | E102 | Claude Code loads "Relative-path plugins in a marketplace you added from a local path" in place: "Your edits to the source directory take effect at the next session start or `/reload-plugins`, and you don't need to increase the version", and such a plugin "loads its current source files at every session start, whatever its version string says". `marketplace add` with a local path makes a `directory` source that "Reads the directory in place" | https://code.claude.com/docs/en/plugins/loading (In-place and copied plugins; Versions and updates); https://code.claude.com/docs/en/plugins/cli-reference (plugin marketplace add) | 2026-11-13 | Verified (session) |
+| E103 | Reusable workflows go in the repository's `.github/workflows` directory: "Subdirectories of the `workflows` directory are not supported." Of `jobs.<job_id>.uses`: "You cannot use contexts or expressions in this keyword." "Jobs using the matrix strategy can call a reusable workflow", the matrix varying its `with:` inputs | https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows | 2026-11-14 | Verified (session); the user read it first |
+| E104 | "You can call a maximum of 50 unique reusable workflows from a single workflow file", nested ones included | https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations | 2026-11-14 | Verified (session); the user read it first |
+| E105 | A called workflow that GitHub can't fetch fails the caller before any job runs. A reply on github/docs#35735 (2025-01-16), after which the issue was labelled "SME reviewed": "all reusable workflows are resolved when a run is queued which is before job-level `if` statements are evaluated". A run calling `hawkesj12/workflows/.github/workflows/audit.yml@5df64d38…` shows "Invalid workflow file" with "error parsing called workflow … : workflow was not found", and a local call of a file absent at the caller's commit got "failed to fetch workflow: workflow was not found" | https://github.com/github/docs/issues/35735; https://github.com/hawkesj12/job-radar/actions/runs/30666467303/workflow; https://stackoverflow.com/questions/73560884 | 2026-11-14 | Verified (session) from an issue reply, a run page and a Q&A. GitHub's docs don't describe it, the message doesn't say whether the file, the ref or access is missing, and no report isolates a missing file at a reachable 40-hex SHA |
+| E106 | The allow list's `*` matches within a name: `space-org*/*` allows "all actions and reusable workflows in organizations that start with `space-org`", and `*/octocat**@*` those "in repositories that start with octocat"; `,` separates patterns | https://docs.github.com/en/organizations/managing-organization-settings/disabling-or-limiting-github-actions-for-your-organization | 2026-11-14 | Verified (session) |
+| E107 | "Before the shell script is run, the expressions inside `${{ }}` are evaluated and then substituted with the resulting values" | https://docs.github.com/en/actions/concepts/security/script-injections | 2026-11-14 | Verified (session) |
+| E108 | actionlint v1.7.12 is the latest release (2026-03-30). GitHub records `sha256:8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8` for `actionlint_1.7.12_linux_amd64.tar.gz`, whose root holds the `actionlint` binary. Its docs: `actionlint.yaml` or `actionlint.yml` "can be put in `.github` directory", and `self-hosted-runner.labels` lists extra runner labels; the known labels include `ubuntu-24.04` but not `ubuntu-26.04`; it "checks if `shellcheck` command exists in your system and uses it when it is found", on `run:` scripts in bash or sh; `-config-file PATH` and `-version` are flags | `gh api repos/rhysd/actionlint/releases/latest`; https://github.com/rhysd/actionlint/blob/main/docs/config.md; `docs/config.md`, `docs/checks.md` and `man/actionlint.1` in that archive, as the orchestrator downloaded it | 2026-11-14 | Verified (session); the orchestrator checked the digest against the release's `checksums.txt` |
+| E109 | `GITHUB_PATH` "Prepends a directory to the system `PATH` variable and automatically makes it available to all subsequent actions in the current job" | https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands | 2026-11-14 | Verified (session) |
+| E110 | ShellCheck directives "apply to the next shell command" (SC1123), and a comment after one needs its own `#`, as in `# shellcheck disable=SC2153 # variable not a misspelling` (SC1125). For an optional argument, SC2086's page gives "an unquoted expansion with an alternate value", `${debug:+"-x"}`. SC2155 flags `export foo="$(mycmd)"`, whose fix is `foo="$(mycmd)"` and then `export foo` | https://www.shellcheck.net/wiki/SC1123; https://www.shellcheck.net/wiki/SC1125; https://www.shellcheck.net/wiki/SC2086; https://www.shellcheck.net/wiki/SC2155 | 2026-11-14 | Verified (session) |
+| E111 | mise v2026.11.0 (2026-11-03): `mise lock --platform linux-x64,macos-arm64` records, per platform, each tool's version, `url` and `checksum = "sha256:…"`; `mise install` updates an existing `mise.lock` but creates none unless the `lockfile` setting is true; `mise install --locked` "fails instead of resolving a version when the lockfile has no matching entry", and fails before downloading a recorded URL that has no checksum. The registry's `shellcheck`, `shfmt` and `actionlint` entries list `aqua:koalaman/shellcheck`, `aqua:mvdan/sh` and `aqua:rhysd/actionlint` first, and `actionlint`'s says `deprecated = "jactionlint is an actively maintained fork of actionlint with upstream fixes merged. …"` | Context7: jdx/mise v2026.11.0 (`docs/cli/lock.md`, `docs/dev-tools/mise-lock.md`, `docs/dev-tools/mise-lock-reference.md`, `docs/dev-tools/backends/packslip.md`, `release-notes/2026.10.3.md`); `registry/{shellcheck,shfmt,actionlint}.toml` at v2026.11.0, via `gh api` | 2026-11-14 | Verified (session); the user read the mise-lock and CI pages too |
 
 ## Appendix B — Implementation spec
 
@@ -370,9 +385,13 @@ The Phase column names where a change lands: `#115`; `add`, `migrate`, `delete` 
 
 | Phase | Action | Path | Responsibility |
 |---|---|---|---|
-| #115 | Create | `.github/workflows/lang-ci.yml` | The reusable language jobs plus a `guard` job that fails on an unknown `language`, each under a `timeout-minutes` input that defaults to 30; committed lockfiles enforced, pytest's exit 5 accepted, Bun set up for Ruby directories with a `package.json`, and Go's `GOWORK=off` for `go.work` non-members (Appendix C) |
-| #115 | Create | `tests/fixtures/lang-ci/{js,python,ruby,rust}/` | Fixtures for the other four jobs, next to the existing `go/`; the Ruby `Gemfile.lock` has a CHECKSUMS section with a `sha256=` entry (Appendix C) |
-| #115 | Modify | `.github/workflows/ci.yml` | `lang-ci-fixture` becomes a five-language matrix, and `lint` gains the #115 checks: SHA pins, one top-level `contents: read`, no secrets or `pull_request_target`, each job id with its own `if:`, the guard's condition, the timeouts, the Rust `--workspace` flags and CHECKSUMS (Appendix C, B4) |
+| #115 | Create | `.github/workflows/lang-ci-{go,js,python,ruby,rust}.yml` | One reusable workflow per language id, each with one job named by its id under a `timeout-minutes` input that defaults to 30; committed lockfiles enforced, pytest's exit 5 accepted, Bun set up for Ruby directories with a `package.json`, and Go's `GOWORK=off` for `go.work` non-members (Appendix C). They replace this branch's `lang-ci.yml`, which main never had [R89], so relative to main nothing is deleted |
+| #115 | Create | `tests/fixtures/lang-ci/{js,python,ruby,rust}/` | Fixtures for the other four languages, next to the existing `go/`; the Ruby `Gemfile.lock` has a CHECKSUMS section with a `sha256=` entry (Appendix C) |
+| #115 | Modify | `.github/workflows/ci.yml` | `lang-ci-fixture` becomes one `lang-ci-fixture-<id>` job per file. `lint` gains the B4 lang-ci step: exactly the five files, each with one job named by its id, no job-level `if:` and its fixture job, SHA pins, one top-level `contents: read`, no secrets or `pull_request_target`, the timeout, one SHA per action, the Rust `--workspace` flags and CHECKSUMS. It also installs actionlint 1.7.12 as it installs shellcheck and shfmt, checks all three versions against `mise.toml`, runs actionlint after the install, and gives the two `$SHELL_FILES` steps an SC2086 directive (Appendix C, B4) |
+| #115 | Modify | `mise.toml` | `[tools]` gains `shellcheck = "0.11.0"`, `shfmt = "3.14.1"` and `actionlint = "1.7.12"`. The header and comments stay for B3's `legacy-header` fix, which deletes only those [R90] (Appendix C) |
+| #115 | Create | `mise.lock` | Generated by `mise lock --platform linux-x64,macos-arm64` [E111] |
+| #115 | Create | `.github/actionlint.yaml` | Declares the `ubuntu-26.04` label, which actionlint 1.7.12 doesn't know [R91] (Appendix C) |
+| #115 | Modify | `docs/CONTRIBUTING.md:L96-L100,L104-L115` | The `lint` bullets gain actionlint and the lang-ci checks. The local commands start with `mise install --locked`, so only PyYAML is left to install by hand and the CI-version note goes, and gain `actionlint` |
 | #115 | Modify | `docs/rfcs/2026-11-09-scaffold-and-drift.md` | This amendment |
 | add | Create | `scripts/bw` | POSIX-sh launcher (B2). Skills, hooks, tests and CI run every command through it |
 | add | Create | `scripts/_lib/bw_main.py` | The single check-and-dispatch module the launcher runs (B2) |
@@ -391,7 +410,7 @@ The Phase column names where a change lands: `#115`; `add`, `migrate`, `delete` 
 | add | Create | `tests/scripts/{bw,hooks,state-touch}.bats`; `tests/py/test_bw.py`; `tests/e2e/test_consumer_sim.py`; `tests/fixtures/legacy-0.2/<case>/` | Tests (B4, B5): bats for the launcher, hook and state-touch contracts; pytest for `scripts/_lib/` and consumer-sim, which covers scaffold and drift end to end. There is one legacy case per `legacy-*` code |
 | add | Modify | `hooks/hooks.json` | Today it has two entries [R11]: add the rules entry, remove check-requirements, re-add the SubagentStop entry that #116 removed, with its `echo` reminder plus `sh "${CLAUDE_PLUGIN_ROOT}/scripts/bw" state-touch last-feature-engineer-stop \|\| true`, and route the `compact` reminder through the launcher (Appendix C) |
 | add | Modify | `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` | `dependencies` on `github`, `context7` and `code-review` from `claude-plugins-official` [R10], versioned where the dependency publishes versions, and `allowCrossMarketplaceDependenciesOn: ["claude-plugins-official"]` |
-| add | Modify | `.github/workflows/ci.yml` | Extends main's workflow (Appendix C). `lint` drops #115's job-id loop, which `test_bw.py` replaces (B4) |
+| add | Modify | `.github/workflows/ci.yml` | Extends main's workflow (Appendix C). `lint` drops #115's file-set line, which `test_bw.py` replaces (B4) |
 | add | Modify | `.gitignore` | Add `__pycache__/`: pytest and direct runs write bytecode, and a dirty tree makes the migrate commits' `scaffold --apply` exit 3 [R54] |
 | add | Modify | `tests/scripts/plugin-version.bats` | Delete its two `check-requirements` tests [R49] |
 | add | Modify | `skills/best-practices-extract/SKILL.md` | L273 becomes `sh "${CLAUDE_PLUGIN_ROOT}/scripts/bw" state-touch precompact-extraction-done` |
@@ -546,7 +565,7 @@ Output goes to stdout unless noted; columns are separated by two spaces, and eve
 |---|---|---|---|
 | (none) | ok | Seed target with a v1 stamp whose hash matches the current template | — |
 | `template-changed` | drift | The v1 stamp hash ≠ `file_hash` of the named template, unless `ci-variant`'s first case fires for the file | `apply the diff, then replace line 1 with: <stamp>`, followed by a unified diff (current render vs file without line 1) |
-| `pin-changed` | drift | The `ci.yml` stamp names `ci-caller.yml`, and a `uses:` value differs from `bytewyrd/claude-bytewyrd/.github/workflows/lang-ci.yml@<pin>`, `<pin>` being the current template's single pin: the value in a component's job block, or any value that names `lang-ci.yml`. One finding per distinct value, in file order. A pull request can swap in another ref, another owner's copy, a local workflow or an impostor commit [E63] | `set this uses: to bytewyrd/claude-bytewyrd/.github/workflows/lang-ci.yml@<new>`; for a value with this path and another ref, preceded by `review https://github.com/bytewyrd/claude-bytewyrd/compare/<old>...<new>` |
+| `pin-changed` | drift | The `ci.yml` stamp names `ci-caller.yml`, and a `uses:` value differs from `bytewyrd/claude-bytewyrd/.github/workflows/lang-ci-<id>.yml@<pin>`, `<pin>` being the current template's single pin: the value in a component's job block, `<id>` being the component's language, or any other value that names a `lang-ci` file, `<id>` being any language id. One finding per distinct value, in file order. A pull request can swap in another ref, another owner's copy, a local workflow, another language's file or an impostor commit [E63] | `set this uses: to bytewyrd/claude-bytewyrd/.github/workflows/lang-ci-<id>.yml@<new>`, with the component's `<id>`, else the one the value names (`<id>` as written when it names none); when only the ref differs, preceded by `review https://github.com/bytewyrd/claude-bytewyrd/compare/<old>...<new>` |
 | `bad-stamp` | drift | `read_stamp` returns `BAD` | `replace line 1 with: <current stamp> after reviewing the diff`, followed by the diff |
 | `no-import` | drift | AGENTS.md and CLAUDE.md both exist, CLAUDE.md is not a symlink to AGENTS.md, and no CLAUDE.md line equals `@AGENTS.md` | `add the line @AGENTS.md to CLAUDE.md` |
 | `legacy-header` | drift | A header or Managed/Bootstrapped banner [R15] in lines 1–3 of one of the 0.2.x manifest targets [R7]: `.github/PULL_REQUEST_TEMPLATE.md`, `.github/workflows/ci.yml`, `CLAUDE.md`, `README.md`, `docs/ARCHITECTURE.md`, `docs/BEST_PRACTICES.md`, `docs/CONTRIBUTING.md`, `mise.toml` | B3 row for the path |
@@ -561,7 +580,7 @@ Output goes to stdout unless noted; columns are separated by two spaces, and eve
 | `too-long` | warn | AGENTS.md is over 100 lines or 8,000 characters, or CLAUDE.md is over 200 lines [E5] | `move detail into docs/ or a skill` |
 | `unstamped` | info | A seed target with neither a stamp nor a header | — |
 
-**Caller checks.** drift reads `ci.yml` line by line, with no YAML parser. After the top-level `jobs:` line, a job block runs from a line of two spaces, an id and `:` to the next such line or top-level line. A component's job block is the one holding a line `language: <id>` directly followed by `directory: "<dir>"`, leading spaces ignored. A `uses:` value is the text after `uses:`, with surrounding spaces, one pair of matching quotes and a trailing ` #` comment removed. A block that holds a component's pair but no `uses:` line counts as a differing value.
+**Caller checks.** drift reads `ci.yml` line by line, with no YAML parser. After the top-level `jobs:` line, a job block runs from a line of two spaces, an id and `:` to the next such line or top-level line. A component's job block is the one whose id is the component's job id (Detection, step 5) and which holds the line `directory: "<dir>"`, leading spaces ignored; the files take no `language` input, so the language shows only in the id and the file name. A `uses:` value is the text after `uses:`, with surrounding spaces, one pair of matching quotes and a trailing ` #` comment removed; it names a `lang-ci` file when the text after its last `/`, up to any `@`, starts with `lang-ci`. A component's job block with no `uses:` line counts as a differing value.
 
 Output format: `<ok|info|warn|drift>  <path>[  <code>: <detail>]`, then optional `  fix: …` and diff lines indented two spaces. Paths, details and fix lines pass repo-derived strings through `quote()`, and a diff line whose text holds a control character (below 0x20, or 0x7f) or a surrogate is printed as `quote()` of that text after its prefix. Every stdout line of scaffold starts with a prefix from its output table, and every line of drift with `ok  `, `info  `, `warn  `, `drift  `, two spaces or `result: `. The footer reads `result: A ok, B info, C warn, D drift (exit E)`.
 
@@ -646,24 +665,32 @@ Migration fixes, as printed by drift. These are file edits only: commit them, th
 
 ### B4. Commands and expected results
 
-**#115.** It changes `lang-ci.yml` (Appendix C): the five language jobs with committed lockfiles enforced (`--locked` for uv and cargo, `--frozen-lockfile` for a Bun lockfile), pytest's exit 5 accepted, the setup-bun step in `ruby` and the GOWORK line in `go`; the `guard` job; and a `timeout-minutes` input on all six. It adds four fixtures, the Ruby one with a CHECKSUMS section, and the five-leg `lang-ci-fixture`. `lint` runs this step under `bash -e`, which exits 0 on the Appendix C file and fails on each defect the comments name:
+**#115.** It replaces this branch's `lang-ci.yml` with the five `lang-ci-<id>.yml` files (Appendix C): committed lockfiles enforced (`--locked` for uv and cargo, `--frozen-lockfile` for a Bun lockfile), pytest's exit 5 accepted, the setup-bun step in `ruby` and the GOWORK line in `go`, and a `timeout-minutes` input in each. It adds four fixtures, the Ruby one with a CHECKSUMS section, and a `lang-ci-fixture-<id>` job per file. `lint` runs this step under `bash -e`, which exits 0 on the Appendix C files and fails on each defect the comments name:
 
 ```bash
-f=.github/workflows/lang-ci.yml
-test "$(grep -c 'uses: actions/checkout@' "$f")" = "$(grep -c 'persist-credentials: false' "$f")"  # a checkout keeps credentials
-if grep -E '^ +(- )?uses:' "$f" | grep -vqE 'uses: [^@[:space:]]+@[0-9a-f]{40}( #|$)'; then exit 1; fi  # a uses: not pinned by SHA
-test "$(grep -cE '^ *permissions:' "$f")" = 1  # a second permissions: key
-test "$(grep -A2 -x 'permissions:' "$f")" = "$(printf 'permissions:\n  contents: read\njobs:')"  # more than contents: read
-if grep -v '^ *#' "$f" | grep -qE 'secrets|pull_request_target'; then exit 1; fi  # secrets or pull_request_target
-for l in go js python ruby rust; do grep -A1 -x "  $l:" "$f" | grep -qx "    if: \${{ inputs.language == '$l' }}"; done  # a job missing, or gated on another id
-grep -A1 -x '  guard:' "$f" | grep -qx "    if: \${{ inputs.language != 'go' && inputs.language != 'js' && inputs.language != 'python' && inputs.language != 'ruby' && inputs.language != 'rust' }}"  # the guard misses an id
-test "$(grep -c '^    timeout-minutes: \${{ inputs.timeout-minutes }}$' "$f")" = 6  # a job without the timeout
-test "$(grep -cE '^ +cargo (build|test|clippy) --workspace ' "$f")" = 3  # a cargo command without --workspace, which the fixture can't detect [R84]
+w=.github/workflows
+test "$(printf '%s\n' "$w"/lang-ci*)" = "$(printf '.github/workflows/lang-ci-%s.yml\n' go js python ruby rust)"  # a language without its file, or another lang-ci file
+for f in "$w"/lang-ci-*.yml; do
+  l=${f#"$w"/lang-ci-}; l=${l%.yml}
+  test "$(sed '1,/^jobs:$/d' "$f" | grep -E '^  [^ #]')" = "  $l:"  # a job not named by the file's id, or a second job
+  if grep -q '^    if:' "$f"; then exit 1; fi  # a job-level if:, which skips the job instead of failing it [R69]
+  test "$(grep -A3 -x "  lang-ci-fixture-$l:" "$w/ci.yml")" = "$(printf '  lang-ci-fixture-%s:\n    uses: ./.github/workflows/lang-ci-%s.yml\n    with:\n      directory: tests/fixtures/lang-ci/%s' "$l" "$l" "$l")"  # no fixture job for the file
+  test "$(grep -c 'uses: actions/checkout@' "$f")" = "$(grep -c 'persist-credentials: false' "$f")"  # a checkout keeps credentials
+  if grep -E '^ +(- )?uses:' "$f" | grep -vqE 'uses: [^@[:space:]]+@[0-9a-f]{40}( #|$)'; then exit 1; fi  # a uses: not pinned by SHA
+  test "$(grep -cE '^ *permissions:' "$f")" = 1  # a second permissions: key
+  test "$(grep -A2 -x 'permissions:' "$f")" = "$(printf 'permissions:\n  contents: read\njobs:')"  # more than contents: read
+  if grep -v '^ *#' "$f" | grep -qE 'secrets|pull_request_target'; then exit 1; fi  # secrets or pull_request_target
+  test "$(grep -c '^    timeout-minutes: [$]{{ inputs[.]timeout-minutes }}$' "$f")" = 1  # a job without the timeout
+done
+test "$(grep -hoE 'uses: [^@[:space:]]+@' "$w"/lang-ci-*.yml | sort -u | wc -l)" = "$(grep -hoE 'uses: [^@[:space:]]+@[0-9a-f]{40}' "$w"/lang-ci-*.yml | sort -u | wc -l)"  # an action pinned at two SHAs
+test "$(grep -cE '^ +cargo (build|test|clippy) --workspace ' "$w/lang-ci-rust.yml")" = 3  # a cargo command without --workspace, which the fixture can't detect [R84]
 grep -qx CHECKSUMS tests/fixtures/lang-ci/ruby/Gemfile.lock  # no CHECKSUMS section
 grep -qE '^  rake \([0-9.]+\) sha256=[0-9a-f]{64}$' tests/fixtures/lang-ci/ruby/Gemfile.lock  # a CHECKSUMS entry without its hash
 ```
 
-Each check is its own command because `bash -e`, GitHub's default for `run:` [E89], doesn't stop on a failure inside an `&&` list that isn't its last command, or on a `!` command [R87]. `lang-ci-fixture` passes for all five languages. The job-id loop matters because a leg whose job is missing or gated on another id would still pass: jobs whose `if:` is false are skipped, not failed [R69].
+Each check is its own command because `bash -e`, GitHub's default for `run:` [E89], doesn't stop on a failure inside an `&&` list that isn't its last command, or on a `!` command [R87]. The timeout pattern writes `$` as `[$]` because GitHub substitutes every `${{ … }}` in a `run:` script before bash runs it [E107]. The five fixture jobs pass. No job has a job-level `if:`, and the `if:` check keeps it so, since a skipped job's fixture job would still pass [R69]. One SHA per action keeps the allow list to one entry per action (Appendix C).
+
+`lint` also installs actionlint 1.7.12 the way it installs shellcheck and shfmt, checks each of the three versions against `mise.toml` with its own `grep -qxF`, and, after the install step, runs `actionlint -config-file .github/actionlint.yaml .github/workflows/*.yml`, which takes the pinned shellcheck from the front of `PATH` [E109] and runs it on every `run:` block [E108]. Each exits 0 (Appendix C).
 
 **Implementation PR, final state.** CI runs these on the PR; each is followed by its expected result.
 
@@ -691,7 +718,7 @@ git grep -nE 'yaml\.(load|safe_load|full_load|unsafe_load)\(|Loader=' -- scripts
 sh scripts/bw drift                                             # exit 0: this repo is migrated; warnings are allowed
 ```
 
-From the add commits on, `test_bw.py` asserts, by matching lines, that `bw.py`'s language ids equal `lang-ci.yml`'s jobs other than `guard`, each followed by its own `if:` line, the `lang-ci-fixture` matrix, and the `@@<id>@@` tags of `AGENTS.md.tpl` other than `none` and `job`. #115's job-id loop is then deleted from `lint`, and the rest of that step stays.
+From the add commits on, `test_bw.py` asserts, by matching lines, that `bw.py`'s language ids equal the ids of the `.github/workflows/` names that start with `lang-ci`, each of which must be `lang-ci-<id>.yml`; the ids of the `lang-ci-fixture-<id>` jobs in `ci.yml`; and the `@@<id>@@` tags of `AGENTS.md.tpl` other than `none` and `job`. #115's file-set line is then deleted from `lint`, and the rest of that step stays.
 
 **Implementation PR, every commit.** The `history` job runs this with the `test` job's setup (setup-python, PyYAML, `BYTEWYRD_PYTHON`), which `ci-lint.bats` and `rfc-set-status.bats` need under `CI` [R85]; it exits 0. Each commit's bats output goes to `$RUNNER_TEMP` and is printed in a group only when it fails [E88], and each checkout moves the submodules too [E91]. HEAD is restored by SHA, because a pull request's checkout is a detached merge commit [E85], where `git branch --show-current` prints nothing [R73].
 
@@ -708,25 +735,25 @@ for c in $(git rev-list --grep='^refactor(scripts): port ' "$base..HEAD"); do gi
 exit "$bad"
 ```
 
-**Pin checks**, run by the `history` job with full history [E64], after the loop and even when it fails [E87]. The template must hold exactly one `uses:` line, of the full caller shape:
+**Pin checks**, run by the `history` job with full history [E64], after the loop and even when it fails [E87]. The template must hold exactly one `uses:` line, of the full caller shape, and its pin must have every `lang-ci-<id>.yml` that HEAD has:
 
 ```bash
 tpl=templates/scaffold/ci-caller.yml.tpl
-pin=$(sed -n 's|^@@job@@     uses: bytewyrd/claude-bytewyrd/\.github/workflows/lang-ci\.yml@\([0-9a-f]\{40\}\)$|\1|p' "$tpl")
+pin=$(sed -n 's|^@@job@@     uses: bytewyrd/claude-bytewyrd/\.github/workflows/lang-ci-@@job_language@@\.yml@\([0-9a-f]\{40\}\)$|\1|p' "$tpl")
 test "$(grep -c 'uses:' "$tpl")" = 1   # exit 0
 test "${#pin}" = 40                    # exit 0; fails for another owner, a branch or tag ref, or two pins
 git merge-base --is-ancestor "$pin" origin/main  # exit 0: a main commit
-git cat-file -e "$pin:.github/workflows/lang-ci.yml"  # exit 0: one that has lang-ci.yml
-if ! git diff --quiet "$pin" HEAD -- .github/workflows/lang-ci.yml; then
+for f in .github/workflows/lang-ci-*.yml; do git cat-file -e "$pin:$f"; done  # exit 0: one that has every lang-ci file
+if ! git diff --quiet "$pin" HEAD -- '.github/workflows/lang-ci*'; then
   if git diff --quiet origin/main HEAD -- "$tpl"; then
-    echo "::warning::lang-ci.yml differs from the pinned $pin; bump the pin after this merges"
+    echo "::warning::the lang-ci files differ from the pinned $pin; bump the pin after this merges"
   else
-    echo "::error::the new pin $pin does not match this commit's lang-ci.yml"; exit 1
+    echo "::error::the new pin $pin does not match this commit's lang-ci files"; exit 1
   fi
 fi
 ```
 
-The last check only warns on a PR that changes `lang-ci.yml`, and on `main` until the bump lands, since the bump can only follow the merge; on the PR that moves the pin, a mismatch fails.
+The last check only warns on a PR that changes a `lang-ci` file, and on `main` until the bump lands, since the bump can only follow the merge; on the PR that moves the pin, a mismatch fails. The loop and the diff cover whatever `lang-ci` files HEAD has, so a new language needs no edit here.
 
 **bats files for the launcher, hooks and state-touch.**
 
@@ -764,14 +791,14 @@ The last check only warns on a PR that changes `lang-ci.yml`, and on `main` unti
 | S14 | New repo where `.github` is a symlink to a temp dir outside it; run `scaffold --apply` | Exit 1; the outside dir and the repo are unchanged |
 | S15 | New repo with `.github/` at mode 0555; run `scaffold --apply` | Exit 1; `AGENTS.md` and `CLAUDE.md` are gone afterwards |
 | S16 | In the copied plugin, append a line `)` to `scripts/_lib/bw_drift.py`, run drift, then restore the file | Exit 1 |
-| S17 | New repo with a committed root `go.mod`, `Gemfile` and `Rakefile`; run `scaffold --apply` | The caller has jobs `go` and `ruby`, each with `uses: bytewyrd/claude-bytewyrd/.github/workflows/lang-ci.yml@<40-hex>` and `directory: "."`. In the caller and `$PLUGIN_DIR/.github/workflows/lang-ci.yml`, every `uses:` matches `@[0-9a-f]{40}`, every checkout sets `persist-credentials: false`, the only `permissions:` key is the top-level one, holding only `contents: read`, and neither file has `secrets` or `pull_request_target` |
+| S17 | New repo with a committed root `go.mod`, `Gemfile` and `Rakefile`; run `scaffold --apply` | The caller has jobs `go` and `ruby`, with `uses: bytewyrd/claude-bytewyrd/.github/workflows/lang-ci-go.yml@<40-hex>` and `…/lang-ci-ruby.yml@` the same 40 hex digits, each with `directory: "."`. In the caller and each `$PLUGIN_DIR/.github/workflows/lang-ci-<id>.yml`, every `uses:` matches `@[0-9a-f]{40}`, every checkout sets `persist-credentials: false`, the only `permissions:` key is the top-level one, holding only `contents: read`, and no file has `secrets` or `pull_request_target` |
 | S18 | For each `tests/fixtures/legacy-0.2/<case>/`, copy it into a new repo, once untracked and once committed, then run drift. Then run the migration procedure, with the fixture's scripted port, and run drift again | Exactly the case's codes with exit 2, then exit 0 |
 | S19 | New repo in a directory named `we&ird\name`; run `scaffold --apply` from the git checkout PLUGIN_DIR | AGENTS.md line 2 is `# we&ird\name`; `plugin=` holds 12 hex digits |
 | S20 | In a fresh temp directory outside any repo, run `scaffold` and `drift` | Both exit 1 |
 | S21 | Make `.bytewyrd` a symlink to an outside dir, then `.bytewyrd/last-feature-engineer-stop` a symlink; run `state-touch last-feature-engineer-stop` each time | Exit 0; nothing outside the repo changes |
 | S22 | Diff the S2 `ci.yml` against `$PLUGIN_DIR/.github/workflows/scaffold-noop-fixture.yml` from line 2 | Identical |
 | S23 | Run `drift` with `BYTEWYRD_PYTHON` set to a wrapper that logs, then runs the interpreter running pytest | The log shows the wrapper ran |
-| S24 | In the S17 repo, commit, then replace the second job's `lang-ci.yml@` pin with 40 other hex digits and run `drift`. Then, from the committed S17 state each time, change that job's `uses:` to `bytewyrd/claude-bytewyrd/.github/workflows/lang-ci.yml@main`, to `evil/x/.github/workflows/lang-ci.yml@main` and to the local `./.github/workflows/x.yml`, keeping its `with:` lines, and run `drift` | Each run: `pin-changed` with exit 2. The first run's fix lines hold a `compare/<old>...<new>` URL |
+| S24 | In the S17 repo, commit, then replace the `ruby` job's pin with 40 other hex digits and run `drift`. Then, from the committed S17 state each time, change that job's `uses:` to `bytewyrd/claude-bytewyrd/.github/workflows/lang-ci-ruby.yml@main`, to `evil/x/.github/workflows/lang-ci-ruby.yml@main`, to the `go` job's value and to the local `./.github/workflows/x.yml`, keeping its `with:` lines, and run `drift` | Each run: `pin-changed` with exit 2. The first run's fix lines hold a `compare/<old>...<new>` URL |
 | S25 | New repo with committed `web/package.json` and `api/go.mod` and no root manifest; run `scaffold --apply` | Jobs `go-api` (`language: go`, `directory: "api"`) and `js-web` (`language: js`, `directory: "web"`); AGENTS.md's languages line ends with `go in api/, js in web/`; drift exits 0 |
 | S26 | New repo with committed root `package.json` (`"workspaces": ["packages/*"]`), `pyproject.toml` (`[tool.uv.workspace]` with `members = ["libs/*"]` and `exclude = ["libs/solo"]`), `Cargo.toml` (virtual, `members = ["crates/*"]`, `exclude = ["tools"]`), `go.mod` and `go.work` (`use . ./svc`); plus `packages/a/package.json`, `site/package.json`, `libs/m/pyproject.toml`, `libs/solo/pyproject.toml` (both with `[project]`), `crates/c/Cargo.toml`, `tools/gen/Cargo.toml` and `svc/go.mod`; run `scaffold --apply` | Exactly the jobs `go`, `go-svc`, `js`, `js-site`, `python`, `python-libs-solo`, `rust` and `rust-tools-gen` |
 | S27 | New repo with a committed root `Gemfile`, `Rakefile`, `package.json` and `pnpm-lock.yaml`, a `.tool-versions` holding only `nodejs 24.0.0`, and a `Gemfile.lock` whose PLATFORMS lists only `arm64-darwin-24`; run `scaffold --apply` | Jobs `js` and `ruby`; AGENTS.md has the Ruby line; notes name the missing Ruby version, `bundle lock --add-platform x86_64-linux` and pnpm |
@@ -832,12 +859,13 @@ The last check only warns on a PR that changes `lang-ci.yml`, and on `main` unti
 | AC-21 | The `lint` vendor checks, the B4 loader grep, `tests/py/test_vendor.py` and `tests/py/test_frontmatter.py` |
 | AC-22 | The B4 every-commit commands, in the `history` job |
 | AC-23 | S25–S39, plus `test_bw.py` cases for pattern matching, for each root-workspace rule, and for the ten-component cap on the languages line |
-| AC-24 | The `lang-ci-fixture` job's five legs and `test_bw.py`'s id checks (B4) |
+| AC-24 | The five `lang-ci-fixture-<id>` jobs, #115's `lint` step and `test_bw.py`'s id checks (B4) |
 | AC-25 | S29, plus `test_bw.py` cases for `quote()` and `attr_line()`, and one that applies a root `go.mod`'s printed line next to `svc/go.mod` and keeps the `go-svc` job [R79] |
+| AC-26 | `lint`'s version checks and actionlint step, from #115 (B4, Appendix C) |
 
 ## Appendix C — Template sketches
 
-**`templates/scaffold/AGENTS.md.tpl`.** `scaffold` adds the stamp line. The tagged lines, first drawn from [R23], match `lang-ci.yml`'s commands without CI's lockfile checks.
+**`templates/scaffold/AGENTS.md.tpl`.** `scaffold` adds the stamp line. The tagged lines, first drawn from [R23], match the `lang-ci-<id>.yml` commands without CI's lockfile checks.
 
 ```markdown
 # @@project_name@@
@@ -895,26 +923,25 @@ jobs:
       - run: echo "bytewyrd scaffold found no language markers; replace this job with real checks."
 ```
 
-**`.github/workflows/lang-ci.yml`** (#115). It lives in this repo and runs one language's job for its caller. The commands match the AGENTS.md lines plus CI's lockfile checks; the pins come from [R44] and, for setup-ruby, [E76]; action usage from [E49], and the `workflow_call`, `inputs` and job `if:` syntax from [E65]. Every checkout sets `persist-credentials: false`, because the default is `true` [E64]. B4 lists the `lint` step that checks this file, and [R87] records a local run of this sketch.
+**`.github/workflows/lang-ci-<id>.yml`** (#115). Five reusable workflows, one per language id, live in this repo directly in `.github/workflows/`, since GitHub supports no subdirectory there [E103]; a caller job runs the one for its component's language. Each holds one job whose id is its language id, so a call shows as `<caller job> / <id>`, as `lang-ci-fixture / go` did [R69]. The commands match the AGENTS.md lines plus CI's lockfile checks; the pins come from [R44] and, for setup-ruby, [E76]; action usage from [E49], and the `workflow_call` and `inputs` syntax from [E65]. Every checkout sets `persist-credentials: false`, because the default is `true` [E64]. The `workflow_call` block and the checkout repeat in all five, and setup-bun is pinned in the js and ruby files; B4's `lint` step checks each file, and one SHA per action across them. [R88] records a local run of these sketches.
 
-- **Inputs and the guard.** `language` is required. `directory` defaults to the repository root, and callers set it per component (B2). `timeout-minutes`, a number that defaults to 30 [E89], bounds every job: a caller job can't set one [E71], the default is 360 minutes [E89], and `inputs` is available there [E86]. The `guard` job runs only when `language` is none of the five ids, by the same comparisons the language jobs make, which GitHub makes without regard to case [E87], so exactly one job runs; it fails, and the value reaches its shell only through `env:`, printed with `printf %q`.
+- **Inputs.** `directory` defaults to the repository root, and callers set it per component (B2). `timeout-minutes`, a number that defaults to 30 [E89], bounds the job: a caller job can't set one [E71], the default is 360 minutes [E89], and `inputs` is available there [E86]. There is no `language` input and no guard job: the file name picks the language, and `uses:` takes no expressions [E103], so each call is fixed in its caller. A caller of any other file, such as `lang-ci-java.yml`, fails the whole run before any job starts, because GitHub resolves every called workflow when it queues the run and reports the caller invalid: "workflow was not found" [E105].
 - **Per-directory files.** setup-go looks for its cache key file only at the workspace root unless `cache-dependency-path` is set [E73], which caused #115's warning [R69]; setup-uv and setup-ruby read their version and lock files from `working-directory` [E74, E76]. setup-bun caches only its executable, and reads a Bun pin only from the root `package.json` [E75], so a subdirectory app's pin is ignored.
 - **Workspaces.** `--workspace` and `--all-packages` make a root job cover the members that detection drops (B2) [R71, R72].
-- **Lockfiles.** A committed lockfile is enforced: `uv sync --all-packages --locked` when `uv.lock` exists, `cargo … --locked` when `Cargo.lock` exists, and `bun install --frozen-lockfile` when `bun.lock` or `bun.lockb` exists [R82, R83, R84]. Go builds are read-only by default [R81], and setup-ruby installs in Bundler's deployment mode, which is frozen [E96, R84]. A JS component with only an npm, Yarn or pnpm lockfile gets a plain `bun install`, which checks nothing: Bun 1.3.14 migrated an outgrown `package-lock.json` and installed [R83]. Bun 1.4.4, the latest release and so what setup-bun installs when nothing pins Bun [E75], documents that `--frozen-lockfile` checks such a lockfile in memory [E94]; this sketch doesn't pass the flag there.
+- **Lockfiles.** A committed lockfile is enforced: `uv sync --all-packages --locked` when `uv.lock` exists, `cargo … --locked` when `Cargo.lock` exists (passed as `${locked:+"$locked"}`, the optional-argument form SC2086's page gives, so shellcheck stays quiet [E110]), and `bun install --frozen-lockfile` when `bun.lock` or `bun.lockb` exists [R82, R83, R84]. Go builds are read-only by default [R81], and setup-ruby installs in Bundler's deployment mode, which is frozen [E96, R84]. A JS component with only an npm, Yarn or pnpm lockfile gets a plain `bun install`, which checks nothing: Bun 1.3.14 migrated an outgrown `package-lock.json` and installed [R83]. Bun 1.4.4, the latest release and so what setup-bun installs when nothing pins Bun [E75], documents that `--frozen-lockfile` checks such a lockfile in memory [E94]; this sketch doesn't pass the flag there.
 - **JS.** `--pass-with-no-tests` needs Bun 1.3.1 or newer [E77]; setup-bun installs the latest unless the root `package.json` pins one [E75].
 - **Python.** pytest's exit 5, "No tests were collected" [E93], passes, as `--pass-with-no-tests` does for Bun; `uv run` keeps pytest's exit code [R82].
-- **Ruby.** `bundle exec rake` is setup-ruby's documented test step [E76], and runs the default task, which is the test suite in Rails, rspec-rails and `bundle gem` projects [E83]; detection keeps only directories with a Rakefile (B2), so a React Native app's root `Gemfile`, which has no rake [E101], gets a note, not a failing job. setup-ruby takes the Ruby version from the first of `.ruby-version`, `.tool-versions` and `mise.toml` that exists [E96]; without a version there the job fails, and scaffold notes it. In a Rails app, `rails test` first runs `test:prepare`, which jsbundling-rails extends with an install and a build through Bun, Yarn, pnpm or npm [E99], and the runner has no Bun or pnpm [E100]. So the job sets up Bun, from the action the js job pins, when the directory has a `package.json` [E87, E97], and scaffold notes a `pnpm-lock.yaml`. A caller job can't add `services:` [E71], so an app whose tests need a database writes its own job in a separate workflow file, where `template-changed` diffs can't show it as a removal, and opts its `Gemfile` out with the line `attr_line()` prints.
+- **Ruby.** `bundle exec rake` is setup-ruby's documented test step [E76], and runs the default task, which is the test suite in Rails, rspec-rails and `bundle gem` projects [E83]; detection keeps only directories with a Rakefile (B2), so a React Native app's root `Gemfile`, which has no rake [E101], gets a note, not a failing job. setup-ruby takes the Ruby version from the first of `.ruby-version`, `.tool-versions` and `mise.toml` that exists [E96]; without a version there the job fails, and scaffold notes it. In a Rails app, `rails test` first runs `test:prepare`, which jsbundling-rails extends with an install and a build through Bun, Yarn, pnpm or npm [E99], and the runner has no Bun or pnpm [E100]. So `lang-ci-ruby.yml` sets up Bun, at the pin `lang-ci-js.yml` uses, when the directory has a `package.json` [E87, E97], and scaffold notes a `pnpm-lock.yaml`. A caller job can't add `services:` [E71], so an app whose tests need a database writes its own job in a separate workflow file, where `template-changed` diffs can't show it as a removal, and opts its `Gemfile` out with the line `attr_line()` prints.
 - **Go.** In workspace mode, a module that the root `go.work` doesn't use fails to build in its own directory, so the job sets `GOWORK=off` when `go list -m` doesn't list that directory [R81].
 - **Tokens.** Like setup-go and setup-bun, setup-ruby's `token` and setup-uv's `github-token` default to the job's `github.token` [E73, E75, E96, E95]. setup-ruby's `bundle install` evaluates the repo's Gemfile as Ruby, in the action's environment, `INPUT_TOKEN` included [E96, E88, R84]. `contents: read`, which caps that token [E71], is therefore the control that matters.
 
+`lang-ci-go.yml`:
+
 ```yaml
-name: lang-ci
+name: lang-ci-go
 on:
   workflow_call:
     inputs:
-      language:
-        type: string
-        required: true
       directory:
         type: string
         default: "."
@@ -924,18 +951,7 @@ on:
 permissions:
   contents: read
 jobs:
-  guard:
-    if: ${{ inputs.language != 'go' && inputs.language != 'js' && inputs.language != 'python' && inputs.language != 'ruby' && inputs.language != 'rust' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: ${{ inputs.timeout-minutes }}
-    steps:
-      - env:
-          LANGUAGE: ${{ inputs.language }}
-        run: |
-          printf '::error::lang-ci.yml: language must be go, js, python, ruby or rust, not %q\n' "$LANGUAGE"
-          exit 1
   go:
-    if: ${{ inputs.language == 'go' }}
     runs-on: ubuntu-latest
     timeout-minutes: ${{ inputs.timeout-minutes }}
     defaults:
@@ -953,8 +969,25 @@ jobs:
           if [ -n "$(go env GOWORK)" ] && ! go list -m -f '{{.Dir}}' | grep -qxF "$PWD"; then export GOWORK=off; fi
           go build ./...
           go test ./...
+```
+
+`lang-ci-js.yml`:
+
+```yaml
+name: lang-ci-js
+on:
+  workflow_call:
+    inputs:
+      directory:
+        type: string
+        default: "."
+      timeout-minutes:
+        type: number
+        default: 30
+permissions:
+  contents: read
+jobs:
   js:
-    if: ${{ inputs.language == 'js' }}
     runs-on: ubuntu-latest
     timeout-minutes: ${{ inputs.timeout-minutes }}
     defaults:
@@ -968,8 +1001,25 @@ jobs:
       - run: |
           if [ -f bun.lock ] || [ -f bun.lockb ]; then bun install --frozen-lockfile; else bun install; fi
           bun test --pass-with-no-tests
+```
+
+`lang-ci-python.yml`:
+
+```yaml
+name: lang-ci-python
+on:
+  workflow_call:
+    inputs:
+      directory:
+        type: string
+        default: "."
+      timeout-minutes:
+        type: number
+        default: 30
+permissions:
+  contents: read
+jobs:
   python:
-    if: ${{ inputs.language == 'python' }}
     runs-on: ubuntu-latest
     timeout-minutes: ${{ inputs.timeout-minutes }}
     defaults:
@@ -985,8 +1035,25 @@ jobs:
       - run: |
           if [ -f uv.lock ]; then uv sync --all-packages --locked; else uv sync --all-packages; fi
           uv run pytest || [ "$?" -eq 5 ]
+```
+
+`lang-ci-ruby.yml`:
+
+```yaml
+name: lang-ci-ruby
+on:
+  workflow_call:
+    inputs:
+      directory:
+        type: string
+        default: "."
+      timeout-minutes:
+        type: number
+        default: 30
+permissions:
+  contents: read
+jobs:
   ruby:
-    if: ${{ inputs.language == 'ruby' }}
     runs-on: ubuntu-latest
     timeout-minutes: ${{ inputs.timeout-minutes }}
     defaults:
@@ -1003,8 +1070,25 @@ jobs:
       - if: ${{ hashFiles(format('{0}/package.json', inputs.directory)) != '' }}
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       - run: bundle exec rake
+```
+
+`lang-ci-rust.yml`:
+
+```yaml
+name: lang-ci-rust
+on:
+  workflow_call:
+    inputs:
+      directory:
+        type: string
+        default: "."
+      timeout-minutes:
+        type: number
+        default: 30
+permissions:
+  contents: read
+jobs:
   rust:
-    if: ${{ inputs.language == 'rust' }}
     runs-on: ubuntu-latest
     timeout-minutes: ${{ inputs.timeout-minutes }}
     defaults:
@@ -1020,22 +1104,22 @@ jobs:
           components: clippy
       - run: |
           locked=; if [ -f Cargo.lock ]; then locked=--locked; fi
-          cargo build --workspace $locked
-          cargo test --workspace $locked
-          cargo clippy --workspace $locked
+          cargo build --workspace ${locked:+"$locked"}
+          cargo test --workspace ${locked:+"$locked"}
+          cargo clippy --workspace ${locked:+"$locked"}
 ```
 
-**Fixtures** (`tests/fixtures/lang-ci/<id>/`, #115). Each is the smallest project its job accepts. The Python and Rust ones are workspaces, so their legs exercise `--all-packages` and `--workspace`. Lockfiles are generated by the tool and committed, so the Python, Ruby and Rust legs run their locked installs; the JS fixture has no dependencies and so no lockfile, and its leg takes the plain `bun install`.
+**Fixtures** (`tests/fixtures/lang-ci/<id>/`, #115). Each is the smallest project its file's job accepts. The Python and Rust ones are workspaces, so their fixture jobs exercise `--all-packages` and `--workspace`. Lockfiles are generated by the tool and committed, so the Python, Ruby and Rust fixture jobs run their locked installs; the JS fixture has no dependencies and so no lockfile, and its fixture job takes the plain `bun install`.
 
 - `go/`: `go.mod` (`go 1.27`) and `fixture_test.go` with one empty test; both exist.
-- `js/`: `package.json` holding `{"name": "lang-ci-fixture", "private": true}`, and no test files, so the leg passes only with `--pass-with-no-tests` [R66].
+- `js/`: `package.json` holding `{"name": "lang-ci-fixture", "private": true}`, and no test files, so its fixture job passes only with `--pass-with-no-tests` [R66].
 - `python/`: `pyproject.toml` with project `lang-ci-fixture`, `requires-python = ">=3.11"`, `[dependency-groups] dev = ["pytest==9.2.0"]` [E58] and `[tool.uv.workspace] members = ["member"]`; `member/pyproject.toml`, project `lang-ci-member`, with `[build-system] requires = ["uv_build>=0.13.4,<0.14"]` and `build-backend = "uv_build"` [E80]; `member/src/lang_ci_member/__init__.py`; `member/tests/test_member.py`, whose one test imports `lang_ci_member`, so it passes only when `--all-packages` installed the member; and `uv.lock`.
 - `ruby/`: `.ruby-version` holding `4.0`, which setup-ruby resolves to the newest 4.0 release [E76]; a `Gemfile` with `source "https://rubygems.org"` and `gem "rake"`; a `Gemfile.lock` from `bundle lock --add-platform x86_64-linux` [R75], since setup-ruby installs in deployment mode when a lockfile exists [E76], made by Bundler 4.0 or newer against rubygems.org, so its CHECKSUMS section holds rake's `sha256=` [R84]; and a `Rakefile` whose `default` task prints one line.
 - `rust/`: `Cargo.toml` with package `lang-ci-fixture` and `[workspace] members = ["member"]`, `src/lib.rs`, `member/Cargo.toml` and `member/src/lib.rs`, each crate with one `#[test]`; and `Cargo.lock`.
 
 All five sit under `tests/`, so detection skips them (B2).
 
-**`templates/scaffold/ci-caller.yml.tpl`.** It holds one `@@job@@` block, which `render` repeats once per component (B2), so the template, and with it the stamp hash, doesn't depend on what a repo contains. The triggers are those of `ci-noop`, with `permissions: contents: read`, no `secrets:` and no `pull_request_target`. `<40-hex>` is the pin, and it appears once.
+**`templates/scaffold/ci-caller.yml.tpl`.** It holds one `@@job@@` block, which `render` repeats once per component (B2), so the template, and with it the stamp hash, doesn't depend on what a repo contains. The triggers are those of `ci-noop`, with `permissions: contents: read`, no `secrets:` and no `pull_request_target`. `<40-hex>` is the pin, and it appears once. `@@job_language@@`, which `render` already replaces (B2), names the component's file, so all five files share that one pin, and a caller calls at most five distinct workflows, under GitHub's limit of 50 per file [E104].
 
 ```text
 name: CI
@@ -1048,9 +1132,8 @@ permissions:
   contents: read
 jobs:
 @@job@@   @@job_id@@:
-@@job@@     uses: bytewyrd/claude-bytewyrd/.github/workflows/lang-ci.yml@<40-hex>
+@@job@@     uses: bytewyrd/claude-bytewyrd/.github/workflows/lang-ci-@@job_language@@.yml@<40-hex>
 @@job@@     with:
-@@job@@       language: @@job_language@@
 @@job@@       directory: "@@job_directory@@"
 ```
 
@@ -1059,20 +1142,36 @@ For a repo with a root `go.mod` and a `web/package.json`, the rendered jobs are:
 ```yaml
 jobs:
   go:
-    uses: bytewyrd/claude-bytewyrd/.github/workflows/lang-ci.yml@<40-hex>
+    uses: bytewyrd/claude-bytewyrd/.github/workflows/lang-ci-go.yml@<40-hex>
     with:
-      language: go
       directory: "."
   js-web:
-    uses: bytewyrd/claude-bytewyrd/.github/workflows/lang-ci.yml@<40-hex>
+    uses: bytewyrd/claude-bytewyrd/.github/workflows/lang-ci-js.yml@<40-hex>
     with:
-      language: js
       directory: "web"
 ```
 
-**Pin bumps.** A commit can't contain its own SHA, so a `lang-ci.yml` change merges to `main` first. A follow-up commit then sets the caller template's `<40-hex>` to that `main` commit, and the B4 pin checks confirm it. The template's hash changes with the pin, so consumers' drift reports `template-changed`, whose diff shows the new pin, and `pin-changed`, whose fix line links the compare view.
+**Pin bumps.** A commit can't contain its own SHA, so a change to any `lang-ci-<id>.yml` merges to `main` first. A follow-up commit then sets the caller template's one `<40-hex>` to that `main` commit, which moves every language's pin, and the B4 pin checks confirm it. The template's hash changes with the pin, so consumers' drift reports `template-changed`, whose diff shows the new pin, and `pin-changed`, whose fix line links the compare view.
 
-**Allow lists.** Organizations that allow only selected actions and reusable workflows [E59] must list `bytewyrd/claude-bytewyrd/.github/workflows/lang-ci.yml@<sha>` and the actions it uses, each at its pinned SHA: `actions/checkout`, `actions/setup-go`, `oven-sh/setup-bun`, `astral-sh/setup-uv`, `ruby/setup-ruby` and `dtolnay/rust-toolchain`. A `@*` entry would also admit impostor commits [E63].
+**Allow lists.** Organizations that allow only selected actions and reusable workflows [E59] must list each file their callers use, as `bytewyrd/claude-bytewyrd/.github/workflows/lang-ci-<id>.yml@<sha>`, or all five as `bytewyrd/claude-bytewyrd/.github/workflows/lang-ci-*.yml@<sha>`, since `*` matches within a name [E106]; and the actions those files use, each at the one SHA `lint` allows it: `actions/checkout` (all five), `actions/setup-go`, `oven-sh/setup-bun` (js and ruby), `astral-sh/setup-uv`, `ruby/setup-ruby` and `dtolnay/rust-toolchain`. A `@*` entry would also admit impostor commits [E63].
+
+**`mise.toml`, `mise.lock` and `.github/actionlint.yaml`** (#115). `mise.toml` keeps its 0.2.x header and comments, which the migrate commits' B3 fix deletes, and `/sync` keeps the file verbatim until then [R90]. Its `[tools]` gains CI's lint-tool versions, under the registry names, whose first backends are aqua's [E111]:
+
+```toml
+[tools]
+shellcheck = "0.11.0"
+shfmt = "3.14.1"
+actionlint = "1.7.12"
+```
+
+`mise.lock` is generated, never written by hand: `mise lock --platform linux-x64,macos-arm64` records each tool's version, URL and sha256 for both platforms, and `mise install --locked` installs from those entries and fails for a platform the lock lacks [E111]. mise's registry marks the `actionlint` name deprecated in favour of a fork, `jactionlint` [E111]; this RFC keeps rhysd's actionlint, which CI downloads [E108]. actionlint 1.7.12 doesn't know the `ubuntu-26.04` label [R91, E108], so `.github/actionlint.yaml` declares it:
+
+```yaml
+# actionlint 1.7.12 predates the ubuntu-26.04 runner label; delete this file once actionlint knows it.
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04
+```
 
 **`hooks/always-on-rules.json`.** The conventions are written as factual statements [E40]. They come to 968 characters and are sourced from [R29].
 
@@ -1115,7 +1214,7 @@ Outside Claude Code, `${CLAUDE_PLUGIN_ROOT}` is not substituted; use the directo
 **The plugin's `.github/workflows/ci.yml`.** This extends main's workflow [R49]. `lint`, `validate` and `test` keep their names, which main marks as the required checks; the new jobs are not required.
 
 - `env` gains `PYTEST_VERSION: "9.2.0"` [E58].
-- `lint`: from #115 it runs the B4 `lang-ci.yml` step, whose job-id loop the add commits move to `test_bw.py`. `SHELL_FILES` gains `scripts/bw`. From the vendor commit on, it also runs the B4 loader grep and checks the vendored PyYAML against its sdist [E69]:
+- `lint`: from #115 it runs the B4 lang-ci step, "The lang-ci workflows pass their checks", after the links step, in place of the branch's credentials check, and the tool steps of the `lint` sketch below; the add commits move the lang-ci step's file-set line to `test_bw.py`. `SHELL_FILES` gains `scripts/bw`. From the vendor commit on, it also runs the B4 loader grep and checks the vendored PyYAML against its sdist [E69]:
 
   ```bash
   curl -fsSL --retry 3 -o "$RUNNER_TEMP/pyyaml.tar.gz" https://files.pythonhosted.org/packages/05/8e/961c0007c59b8dd7729d542c61a4d537767a59645b82a0b521206e1e25c2/pyyaml-6.0.3.tar.gz
@@ -1128,8 +1227,66 @@ Outside Claude Code, `${CLAUDE_PLUGIN_ROOT}` is not substituted; use the directo
 - `test`: its setup-python step gets `id: py`, and its later steps get `BYTEWYRD_PYTHON: ${{ steps.py.outputs.python-path }}` [E57]. After "Run the bats suite", it installs `pytest==${PYTEST_VERSION}` with pip and runs `python -m pytest -q tests/py tests/e2e`.
 - `compat` (new) runs bats and pytest on Python 3.11 under Linux and the latest 3.x under macOS [E57]. On macOS it installs Homebrew bash first, because the image's bash is 3.2 [E68] and the helpers need bash 4 until the retire commit [R49].
 - `history` (new) checks out full history, which `actions/checkout` skips by default [E64], sets up Python as `test` does, and runs the B4 every-commit loop first, then the pin checks with `if: ${{ !cancelled() }}`, since a step without a status function is skipped once an earlier one fails [E87]. A bats run takes about a minute [R69], so the loop's cost grows with the PR's commit count: 120 minutes cover about 100 commits, and a longer PR raises the timeout. On a push to `main` the commit range is empty.
-- `lang-ci-fixture` (from #115) runs `lang-ci.yml` from the same commit against each fixture, one matrix leg per language [E65, E72].
-- `install-check` (new) installs the plugin into a temporary HOME. A second case installs from the GitHub marketplace's `main`, adds the dependencies explicitly as the docs say, and updates with `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` [R57]. The installer and its path come from [E35], and the version argument from [E44]; the checkout pin comes from [R44] and its inputs from [E31]. The fixture job's local `./` call runs the same commit, so it takes no pin [E65]. Before `plugin update`, the update case re-adds the marketplace at the PR branch, `bytewyrd/claude-bytewyrd#${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}` [E43]. An install of `main` therefore updates to the PR's commit and the hard dependencies it brings; on a push to `main`, it updates `main` to itself. A local clone can't stand in, because Claude Code loads a local-path marketplace's relative-path plugin in place, from its working tree, with no update step [E102]. The implementation PR verifies the re-add in CI. If no form of it works, the PR drops the step and records the gap under Risks; R57's manual run and the explicit dependency installs then carry the transition.
+- `lang-ci-fixture-<id>` (from #115), one job per language, runs `lang-ci-<id>.yml` from the same commit against its fixture [E65]. They are five jobs, not a matrix, because `uses:` takes no expressions [E103].
+- `install-check` (new) installs the plugin into a temporary HOME. A second case installs from the GitHub marketplace's `main`, adds the dependencies explicitly as the docs say, and updates with `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` [R57]. The installer and its path come from [E35], and the version argument from [E44]; the checkout pin comes from [R44] and its inputs from [E31]. The fixture jobs' local `./` calls run the same commit, so they take no pin [E65]. Before `plugin update`, the update case re-adds the marketplace at the PR branch, `bytewyrd/claude-bytewyrd#${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}` [E43]. An install of `main` therefore updates to the PR's commit and the hard dependencies it brings; on a push to `main`, it updates `main` to itself. A local clone can't stand in, because Claude Code loads a local-path marketplace's relative-path plugin in place, from its working tree, with no update step [E102]. The implementation PR verifies the re-add in CI. If no form of it works, the PR drops the step and records the gap under Risks; R57's manual run and the explicit dependency installs then carry the transition.
+
+From #115, `lint`'s environment and tool steps read as below. The two `$SHELL_FILES` steps gain a `disable` directive, with its reason, for the split that actionlint's shellcheck run reports as SC2086 [R91, E110], and the header comment's list of downloaded tools gains actionlint:
+
+```yaml
+jobs:
+  lint:
+    env:
+      SHELL_FILES: scripts/*.sh scripts/_lib/*.bash hooks/pre-commit/*.sh tests/run.sh tests/scripts/helpers.bash
+      SHELLCHECK_VERSION: "0.11.0"
+      SHELLCHECK_SHA256: "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
+      SHFMT_VERSION: "3.14.1"
+      SHFMT_SHA256: "76e77641faa025814b77f153b29796b8e6fa2fca03e0c76a691608b86c7ea7bf"
+      ACTIONLINT_VERSION: "1.7.12"
+      ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+    steps:
+      - name: CI's lint tool versions match mise.toml
+        run: |
+          grep -qxF "shellcheck = \"$SHELLCHECK_VERSION\"" mise.toml
+          grep -qxF "shfmt = \"$SHFMT_VERSION\"" mise.toml
+          grep -qxF "actionlint = \"$ACTIONLINT_VERSION\"" mise.toml
+      - name: Install shellcheck, shfmt and actionlint
+        run: |
+          bin="$RUNNER_TEMP/bin"
+          mkdir -p "$bin"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/shellcheck.tar.xz" \
+            "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+          echo "${SHELLCHECK_SHA256}  $RUNNER_TEMP/shellcheck.tar.xz" | sha256sum -c -
+          tar -xJf "$RUNNER_TEMP/shellcheck.tar.xz" -C "$bin" --strip-components=1 "shellcheck-v${SHELLCHECK_VERSION}/shellcheck"
+          curl -fsSL --retry 3 -o "$bin/shfmt" \
+            "https://github.com/mvdan/sh/releases/download/v${SHFMT_VERSION}/shfmt_v${SHFMT_VERSION}_linux_amd64"
+          echo "${SHFMT_SHA256}  $bin/shfmt" | sha256sum -c -
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/actionlint.tar.gz" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$bin" actionlint
+          chmod +x "$bin/shellcheck" "$bin/shfmt" "$bin/actionlint"
+          echo "$bin" >> "$GITHUB_PATH"
+      # Info-level notes are advisory; warnings and errors fail the job.
+      - name: Shell scripts pass shellcheck
+        run: |
+          set -f  # SHELL_FILES holds git pathspecs; keep bash from globbing them
+          shellcheck --version
+          # shellcheck disable=SC2086 # split on purpose, one pathspec per word; set -f stops globbing
+          git ls-files -z -- $SHELL_FILES | xargs -0 shellcheck -x --source-path=SCRIPTDIR --severity=warning
+      - name: Shell scripts are shfmt-formatted
+        run: |
+          set -f  # SHELL_FILES holds git pathspecs; keep bash from globbing them
+          shfmt --version
+          # shellcheck disable=SC2086 # split on purpose, one pathspec per word; set -f stops globbing
+          git ls-files -z -- $SHELL_FILES | xargs -0 shfmt -d
+      # After the install step, so actionlint runs the pinned shellcheck on every run: block.
+      - name: Workflows pass actionlint
+        run: |
+          actionlint -version
+          actionlint -config-file .github/actionlint.yaml .github/workflows/*.yml
+```
+
+The new jobs, the fixture jobs from #115 and the rest from the implementation PR:
 
 ```yaml
 jobs:
@@ -1189,36 +1346,49 @@ jobs:
           git checkout -q --recurse-submodules "$h"
           for c in $(git rev-list --grep='^refactor(scripts): port ' "$base..HEAD"); do git diff --quiet "$c^" "$c" -- tests/scripts || { echo "::error::$c edits tests/scripts"; bad=1; }; done
           exit "$bad"
-      - name: The caller template pins a main commit that has lang-ci.yml
+      - name: The caller template pins a main commit that has every lang-ci file
         if: ${{ !cancelled() }}
         run: |
           tpl=templates/scaffold/ci-caller.yml.tpl
-          pin=$(sed -n 's|^@@job@@     uses: bytewyrd/claude-bytewyrd/\.github/workflows/lang-ci\.yml@\([0-9a-f]\{40\}\)$|\1|p' "$tpl")
+          pin=$(sed -n 's|^@@job@@     uses: bytewyrd/claude-bytewyrd/\.github/workflows/lang-ci-@@job_language@@\.yml@\([0-9a-f]\{40\}\)$|\1|p' "$tpl")
           test "$(grep -c 'uses:' "$tpl")" = 1
           test "${#pin}" = 40
           git merge-base --is-ancestor "$pin" origin/main
-          git cat-file -e "$pin:.github/workflows/lang-ci.yml"
-      - name: No lang-ci.yml change is waiting for its pin bump
+          for f in .github/workflows/lang-ci-*.yml; do git cat-file -e "$pin:$f"; done
+      - name: No lang-ci change is waiting for its pin bump
         if: ${{ !cancelled() }}
         run: |
           tpl=templates/scaffold/ci-caller.yml.tpl
-          pin=$(sed -n 's|^@@job@@     uses: bytewyrd/claude-bytewyrd/\.github/workflows/lang-ci\.yml@\([0-9a-f]\{40\}\)$|\1|p' "$tpl")
-          if ! git diff --quiet "$pin" HEAD -- .github/workflows/lang-ci.yml; then
+          pin=$(sed -n 's|^@@job@@     uses: bytewyrd/claude-bytewyrd/\.github/workflows/lang-ci-@@job_language@@\.yml@\([0-9a-f]\{40\}\)$|\1|p' "$tpl")
+          if ! git diff --quiet "$pin" HEAD -- '.github/workflows/lang-ci*'; then
             if git diff --quiet origin/main HEAD -- "$tpl"; then
-              echo "::warning::lang-ci.yml differs from the pinned $pin; bump the pin after this merges"
+              echo "::warning::the lang-ci files differ from the pinned $pin; bump the pin after this merges"
             else
-              echo "::error::the new pin $pin does not match this commit's lang-ci.yml"; exit 1
+              echo "::error::the new pin $pin does not match this commit's lang-ci files"; exit 1
             fi
           fi
-  lang-ci-fixture:
-    strategy:
-      fail-fast: false
-      matrix:
-        language: [go, js, python, ruby, rust]
-    uses: ./.github/workflows/lang-ci.yml
+  # Not required checks. The local ./ calls run the lang-ci files from this same commit, so they take no
+  # pin; a calling job can't set runs-on, so the files' jobs run on their ubuntu-latest, as for callers.
+  lang-ci-fixture-go:
+    uses: ./.github/workflows/lang-ci-go.yml
     with:
-      language: ${{ matrix.language }}
-      directory: tests/fixtures/lang-ci/${{ matrix.language }}
+      directory: tests/fixtures/lang-ci/go
+  lang-ci-fixture-js:
+    uses: ./.github/workflows/lang-ci-js.yml
+    with:
+      directory: tests/fixtures/lang-ci/js
+  lang-ci-fixture-python:
+    uses: ./.github/workflows/lang-ci-python.yml
+    with:
+      directory: tests/fixtures/lang-ci/python
+  lang-ci-fixture-ruby:
+    uses: ./.github/workflows/lang-ci-ruby.yml
+    with:
+      directory: tests/fixtures/lang-ci/ruby
+  lang-ci-fixture-rust:
+    uses: ./.github/workflows/lang-ci-rust.yml
+    with:
+      directory: tests/fixtures/lang-ci/rust
   install-check:
     runs-on: ubuntu-26.04
     timeout-minutes: 15
@@ -1230,7 +1400,8 @@ jobs:
       - name: Install from this checkout
         run: |
           CLAUDE="$HOME/.local/bin/claude"
-          export HOME="$(mktemp -d)"
+          HOME=$(mktemp -d)
+          export HOME
           "$CLAUDE" plugin marketplace add anthropics/claude-plugins-official
           "$CLAUDE" plugin marketplace add "$GITHUB_WORKSPACE"
           "$CLAUDE" plugin install bytewyrd@bytewyrd
@@ -1238,7 +1409,8 @@ jobs:
       - name: Update an install of main
         run: |
           CLAUDE="$HOME/.local/bin/claude"
-          export HOME="$(mktemp -d)"
+          HOME=$(mktemp -d)
+          export HOME
           "$CLAUDE" plugin marketplace add anthropics/claude-plugins-official
           "$CLAUDE" plugin marketplace add bytewyrd/claude-bytewyrd
           for dep in github context7 code-review; do "$CLAUDE" plugin install "$dep@claude-plugins-official"; done
@@ -1416,6 +1588,33 @@ After the fold, the user decided (2026-11-13):
 - **A3.** scaffold prints its CI notes whenever it creates `ci.yml`, from either template.
 - **A4.** install-check's update case re-adds the marketplace at the PR branch [E43]. The gap stays an open risk only if that can't work in CI.
 
+**Per-language workflows and lint-tool pins (2026-11-14).** The user made two more decisions for #115. No reviewer has seen them or the changes below.
+
+| ID | Decision | Where |
+|---|---|---|
+| D4 | `lang-ci.yml` becomes one reusable workflow per language, `lang-ci-{go,js,python,ruby,rust}.yml`, because five files are easier to maintain and extend. One commit SHA pins all five, and the caller's `uses:` names its component's file, so there is no `language` input. U2(a)–(c), the per-language fixes, the security limits, the required checks, the fixtures and the two PRs stay | Design; Migration; AC-9; AC-24; Test plan; Rollback; B1; B2; B4; B5; C; E |
+| D5 | #115 pins shellcheck 0.11.0, shfmt 3.14.1 and actionlint 1.7.12 in `mise.toml`, with a generated `mise.lock`. CI keeps its own sha256-checked downloads, adds actionlint's, checks the three versions against `mise.toml`, and runs actionlint with shellcheck over the workflows | AC-26; B1; B4; B5; C |
+
+D4 supersedes U2(d), the `guard` job, since a call of a missing file already fails [E105]; the job-id loop of SIM-A8 and OPS-A8, and OPS-A8's guard, since no job is gated. OQ-1, D1, D3, the D3 choices' `lint` loop, G6, SEC-A1 and OPS-A10 name the one `lang-ci.yml`; they now read as the five files.
+
+The architect's choices under D4 and D5, which the user has not made:
+
+| Choice | Evidence |
+|---|---|
+| Each file's one job keeps the language id, as in `lang-ci.yml`, so a call shows as `<caller job> / <id>`; each file's `name:` is `lang-ci-<id>` | R69 |
+| drift finds a component's block by its job id and `directory:` line, `pin-changed` also checks every other value naming a `lang-ci` file, and S24 gains the other language's file as a decoy | B2 |
+| #115's `lint` replaces the job-id loop and the guard check with: exactly the five files; each file's only job named by its id, with no job-level `if:`; its `lang-ci-fixture-<id>` job; and one SHA per action across the files. From the add commits, `test_bw.py` checks that the ids, the files, the fixture jobs and the AGENTS.md tags agree, and `lint` loses only its file-set line | R69, E103 |
+| The pin checks loop over HEAD's `lang-ci-*.yml` files and diff every `lang-ci*` path | B4 |
+| The lint step has no `${{`, so its timeout pattern writes `[$]{{`. The superseded block's `if:`, guard and timeout patterns had `${{ … }}`, which GitHub would have substituted before bash ran | E107 |
+| Allow lists name each file callers use, or one `lang-ci-*.yml@<sha>` pattern | E59, E106 |
+| `mise.lock` covers linux-x64 and macos-arm64, as the orchestrator suggested; a contributor on another platform adds it with `mise lock --platform` | E111 |
+| `.github/actionlint.yaml` declares `ubuntu-26.04` under `self-hosted-runner.labels`, and actionlint gets `-config-file` instead of relying on its search | E108, R91 |
+| SC2086: a commented `disable` directive in each `$SHELL_FILES` step; in the rust job, `${locked:+"$locked"}` instead of a directive | E110, R91 |
+| install-check's `export HOME="$(mktemp -d)"` becomes `HOME=$(mktemp -d)` then `export HOME`, which actionlint's shellcheck run would otherwise report as SC2155 | E108, E110 |
+| AC-26 records D5, and `docs/CONTRIBUTING.md` gets a B1 row, since it lists the local lint commands | B1; B5 |
+
+Open for the user: mise's registry marks the `actionlint` name deprecated in favour of the `jactionlint` fork [E111]. The RFC keeps the decided `actionlint = "1.7.12"`; `"aqua:rhysd/actionlint" = "1.7.12"` would pin the backend CI downloads from, even if the name moves.
+
 ## Appendix E — Related RFCs and PRs
 
 - **Formerly `2026-11-09-init-and-doctor`.** Renamed in #115 on 2026-11-14, before re-approval, so the id matches the title; older commits, branches and PRs use the old id. That id is retired and is never to be reused.
@@ -1429,7 +1628,7 @@ After the fold, the user decided (2026-11-13):
 - **Supersedes these RFCs, both Dropped on 2026-11-13 [R17]:** `2026-05-14-sync-per-file-extension-strategies` and `2026-05-12-sync-enforce-github-branch-auto-delete`.
 - **Draft affected by the CI decision:** `2026-05-10-ci-qa-bytewyrd-github-app` ships its QA workflow as a template that consumers copy, and pins `anthropics/claude-code-action` by tag [R53]. This RFC makes this repo the home of SHA-pinned reusable workflows, with the pin-bump process in Appendix C. That Draft is unchanged here; adopting the same model would be its own revision.
 - **Open PRs:** #100, #102 and #107 mention `/sync` [R18]. #100 also adds a SessionStart `compact` hook [R30].
-- **#115** (`feat/lang-ci-reusable-workflow`): `lang-ci.yml` with its guard job, timeouts, lockfile checks and per-language fixes, its five fixtures and the `lang-ci-fixture` job, the B4 `lint` step, and this amendment. It merges before the implementation PR, which pins its merge commit (Migration).
+- **#115** (`feat/lang-ci-reusable-workflow`): the five `lang-ci-<id>.yml` files, which replace the branch's `lang-ci.yml`, with their timeouts, lockfile checks and per-language fixes; the five fixtures and `lang-ci-fixture-<id>` jobs; the B4 `lint` step; the lint-tool pins in `mise.toml` and `mise.lock`, with actionlint and `.github/actionlint.yaml`; and this amendment. It merges before the implementation PR, which pins its merge commit (Migration).
 - **Builds on PR #116, merged on 2026-11-13 as d9ae47e [R77]:**
   - Its removal of the SubagentStop write, which the add commits undo through `state-touch`, deleting its three "Temporarily removed" notes.
   - Its removal of this repo's settings hooks, so the migrate commits need no settings fix [R25].
