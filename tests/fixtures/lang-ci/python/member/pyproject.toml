@@ -1,0 +1,7 @@
+[project]
+name = "lang-ci-member"
+version = "0.1.0"
+
+[build-system]
+requires = ["uv_build>=0.13.4,<0.14"]
+build-backend = "uv_build"
