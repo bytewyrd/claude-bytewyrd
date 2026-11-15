@@ -10,7 +10,7 @@ implemented_by: ~  # PR URL(s) of the implementation; set when status becomes Do
 
 # Replace /sync with scaffold + drift
 
-Tags `[R#]`/`[E#]` cite Appendix A; Appendix D records the reviews.
+Tags `[R#]`/`[E#]` cite Appendix A; Appendix D records the reviews, and Appendix F the user's decisions.
 
 ## Summary
 
@@ -81,7 +81,7 @@ Deterministic, read-only and LLM-free. Exits: 0 clean, 2 drift, 1 cannot run (cr
 
 ## Migration
 
-Two PRs, then the apps (Appendix D):
+Two PRs, then the apps (Appendix F):
 
 1. **#115, merged first:** one reusable workflow per language, `lang-ci-<id>.yml`, with the multi-language changes (B1), their fixture jobs, the lint-tool pins and actionlint, and this amendment.
 2. **Implementation PR**, whose commits run in this order, bats passing at each:
@@ -141,7 +141,7 @@ Revert only the implementation PR, with `git revert -m 1 <sha>`. #115 stays: the
 
 ## Decisions and risks
 
-The user's decisions of 2026-11-13 to 2026-11-15 are in Appendix D.
+The user's decisions of 2026-11-13 to 2026-11-15 are in Appendix F.
 
 Risks:
 
@@ -210,7 +210,7 @@ Repo facts and local reproductions:
 | R35 | The 0.2.x PreCompact hook blocks while the sentinel is absent. Its message documents "bypass with: touch .bytewyrd/precompact-extraction-done then re-run /compact" | `0745d32:templates/settings.json.tpl:L15-L24,L20` | 2026-11-13 | Verified (session). 0b733dc removed it from the template; apps set up earlier keep it in their own settings [R63] |
 | R36 | 0.2.x CI set `working-directory` for non-root components | `skills/sync/SKILL.md:L706` | 2026-11-13 | Verified (session) |
 | R37 | `docs/guide/reference/hooks.md` mentions `/sync` | `docs/guide/reference/hooks.md:L3,L67` | 2026-11-13 | Verified (session) |
-| R38 | `exit` inside an EXIT trap overrides the status, including after a syntax error later in the script. noclobber refuses to write through a symlink | local tests, bash 5.3.20 | 2026-11-13 | Verified (session). The basis of the bash design that Appendix D's post-review revision replaces with R52 |
+| R38 | `exit` inside an EXIT trap overrides the status, including after a syntax error later in the script. noclobber refuses to write through a symlink | local tests, bash 5.3.20 | 2026-11-13 | Verified (session). The basis of the bash design that Appendix F's post-review revision replaces with R52 |
 | R39 | A committed symlink at `.bytewyrd` or its target redirects or truncates writes (F1). A symlinked `.github` lets `mkdir -p` and `>` write outside the repo while porcelain stays empty (F2) | SEC reproductions, git 2.56 | 2026-11-13 | Verified (ledger) |
 | R40 | A nested `go.mod` makes root `go test ./...` exit 1, and a nested `Cargo.toml` makes `cargo build` exit 101 | OPS reproductions | 2026-11-13 | Verified (ledger) |
 | R41 | The GitHub MCP server exposes `merge_pull_request` and `delete_repository` | tool list observed in this drafting session | 2026-11-13 | Verified (session) |
@@ -392,7 +392,7 @@ External sources:
 
 ### B1. File structure
 
-The Phase column names where a change lands: `#115`; `add`, `migrate`, `delete`, `port` and `D7–D10`, the implementation PR's commit groups, in that order, the last for Appendix D's decisions of 2026-11-15; `Apps`, one PR per app repo after that merge; and `Later`. The delete commits leave `common.bash` and `tool-probe.sh` for the port commits [R8, R9, R26]. So that bats passes at every commit, a commit that deletes code also deletes or edits the tests that reference it: `sync-preflight.sh` goes with `common.bats:L63` [R49], the sync scripts with `helpers.bash:L33-L52` and the sync bats files [R26], the companion probes with `plugin_enabled` [R58], and, in the add commits, `check-requirements.sh` with `plugin-version.bats`'s two tests [R49]. The add and port rows name `scripts/_lib/…` paths as those commits created them; the `D7–D10` rows move them.
+The Phase column names where a change lands: `#115`; `add`, `migrate`, `delete`, `port` and `D7–D10`, the implementation PR's commit groups, in that order, the last for Appendix F's decisions of 2026-11-15; `Apps`, one PR per app repo after that merge; and `Later`. The delete commits leave `common.bash` and `tool-probe.sh` for the port commits [R8, R9, R26]. So that bats passes at every commit, a commit that deletes code also deletes or edits the tests that reference it: `sync-preflight.sh` goes with `common.bats:L63` [R49], the sync scripts with `helpers.bash:L33-L52` and the sync bats files [R26], the companion probes with `plugin_enabled` [R58], and, in the add commits, `check-requirements.sh` with `plugin-version.bats`'s two tests [R49]. The add and port rows name `scripts/_lib/…` paths as those commits created them; the `D7–D10` rows move them.
 
 | Phase | Action | Path | Responsibility |
 |---|---|---|---|
@@ -1502,22 +1502,6 @@ Rejected:
 - **OPS-7 (part): diff the stamped and current templates.** The marketplace cache keeps no template history.
 - **OPS-2 (part): drift lists non-owned H2s.** F4's static list in B3 is cheaper.
 
-**Post-review revision, 2026-11-13.** After this review, the user decided that the plugin's scripts and hooks move to Python ≥ 3.11 (Language policy). The three lens reviewers did not review these changes:
-
-- `scaffold`, `drift` and `state-touch` are Python behind the `scripts/bw` launcher, with the same CLI contracts, exit codes and output. Exclusive-create opens and a top-level exception handler replace F2's noclobber and F9's EXIT traps [R38, R52], and `state-touch` keeps F1's symlink refusal. consumer-sim becomes a black-box pytest module that builds each child environment itself instead of running under `env -u` [E38].
-- The bash-3.2 requirement is gone. AC-15 now covers Python 3.11 and the latest 3.x on Linux and macOS, and the macOS bash-3.2 job and the bash-construct grep that F15 had widened are removed. R2 and E16 remain as history.
-- The interim `rfc-frontmatter.sh` read-loop rewrite is dropped, because it conflicted with #113's `require_bash_major 4` guards [R49]. Phase 4 ports that script instead.
-- New: the Language policy section, Phase 4, AC-20 to AC-22, the vendored PyYAML, `compact-reminder`, and CI that extends #113.
-
-**Decisions (2026-11-13).** After both revisions, the user settled the six open questions in an interactive walkthrough. The lens reviewers did not review these decisions, and they saw the tools under their working names.
-
-- OQ-1, where the reusable CI workflow lives: this repo, as `.github/workflows/lang-ci.yml`. A dedicated repo, inline jobs and a no-caller variant are gone.
-- OQ-2, script or skill: the Python script does all seeding, and the skill is a thin wrapper.
-- OQ-3, rule size and updates: a fixed 2,000-character cap enforced in CI, with reviewed PRs and no eval gate [E23].
-- OQ-4, hooks in consumer repos: never; every hook ships in the plugin's `hooks.json`.
-- OQ-5, names: `scaffold` and `drift`, for the skills, the script subcommands and the stamp prefix. Earlier drafts said "init" and "doctor", but those are built-ins [E24, E45]; `/scaffold` and `/drift` aren't [E60].
-- OQ-6, hard dependencies: github, context7 and code-review.
-
 **Re-review (2026-11-13).** The same three lenses ran once more on everything since bf3ef6f, that is, the language policy and the six decisions. The orchestrator verified each finding; G15 rests on OPS's reproduction [R57].
 
 | ID | Finding(s) | Change | Where |
@@ -1543,38 +1527,6 @@ Rejected:
 Declined:
 
 - **SIM-1, option "port the line parser and defer PyYAML".** The user declined it on 2026-11-13 and kept vendored PyYAML; G7 and G8 apply instead.
-
-**Delivery and multi-language CI (2026-11-13).** After the re-review and #115's first CI run [R69], the user made three decisions, and the RFC returned to Draft for re-approval. The amendment review below covers these decisions and the changes they brought. The entries above keep their Phase numbers: Phase 1 is now #115 plus the add commits, Phase 2 the migrate commits and the Apps PRs, Phase 3 the delete commits, and Phase 4 the port commits.
-
-| ID | Decision | Where |
-|---|---|---|
-| D1 | Two PRs. #115 merges first, with this amendment, `lang-ci.yml` with D3's changes, and their fixtures and checks. One implementation PR follows, holding the old Phases 1, 3 and 4 plus this repo's migration as the add, migrate, delete and port commits, and pinning #115's merge commit. The three app installs migrate after it. No interim `/sync` is needed, because un-migrated apps keep working [R63, R64] | Migration; Rollback; AC-13; AC-22; B1; B4; B5; C; E |
-| D2 | `/sync` is deleted in the implementation PR, and no interim state keeps it working. state-touch therefore writes `*` from the start, which retires F19's negation | Migration; B1; B2 |
-| D3 | Multi-language CI: (i) scaffold and drift detect tracked manifests in subdirectories, giving one caller job per (language, directory) and skipping root-workspace members; (ii) `Gemfile` maps to a `ruby` id with its own `lang-ci.yml` job; (iii) the js job runs `bun test --pass-with-no-tests`. The `lang-ci.yml` changes land in #115, since the implementation PR's caller must pin a `main` commit that has them | Design; Security; AC-23; AC-24; B2; B4; B5; C |
-
-The architect's choices under D3, each with its evidence:
-
-| Choice | Evidence |
-|---|---|
-| Tracked manifests only, at depth two or less, skipping `.`- and `_`-prefixed segments and vendored, fixture, example, test and template trees. A `.gitattributes` attribute, `bytewyrd-ci`, opts a manifest in or out, with git's own pattern rules | R68, R70, R73, R74, E82 |
-| A root job drops only what it covers: js and uv members, and nested crates under a root Cargo workspace unless excluded or self-rooted. Go and Ruby drop nothing, since a root `./...` and a root `rake` never reach nested projects | R66, R70, R71, R72, E78–E81, E83 |
-| The rust job adds `--workspace` and the python job `--all-packages`, because a root package, `default-members` or uv's root-only default would otherwise leave dropped members unbuilt | R71, R72, E79, E80 |
-| Directories must match a strict pattern of at most 64 characters, are double-quoted in YAML, and yield job ids that meet GitHub's rule. A rejected or colliding directory becomes a scaffold `note:` and a drift `ci-skipped` info, never a job | E70 |
-| The caller template repeats one `@@job@@` block, keeping one hashable template with one pin. `pin-changed` checks every pin in the file, and `ci-variant` also flags a component that has no job | B2; C |
-| setup-go gets `cache-dependency-path`, and setup-uv and setup-ruby get `working-directory`. setup-bun has no dependency cache, and its root-only version lookup stays | R69, E73–E75, E76 |
-| Ruby runs `bundle exec rake` after `bundler-cache: true`: setup-ruby's documented step, and the default task of Rails, rspec-rails and `bundle gem` projects. Apps whose tests need services write their own job and opt the directory out | E71, E76, E83 |
-| `ruby/setup-ruby` is pinned to v1.338.0, its newest release and tag, a lightweight tag | E76 |
-| Fixtures cover all five jobs, the Python and Rust ones as workspaces; a `lint` loop checks that every language id has a job; the every-commit loop restores HEAD by SHA, since CI's checkout is detached | R69, R73 |
-
-The user accepted these choices on 2026-11-13, including what they imply:
-- #115 changes all five `lang-ci.yml` jobs and adds four fixtures.
-- A Ruby directory without `.ruby-version`, `.tool-versions` or `mise.toml` fails, with a scaffold note.
-- Under a root job, nested non-member tests may run twice.
-- Discovery uses the depth-two scope and its exclusion list.
-- A subdirectory's Bun pin is ignored.
-- The body runs to about 1.7K words.
-
-The user also chose the lean review for this amendment.
 
 **Amendment review (2026-11-13).** The lean review: three lens reviewers each ran once on the amendment at f1e8c23, SEC (security-engineer), OPS (sre-engineer) and SIM (code-reviewer, simplicity), with no consensus pass. The orchestrator checked every finding against the RFC text and reproduced many. The user then set the dispositions below and made two decisions, U1 and U2. Severities are the reviewers' own. No reviewer has seen the changes this review brought, and main had moved to d9ae47e (#116) meanwhile, which SIM-A1 and SIM-A2 reflect [R77].
 
@@ -1629,6 +1581,87 @@ After the fold, the user decided (2026-11-13):
 - **A3.** scaffold prints its CI notes whenever it creates `ci.yml`, from either template.
 - **A4.** install-check's update case re-adds the marketplace at the PR branch [E43]. The gap stays an open risk only if that can't work in CI.
 
+## Appendix E — Related RFCs and PRs
+
+- **Formerly `2026-11-09-init-and-doctor`.** Renamed in #115 on 2026-11-14, before re-approval, so the id matches the title; older commits, branches and PRs use the old id. That id is retired and is never to be reused.
+- **Removes mechanisms of these Done RFCs [R17]:**
+  - `2026-05-10-sync-interactive-diff`
+  - `2026-05-10-project-brief-sync-source-of-truth`
+  - `2026-05-09-best-practices-content-and-tooling`
+  - `2026-05-12-unify-best-practices-destinations` (its two destinations are kept)
+  - `2026-05-12-auto-extract-best-practices-on-precompact` (its sentinel write stays until the gate in B1 passes)
+  - `2026-05-14-skill-helper-scripts` (the sync half)
+- **Supersedes these RFCs, both Dropped on 2026-11-13 [R17]:** `2026-05-14-sync-per-file-extension-strategies` and `2026-05-12-sync-enforce-github-branch-auto-delete`.
+- **Draft affected by the CI decision:** `2026-05-10-ci-qa-bytewyrd-github-app` ships its QA workflow as a template that consumers copy, and pins `anthropics/claude-code-action` by tag [R53]. This RFC makes this repo the home of SHA-pinned reusable workflows, with the pin-bump process in Appendix C. That Draft is unchanged here; adopting the same model would be its own revision.
+- **Open PRs:** #100, #102 and #107 mention `/sync` [R18]. #100 also adds a SessionStart `compact` hook [R30].
+- **#115** (`feat/lang-ci-reusable-workflow`): the five `lang-ci-<id>.yml` files, which replace the branch's `lang-ci.yml`, with their timeouts, lockfile checks and per-language fixes; the five fixtures and `lang-ci-fixture-<id>` jobs; the B4 `lint` step; the lint-tool pins in `mise.toml` and `mise.lock`, with actionlint and `.github/actionlint.yaml`; and this amendment. It merges before the implementation PR, which pins its merge commit (Migration).
+- **Builds on PR #116, merged on 2026-11-13 as d9ae47e [R77]:**
+  - Its removal of the SubagentStop write, which the add commits undo through `state-touch`, deleting its three "Temporarily removed" notes.
+  - Its removal of this repo's settings hooks, so the migrate commits need no settings fix [R25].
+  - Its frontmatter escapes, two of whose bats assertions the harness commit deletes (U1).
+- **Builds on PR #113, merged on 2026-11-13 as 080b7a5 [R49]:**
+  - Its `require_bash_major 4` guards, which the port commits remove.
+  - The shfmt reformat and `.editorconfig`, which shifted the line numbers that Appendix A re-checked.
+  - The Apache-2.0 `LICENSE`, which also clears validate's LICENSE_MISSING check [R24].
+  - `THIRD_PARTY_NOTICES.md`, where the vendor commit adds PyYAML.
+  - Dropping `version`. The stamp doesn't use it, but `--strict` would warn about it [R24].
+  - The `lint`, `validate` and `test` CI that this RFC extends.
+- **Separate work:**
+  - PR #101.
+  - The agent restructure.
+
+## Appendix F — Decisions
+
+The user's decisions, oldest first. "This review" and "the re-review" below are the reviews in Appendix D, and decisions on a review's findings (U1, U2 and A1–A4) stay with that review there.
+
+**Post-review revision, 2026-11-13.** After this review, the user decided that the plugin's scripts and hooks move to Python ≥ 3.11 (Language policy). The three lens reviewers did not review these changes:
+
+- `scaffold`, `drift` and `state-touch` are Python behind the `scripts/bw` launcher, with the same CLI contracts, exit codes and output. Exclusive-create opens and a top-level exception handler replace F2's noclobber and F9's EXIT traps [R38, R52], and `state-touch` keeps F1's symlink refusal. consumer-sim becomes a black-box pytest module that builds each child environment itself instead of running under `env -u` [E38].
+- The bash-3.2 requirement is gone. AC-15 now covers Python 3.11 and the latest 3.x on Linux and macOS, and the macOS bash-3.2 job and the bash-construct grep that F15 had widened are removed. R2 and E16 remain as history.
+- The interim `rfc-frontmatter.sh` read-loop rewrite is dropped, because it conflicted with #113's `require_bash_major 4` guards [R49]. Phase 4 ports that script instead.
+- New: the Language policy section, Phase 4, AC-20 to AC-22, the vendored PyYAML, `compact-reminder`, and CI that extends #113.
+
+**Decisions (2026-11-13).** After both revisions, the user settled the six open questions in an interactive walkthrough. The lens reviewers did not review these decisions, and they saw the tools under their working names.
+
+- OQ-1, where the reusable CI workflow lives: this repo, as `.github/workflows/lang-ci.yml`. A dedicated repo, inline jobs and a no-caller variant are gone.
+- OQ-2, script or skill: the Python script does all seeding, and the skill is a thin wrapper.
+- OQ-3, rule size and updates: a fixed 2,000-character cap enforced in CI, with reviewed PRs and no eval gate [E23].
+- OQ-4, hooks in consumer repos: never; every hook ships in the plugin's `hooks.json`.
+- OQ-5, names: `scaffold` and `drift`, for the skills, the script subcommands and the stamp prefix. Earlier drafts said "init" and "doctor", but those are built-ins [E24, E45]; `/scaffold` and `/drift` aren't [E60].
+- OQ-6, hard dependencies: github, context7 and code-review.
+
+**Delivery and multi-language CI (2026-11-13).** After the re-review and #115's first CI run [R69], the user made three decisions, and the RFC returned to Draft for re-approval. The amendment review below covers these decisions and the changes they brought. The entries above keep their Phase numbers: Phase 1 is now #115 plus the add commits, Phase 2 the migrate commits and the Apps PRs, Phase 3 the delete commits, and Phase 4 the port commits.
+
+| ID | Decision | Where |
+|---|---|---|
+| D1 | Two PRs. #115 merges first, with this amendment, `lang-ci.yml` with D3's changes, and their fixtures and checks. One implementation PR follows, holding the old Phases 1, 3 and 4 plus this repo's migration as the add, migrate, delete and port commits, and pinning #115's merge commit. The three app installs migrate after it. No interim `/sync` is needed, because un-migrated apps keep working [R63, R64] | Migration; Rollback; AC-13; AC-22; B1; B4; B5; C; E |
+| D2 | `/sync` is deleted in the implementation PR, and no interim state keeps it working. state-touch therefore writes `*` from the start, which retires F19's negation | Migration; B1; B2 |
+| D3 | Multi-language CI: (i) scaffold and drift detect tracked manifests in subdirectories, giving one caller job per (language, directory) and skipping root-workspace members; (ii) `Gemfile` maps to a `ruby` id with its own `lang-ci.yml` job; (iii) the js job runs `bun test --pass-with-no-tests`. The `lang-ci.yml` changes land in #115, since the implementation PR's caller must pin a `main` commit that has them | Design; Security; AC-23; AC-24; B2; B4; B5; C |
+
+The architect's choices under D3, each with its evidence:
+
+| Choice | Evidence |
+|---|---|
+| Tracked manifests only, at depth two or less, skipping `.`- and `_`-prefixed segments and vendored, fixture, example, test and template trees. A `.gitattributes` attribute, `bytewyrd-ci`, opts a manifest in or out, with git's own pattern rules | R68, R70, R73, R74, E82 |
+| A root job drops only what it covers: js and uv members, and nested crates under a root Cargo workspace unless excluded or self-rooted. Go and Ruby drop nothing, since a root `./...` and a root `rake` never reach nested projects | R66, R70, R71, R72, E78–E81, E83 |
+| The rust job adds `--workspace` and the python job `--all-packages`, because a root package, `default-members` or uv's root-only default would otherwise leave dropped members unbuilt | R71, R72, E79, E80 |
+| Directories must match a strict pattern of at most 64 characters, are double-quoted in YAML, and yield job ids that meet GitHub's rule. A rejected or colliding directory becomes a scaffold `note:` and a drift `ci-skipped` info, never a job | E70 |
+| The caller template repeats one `@@job@@` block, keeping one hashable template with one pin. `pin-changed` checks every pin in the file, and `ci-variant` also flags a component that has no job | B2; C |
+| setup-go gets `cache-dependency-path`, and setup-uv and setup-ruby get `working-directory`. setup-bun has no dependency cache, and its root-only version lookup stays | R69, E73–E75, E76 |
+| Ruby runs `bundle exec rake` after `bundler-cache: true`: setup-ruby's documented step, and the default task of Rails, rspec-rails and `bundle gem` projects. Apps whose tests need services write their own job and opt the directory out | E71, E76, E83 |
+| `ruby/setup-ruby` is pinned to v1.338.0, its newest release and tag, a lightweight tag | E76 |
+| Fixtures cover all five jobs, the Python and Rust ones as workspaces; a `lint` loop checks that every language id has a job; the every-commit loop restores HEAD by SHA, since CI's checkout is detached | R69, R73 |
+
+The user accepted these choices on 2026-11-13, including what they imply:
+- #115 changes all five `lang-ci.yml` jobs and adds four fixtures.
+- A Ruby directory without `.ruby-version`, `.tool-versions` or `mise.toml` fails, with a scaffold note.
+- Under a root job, nested non-member tests may run twice.
+- Discovery uses the depth-two scope and its exclusion list.
+- A subdirectory's Bun pin is ignored.
+- The body runs to about 1.7K words.
+
+The user also chose the lean review for this amendment.
+
 **Per-language workflows and lint-tool pins (2026-11-14).** The user made three more decisions for #115. No reviewer has seen them or the changes below.
 
 | ID | Decision | Where |
@@ -1679,32 +1712,3 @@ The architect's choices under D7–D10, which the user has not made:
 | No-op step | `run: exit 0` | It passes and says nothing. The job stays, since a workflow run is made up of one or more jobs [E30] |
 
 No reviewer has seen D7–D10.
-
-## Appendix E — Related RFCs and PRs
-
-- **Formerly `2026-11-09-init-and-doctor`.** Renamed in #115 on 2026-11-14, before re-approval, so the id matches the title; older commits, branches and PRs use the old id. That id is retired and is never to be reused.
-- **Removes mechanisms of these Done RFCs [R17]:**
-  - `2026-05-10-sync-interactive-diff`
-  - `2026-05-10-project-brief-sync-source-of-truth`
-  - `2026-05-09-best-practices-content-and-tooling`
-  - `2026-05-12-unify-best-practices-destinations` (its two destinations are kept)
-  - `2026-05-12-auto-extract-best-practices-on-precompact` (its sentinel write stays until the gate in B1 passes)
-  - `2026-05-14-skill-helper-scripts` (the sync half)
-- **Supersedes these RFCs, both Dropped on 2026-11-13 [R17]:** `2026-05-14-sync-per-file-extension-strategies` and `2026-05-12-sync-enforce-github-branch-auto-delete`.
-- **Draft affected by the CI decision:** `2026-05-10-ci-qa-bytewyrd-github-app` ships its QA workflow as a template that consumers copy, and pins `anthropics/claude-code-action` by tag [R53]. This RFC makes this repo the home of SHA-pinned reusable workflows, with the pin-bump process in Appendix C. That Draft is unchanged here; adopting the same model would be its own revision.
-- **Open PRs:** #100, #102 and #107 mention `/sync` [R18]. #100 also adds a SessionStart `compact` hook [R30].
-- **#115** (`feat/lang-ci-reusable-workflow`): the five `lang-ci-<id>.yml` files, which replace the branch's `lang-ci.yml`, with their timeouts, lockfile checks and per-language fixes; the five fixtures and `lang-ci-fixture-<id>` jobs; the B4 `lint` step; the lint-tool pins in `mise.toml` and `mise.lock`, with actionlint and `.github/actionlint.yaml`; and this amendment. It merges before the implementation PR, which pins its merge commit (Migration).
-- **Builds on PR #116, merged on 2026-11-13 as d9ae47e [R77]:**
-  - Its removal of the SubagentStop write, which the add commits undo through `state-touch`, deleting its three "Temporarily removed" notes.
-  - Its removal of this repo's settings hooks, so the migrate commits need no settings fix [R25].
-  - Its frontmatter escapes, two of whose bats assertions the harness commit deletes (U1).
-- **Builds on PR #113, merged on 2026-11-13 as 080b7a5 [R49]:**
-  - Its `require_bash_major 4` guards, which the port commits remove.
-  - The shfmt reformat and `.editorconfig`, which shifted the line numbers that Appendix A re-checked.
-  - The Apache-2.0 `LICENSE`, which also clears validate's LICENSE_MISSING check [R24].
-  - `THIRD_PARTY_NOTICES.md`, where the vendor commit adds PyYAML.
-  - Dropping `version`. The stamp doesn't use it, but `--strict` would warn about it [R24].
-  - The `lint`, `validate` and `test` CI that this RFC extends.
-- **Separate work:**
-  - PR #101.
-  - The agent restructure.
