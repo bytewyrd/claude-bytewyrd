@@ -41,7 +41,7 @@ Default to `haiku` unless the task clearly requires more. Err on the side of che
 
 The two `scripts/bw` commands need Python 3.11 or newer and end in `|| true`, so without it they print one stderr line and the hook still exits 0. Hooks run outside the sandbox, so `state-touch`, the only writer into `.bytewyrd/`, refuses symlinks. `tests/scripts/hooks.bats` runs each hook's command string from `hooks.json`.
 
-When you add a skill or agent that depends on a specific external tool, add a probe to the skill body (the in-skill pattern used by `best-practices-extract`, `refactor`, and `rfc-implement`) and handle a missing tool there.
+When you add a skill or agent that depends on a specific external tool, add a probe to the skill body (the in-skill pattern used by `best-practices-extract`) and handle a missing tool there.
 
 ### During work
 

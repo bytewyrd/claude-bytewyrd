@@ -57,16 +57,3 @@ hash_string() {
     printf '%s' "$1" | shasum -a 256 | cut -d' ' -f1
   fi
 }
-
-# plugin_enabled <plugin-id>
-# Returns 0 if enabled, 1 if explicitly disabled or not found.
-# Precedence: project-false > project-true > user-true.
-plugin_enabled() {
-  local id="$1"
-  local user_settings="$HOME/.claude/settings.json"
-  local proj_settings=".claude/settings.json"
-  if [ -f "$proj_settings" ] && grep -q "\"$id\"[[:space:]]*:[[:space:]]*false" "$proj_settings"; then return 1; fi
-  if [ -f "$proj_settings" ] && grep -q "\"$id\"[[:space:]]*:[[:space:]]*true" "$proj_settings"; then return 0; fi
-  if [ -f "$user_settings" ] && grep -q "\"$id\"[[:space:]]*:[[:space:]]*true" "$user_settings"; then return 0; fi
-  return 1
-}

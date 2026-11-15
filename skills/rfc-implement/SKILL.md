@@ -9,22 +9,7 @@ compatibility: "Claude Code only: relies on Claude Code subagents, AskUserQuesti
 
 ## Requirement check
 
-This skill creates a pull request at the end of implementation. PR creation uses the GitHub MCP when available, falling back to the `gh` CLI:
-
-```bash
-mcp_out="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/tool-probe.sh" github-mcp)"; mcp_status=$?
-gh_out="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/tool-probe.sh" gh)";           gh_status=$?
-mcp_result="$(printf '%s' "$mcp_out" | jq -r .result)"
-gh_result="$(printf '%s' "$gh_out"  | jq -r .result)"
-```
-
-Outside Claude Code, `${CLAUDE_PLUGIN_ROOT}` is not substituted; use the directory two levels above this SKILL.md.
-
-- `mcp_status=0` (i.e. `$mcp_result` = `available`) → use the GitHub MCP server's `create_pull_request` tool. Print: `Using GitHub MCP for PR creation.`
-- `mcp_status!=0 && gh_status=0` → fall back to `gh pr create`. Print: `GitHub MCP not enabled — using gh CLI for PR creation.`
-- both nonzero → abort PR creation with: `Cannot create PR: neither GitHub MCP nor gh CLI is available. Fix: install github@claude-plugins-official OR install gh CLI and run gh auth login.` (Use `printf '%s' "$gh_out" | jq -r .hint` and the matching hint from `$mcp_out` to phrase the remediation precisely.)
-
-`$gh_result` carries one of `available`, `missing`, or `unauthenticated`; use it when the message text needs to distinguish "gh not installed" from "gh not logged in." The implementation itself (code edits, commit, push) completes regardless of which PR-creation path is taken.
+This skill creates a pull request at the end of implementation. Because the `github@claude-plugins-official` plugin is a hard dependency of bytewyrd, PR creation uses the GitHub MCP server's `create_pull_request` tool.
 
 Implements an Approved RFC by spawning a `feature-engineer` agent and marking the RFC `Done` when complete.
 
@@ -39,6 +24,8 @@ result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-resolve.sh" "${ARG:-}")"
 RFC_PATH="$(printf '%s' "$result" | jq -r .path)"
 label="$(printf '%s' "$result" | jq -r .label)"
 ```
+
+Outside Claude Code, `${CLAUDE_PLUGIN_ROOT}` is not substituted; use the directory two levels above this SKILL.md.
 
 Show `$label` and ask "Use this RFC? (yes/no)" — accept blank as yes. If the script exited non-zero, extract `.error` from `$result` and show it.
 
