@@ -20,7 +20,7 @@ Implements an Approved RFC by spawning a `feature-engineer` agent and marking th
 Resolve the target RFC using the helper script. `$ARG` is the user-supplied identifier from the skill's argument, if any; omit it to let the script use the heuristic fallbacks.
 
 ```bash
-result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-resolve.sh" "${ARG:-}")"
+result="$(sh "${CLAUDE_PLUGIN_ROOT}/scripts/bw" rfc-resolve "${ARG:-}")"
 RFC_PATH="$(printf '%s' "$result" | jq -r .path)"
 label="$(printf '%s' "$result" | jq -r .label)"
 ```
@@ -60,7 +60,7 @@ Do **not** start implementation if the spec has gaps. Fix the RFC first.
 After the PR is merged:
 
 ```bash
-result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-set-status.sh" "$RFC_PATH" Done)"
+result="$(sh "${CLAUDE_PLUGIN_ROOT}/scripts/bw" rfc-set-status "$RFC_PATH" Done)"
 git add "$RFC_PATH"
 git commit -m "rfc: mark $(basename "${RFC_PATH%.md}") done"
 ```

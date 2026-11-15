@@ -26,7 +26,7 @@ Stop.
 ### 2. Enumerate, parse, and sort
 
 ```bash
-result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-summary.sh")"
+result="$(sh "${CLAUDE_PLUGIN_ROOT}/scripts/bw" rfc-summary)"
 ```
 
 Outside Claude Code, `${CLAUDE_PLUGIN_ROOT}` is not substituted; use the directory two levels above this SKILL.md.

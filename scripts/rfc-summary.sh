@@ -28,8 +28,6 @@ require_jq
 # per-file "unparseable" warnings, so check up front for a clear error.
 require_bash_major 4
 
-FRONTMATTER_SH="$_LIB_DIR/rfc-frontmatter.sh"
-
 if [ ! -d docs/rfcs ]; then
   jq -n --arg msg "no docs/rfcs/ directory in $(pwd)" '{error: $msg}'
   exit 2
@@ -43,7 +41,8 @@ for f in docs/rfcs/*.md; do
   [ -f "$f" ] || continue
   # rfc-frontmatter exits 2 on a file that has no frontmatter; tolerate that here
   # and record a per-file warning rather than aborting the whole listing.
-  if ! out="$(bash "$FRONTMATTER_SH" "$f" 2>/dev/null)"; then
+  # _LIB_DIR is this script's own directory, scripts/, so this is scripts/bw.
+  if ! out="$(sh "$_LIB_DIR/bw" rfc-frontmatter "$f" 2>/dev/null)"; then
     warnings+=("Warning: $f — frontmatter unparseable; skipping.")
     continue
   fi

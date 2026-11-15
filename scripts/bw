@@ -4,11 +4,16 @@
 #   sh scripts/bw NAME [ARGS...]
 #
 # Class A is scaffold, drift, state-touch and compact-reminder; class B is the
-# JSON helpers (rfc-* and tool-probe). The interpreter is $BYTEWYRD_PYTHON when
-# it reports 3.11 or newer, else the first of python3.15 ... python3.11 on PATH
-# (trusted by name), else python3 when it reports 3.11 or newer. With none of
-# them, class A exits 1 and class B exits 2 with a JSON error, both on stderr,
-# except that the PreCompact sentinel is still written in plain sh.
+# JSON helpers (rfc-* and tool-probe). Until the port's retire commit, a
+# class-B helper whose _lib/bw_<name>.py (hyphens as underscores) doesn't
+# exist yet runs as its bash script, NAME.sh, before any interpreter is
+# looked for, so it needs no Python.
+#
+# The interpreter is $BYTEWYRD_PYTHON when it reports 3.11 or newer, else the
+# first of python3.15 ... python3.11 on PATH (trusted by name), else python3
+# when it reports 3.11 or newer. With none of them, class A exits 1 and class
+# B exits 2 with a JSON error, both on stderr, except that the PreCompact
+# sentinel is still written in plain sh.
 #
 # Contract: docs/rfcs/2026-11-09-scaffold-and-drift.md, Appendix B2.
 
@@ -32,6 +37,21 @@ case $name in
     exit 1
     ;;
 esac
+
+# From the harness commit until the retire commit (B2 step 1): a helper that
+# has no Python port yet runs its bash script, as the skills did before.
+if [ "$class" = B ]; then
+  module=$name
+  while :; do
+    case $module in
+      *-*) module=${module%%-*}_${module#*-} ;;
+      *) break ;;
+    esac
+  done
+  if [ ! -e "$dir/_lib/bw_$module.py" ]; then
+    exec bash "$dir/$name.sh" "$@"
+  fi
+fi
 
 # One interpreter start answers "is this 3.11 or newer?". -I and -S keep
 # PYTHON* variables, the user site directory and site (.pth files) out of it.

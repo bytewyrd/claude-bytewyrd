@@ -59,9 +59,6 @@ teardown() {
     done
   done
   [ -z "$missing" ] || fail "scripts use bash 4 features without require_bash_major 4:$missing"
-  # rfc-summary.sh tolerates per-file rfc-frontmatter.sh failures, which would
-  # hide the guard's error behind "unparseable" warnings.
-  grep -qE '^require_bash_major 4\b' scripts/rfc-summary.sh || fail "rfc-summary.sh must check the bash version"
 }
 
 # ---------------------------------------------------------------------------

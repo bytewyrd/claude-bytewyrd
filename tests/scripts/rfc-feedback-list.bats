@@ -1,10 +1,9 @@
 #!/usr/bin/env bats
-# Tests for scripts/rfc-feedback-list.sh
+# Tests for `bw rfc-feedback-list`
 
 setup() {
   load "helpers"
   setup_common
-  SCRIPT="$SCRIPT_ROOT/scripts/rfc-feedback-list.sh"
 }
 
 teardown() {
@@ -14,7 +13,7 @@ teardown() {
 @test "zero markers — empty markers array, exit 0" {
   create_rfc_fixture 2026-01-01-clean
   FIXTURE="docs/rfcs/2026-01-01-clean.md"
-  run bash "$SCRIPT" "$FIXTURE"
+  run bw rfc-feedback-list "$FIXTURE"
   assert_success
   assert_equal "$(echo "$output" | jq '.markers | length')" "0"
 }
@@ -26,7 +25,7 @@ teardown() {
 Some text.
 FEEDBACK: Add more detail here.
 EOF
-  run bash "$SCRIPT" "feedback-test.md"
+  run bw rfc-feedback-list "feedback-test.md"
   assert_success
   assert_equal "$(echo "$output" | jq '.markers | length')" "1"
   assert_equal "$(echo "$output" | jq -r '.markers[0].line')" "4"
@@ -43,7 +42,7 @@ FEEDBACK: First comment.
 
 FEEDBACK: Second comment.
 EOF
-  run bash "$SCRIPT" "feedback-test2.md"
+  run bw rfc-feedback-list "feedback-test2.md"
   assert_success
   assert_equal "$(echo "$output" | jq '.markers | length')" "2"
   assert_equal "$(echo "$output" | jq -r '.markers[0].line')" "3"
@@ -58,7 +57,7 @@ Normal line.
 NOTE: This is not a feedback marker.
 FEEDBACK: This one is.
 EOF
-  run bash "$SCRIPT" "feedback-test3.md"
+  run bw rfc-feedback-list "feedback-test3.md"
   assert_success
   assert_equal "$(echo "$output" | jq '.markers | length')" "1"
   assert_equal "$(echo "$output" | jq -r '.markers[0].text')" "FEEDBACK: This one is."
@@ -71,7 +70,7 @@ EOF
 - Option A is good.
 - FEEDBACK: This needs Y, inside a list item.
 EOF
-  run bash "$SCRIPT" "feedback-test4.md"
+  run bw rfc-feedback-list "feedback-test4.md"
   assert_success
   assert_equal "$(echo "$output" | jq '.markers | length')" "1"
 }
@@ -83,7 +82,7 @@ EOF
 - Top level option.
   - FEEDBACK: Nested bullet feedback.
 EOF
-  run bash "$SCRIPT" "feedback-test5.md"
+  run bw rfc-feedback-list "feedback-test5.md"
   assert_success
   assert_equal "$(echo "$output" | jq '.markers | length')" "1"
 }
@@ -94,20 +93,20 @@ EOF
 
 > FEEDBACK: Blockquote feedback here.
 EOF
-  run bash "$SCRIPT" "feedback-test6.md"
+  run bw rfc-feedback-list "feedback-test6.md"
   assert_success
   assert_equal "$(echo "$output" | jq '.markers | length')" "1"
 }
 
 @test "missing file — exits 2 with error" {
-  run bash "$SCRIPT" "docs/rfcs/nonexistent.md"
+  run bw rfc-feedback-list "docs/rfcs/nonexistent.md"
   assert_failure 2
   run bash -c "echo '$output' | jq -e .error"
   assert_success
 }
 
 @test "no arguments — exits 2 with error" {
-  run bash "$SCRIPT"
+  run bw rfc-feedback-list
   assert_failure 2
   run bash -c "echo '$output' | jq -e .error"
   assert_success

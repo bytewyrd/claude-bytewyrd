@@ -12,7 +12,7 @@ compatibility: "Claude Code only: relies on Claude Code subagents, AskUserQuesti
 This skill optionally enriches its output with PR context from the GitHub CLI. The CLI is a soft dependency:
 
 ```bash
-result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/tool-probe.sh" gh)"; gh_status=$?
+result="$(sh "${CLAUDE_PLUGIN_ROOT}/scripts/bw" tool-probe gh)"; gh_status=$?
 gh_result="$(printf '%s' "$result" | jq -r .result)"
 ```
 
