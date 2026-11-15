@@ -1506,6 +1506,22 @@ def test_a_helper_with_stdout_closed_exits_2_without_a_traceback(tmp_path):
     assert (proc.returncode, proc.stderr) == (2, b"")
 
 
+@pytest.mark.parametrize(
+    "data, want",
+    [
+        (b"", []),
+        (b"\n", [b""]),
+        (b"a", [b"a"]),
+        (b"a\n", [b"a"]),
+        (b"a\nb", [b"a", b"b"]),
+        (b"a\n\n", [b"a", b""]),
+        (b"a\r\n\0\n", [b"a\r", b"\0"]),
+    ],
+)
+def test_split_lines_splits_as_awk_and_grep_read_lines(data, want):
+    assert bw.split_lines(data) == want
+
+
 # --- scaffold ----------------------------------------------------------------
 
 

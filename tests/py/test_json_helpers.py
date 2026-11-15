@@ -26,6 +26,7 @@ sys.path[0:0] = [str(LIB), str(VENDOR)]
 import bw  # noqa: E402
 import bw_rfc_braindump_append  # noqa: E402
 import bw_rfc_braindump_list  # noqa: E402
+import bw_rfc_braindump_remove  # noqa: E402
 
 BRAINDUMP = Path("docs/rfc-braindump.md")
 IS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
@@ -162,3 +163,68 @@ def test_list_of_an_unreadable_file_is_empty_with_one_stderr_line(call):
     BRAINDUMP.chmod(0)
     message = b"rfc-braindump-list: Permission denied: docs/rfc-braindump.md\n"
     assert call(bw_rfc_braindump_list) == (0, NO_ENTRIES, message)
+
+
+# --- rfc-braindump-remove ----------------------------------------------------
+
+
+def removed(flag):
+    return b'{\n  "removed": %s,\n  "file": "docs/rfc-braindump.md"\n}\n' % (b"true" if flag else b"false")
+
+
+def test_remove_takes_out_the_first_match_only(call):
+    BRAINDUMP.write_bytes(b"# H\n\n* Duplicate.\n* Unique.\n* Duplicate.\n")
+    assert call(bw_rfc_braindump_remove, "Duplicate.") == (0, removed(True), b"")
+    assert BRAINDUMP.read_bytes() == b"# H\n\n* Unique.\n* Duplicate.\n"
+
+
+def test_remove_without_a_match_leaves_the_file_alone(call):
+    BRAINDUMP.write_bytes(b"* a \n* b")
+    for body in ("c", "a", " b"):
+        assert call(bw_rfc_braindump_remove, body) == (1, removed(False), b"")
+    assert BRAINDUMP.read_bytes() == b"* a \n* b"
+
+
+def test_remove_reads_lines_as_awk_did(call):
+    # Kept from the bash script: a last line without a newline matches, and
+    # the rewritten file ends every line with one.
+    BRAINDUMP.write_bytes(b"\n* a\n\n* last")
+    assert call(bw_rfc_braindump_remove, "last") == (0, removed(True), b"")
+    assert BRAINDUMP.read_bytes() == b"\n* a\n\n"
+
+
+@pytest.mark.parametrize("body", ["C:\\temp\\x", "a\\nb", "back\\\\slash", "end\\"])
+def test_remove_matches_a_body_with_backslashes_as_given(call, body):
+    # The bash script's awk -v undid these escapes first, so it never matched.
+    BRAINDUMP.write_bytes(b"* " + body.encode() + b"\n* other\n")
+    assert call(bw_rfc_braindump_remove, body) == (0, removed(True), b"")
+    assert BRAINDUMP.read_bytes() == b"* other\n"
+
+
+def test_remove_matches_the_bytes_of_a_body_that_isn_t_utf_8():
+    BRAINDUMP.write_bytes(b"* caf\xc3\xa9\n* caf\xe9\n")
+    proc = bw_run("rfc-braindump-remove", b"caf\xe9")
+    assert (proc.returncode, proc.stdout, proc.stderr) == (0, removed(True), b"")
+    assert BRAINDUMP.read_bytes() == b"* caf\xc3\xa9\n"
+
+
+@pytest.mark.parametrize(
+    "argv, message",
+    [
+        ([], "usage: rfc-braindump-remove.sh <full-bullet-body-without-leading-star-space>"),
+        ([""], "usage: rfc-braindump-remove.sh <full-bullet-body-without-leading-star-space>"),
+        (["x"], "rfc-braindump-remove: docs/rfc-braindump.md not found"),
+    ],
+)
+def test_remove_errors(call, argv, message):
+    assert call(bw_rfc_braindump_remove, *argv) == (2, error(message), b"")
+
+
+@pytest.mark.skipif(IS_ROOT, reason="root writes any file")
+def test_remove_reports_a_failed_write_as_a_json_error(call):
+    # The bash script printed "removed": true and exited 0 here.
+    BRAINDUMP.write_bytes(b"* a\n")
+    BRAINDUMP.chmod(0o444)
+    message = "rfc-braindump-remove: Permission denied: docs/rfc-braindump.md"
+    assert call(bw_rfc_braindump_remove, "a") == (2, error(message), b"")
+    assert BRAINDUMP.read_bytes() == b"* a\n"

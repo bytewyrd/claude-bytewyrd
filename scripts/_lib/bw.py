@@ -1053,3 +1053,15 @@ def json_main(name, run, argv):
             except Exception:
                 pass
         return 2
+
+
+# Input, read as the bash scripts read it.
+
+
+def split_lines(data):
+    """DATA's lines as awk and grep read them: split at each newline, a last
+    line without one still a line, and no line at all in b""."""
+    lines = data.split(b"\n")
+    if lines[-1] == b"":
+        lines.pop()
+    return lines
