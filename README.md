@@ -147,7 +147,7 @@ RFC docs, best-practices file, agent delegation table, and CI are set up in one 
 - [Installation](docs/guide/installation.md) — how to install and configure the plugin
 - [Architecture](docs/ARCHITECTURE.md) — how the plugin is built and key design decisions
 - [Contributing](docs/CONTRIBUTING.md) — development workflow and conventions
-- [RFC Process](docs/rfc-process.md) — the design-first workflow (installed by `/sync`)
+- [RFC Process](skills/rfc-process/references/rfc-process.md) — the design-first workflow (the `rfc-process` skill)
 - [Best Practices](docs/BEST_PRACTICES.md) — accumulated session learnings
 
 ## License

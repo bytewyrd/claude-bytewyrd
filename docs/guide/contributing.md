@@ -73,7 +73,7 @@ The plugin uses its own RFC workflow for any change that involves design decisio
 
 The shortlist of things that are *not* RFC-worthy: typo fixes, dependency bumps, additions to `docs/BEST_PRACTICES.md` from `/best-practices-extract`, agent upstream-improvement pulls.
 
-Use `/rfc-new <description>` to start. The skill walks the full Draft → Approved → Done lifecycle. See [`docs/rfc-process.md`](../rfc-process.md) for the canonical process.
+Use `/rfc-new <description>` to start. The skill walks the full Draft → Approved → Done lifecycle. See the [`rfc-process` skill](../../skills/rfc-process/references/rfc-process.md) for the canonical process.
 
 ## Plugin packaging
 
@@ -133,5 +133,5 @@ Fires after any `git commit` shell command or GitHub MCP file-push operation. Pr
 
 - [`docs/CONTRIBUTING.md`](../CONTRIBUTING.md) — narrow dev workflow ops.
 - [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md) — system design and decisions.
-- [`docs/rfc-process.md`](../rfc-process.md) — full RFC workflow.
+- [`rfc-process` skill](../../skills/rfc-process/references/rfc-process.md) — full RFC workflow.
 - [Add a new skill](contributing/add-a-skill.md), [Add a new agent](contributing/add-an-agent.md) — task-oriented recipes.
