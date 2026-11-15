@@ -44,7 +44,7 @@ Apply these passes only to candidates that passed triage.
 Remove from the candidate text:
 
 - Project names, repo names, package names ("`bytewyrd-workflow`", "`tinywyrd`", "`eve-platform`").
-- File paths ("`src/auth/token.rs`", "`skills/sync/SKILL.md`").
+- File paths ("`src/auth/token.rs`", "`skills/best-practices/SKILL.md`").
 - Type names, function names, struct names, class names ("`RouterConfig`", "`DetailOverlay::new`", "`processOrder`").
 - Module names and namespaces ("`core::k8s::target`", "`@scope/package`").
 - Version numbers and tool versions specific to a single moment in time ("Rust 1.78", "Svelte 4.2.7").
@@ -73,7 +73,7 @@ Prepend the technology, layer, or domain the principle applies to. The prefix ma
 | Security hygiene | `Security:` |
 | Error handling | `Error Handling:` |
 
-Match the prefix to the existing section header in `~/.claude/BEST_PRACTICES.md` and `skills/sync/SKILL.md` (use the canonical abbreviated label — `_K8s_`, `_Rust_`, `_JS/TS_`, etc.) so the entry lands in the right destination section without rework.
+Match the prefix to the existing section header in `~/.claude/BEST_PRACTICES.md` and `skills/best-practices/references/<stack>.md` (use the canonical abbreviated label — `_K8s_`, `_Rust_`, `_JS/TS_`, etc.) so the entry lands in the right destination section without rework.
 
 ### Verification — re-read in isolation
 

@@ -19,7 +19,7 @@ test -d docs/rfcs
 
 If the directory does not exist, tell the user:
 
-> "This project has no `docs/rfcs/` directory. Run `/sync` to set up the RFC process, or `/rfc-new` to create the first RFC."
+> "This project has no `docs/rfcs/` directory. Run `/rfc-new` to create the first RFC."
 
 Stop.
 

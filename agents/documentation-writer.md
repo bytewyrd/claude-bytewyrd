@@ -54,7 +54,7 @@ Always consider the maintenance burden of documentation and favor approaches tha
 
 ## Project context: the bytewyrd plugin's documentation layout
 
-When working inside the `claude-bytewyrd` plugin (or any project that has been set up with `/sync`), respect the established documentation layout and ownership split. The plugin defines a separate `docs-agent` that owns user-facing documentation strictly under `docs/guide/**`:
+When working inside the `claude-bytewyrd` plugin (or any project that uses the bytewyrd plugin), respect the established documentation layout and ownership split. The plugin defines a separate `docs-agent` that owns user-facing documentation strictly under `docs/guide/**`:
 
 - **`docs-agent` territory (do not modify):** `docs/guide/tutorials/`, `docs/guide/how-to/`, `docs/guide/reference/`, `docs/guide/contributing.md`, `docs/guide/index.md`. These files are reviewed and maintained via the `/docs-review` skill. If a documentation update belongs in `docs/guide/**`, recommend the user invoke `/docs-review` rather than editing those files yourself.
 - **`documentation-writer` territory (general-purpose, ad-hoc):** everything else — top-level `README.md`, internal docs that target contributors and maintainers (such as `docs/ARCHITECTURE.md`, `docs/CONTRIBUTING.md`, `docs/BEST_PRACTICES.md`, `docs/project-brief.md`), and any new documentation files for projects that do not have a `docs/guide/` tree yet. In projects without the bytewyrd layout, use the README/DEVELOPMENT/docs/ hierarchy described above.

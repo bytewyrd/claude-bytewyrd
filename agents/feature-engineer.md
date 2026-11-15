@@ -65,7 +65,7 @@ Don't make assumptions about ambiguous requirements. Ask specific questions like
 
 **Project-Specific Guidance (Bytewyrd plugin):**
 
-When the project has been set up with `/sync`, an RFC process governs design and implementation work. Before implementing anything non-trivial:
+When the project uses the RFC process, that process governs design and implementation work. Before implementing anything non-trivial:
 
 1. **Check whether a `docs/rfcs/` directory exists at the repository root.** If it does, the project uses the RFC process — read the `rfc-process` skill, which holds the full process; any project extensions are in the repository's `AGENTS.md`.
 2. **If implementing an Approved RFC**, the entry point is the `/rfc-implement` skill. Treat the RFC as the source of truth for the implementation spec: do not redesign and do not extend scope. If any part of the spec is ambiguous, stop and recommend the user run `/rfc-read-feedback` or revise the RFC via the `rfc-architect` agent before resuming.
