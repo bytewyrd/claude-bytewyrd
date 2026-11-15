@@ -1033,6 +1033,21 @@ def emit_error(message):
     emit({"error": message})
 
 
+def emit_available(name):
+    """Print {"result": "available", "name": NAME}."""
+    emit({"result": "available", "name": name})
+
+
+def emit_missing(name, hint):
+    """Print {"result": "missing", "name": NAME, "hint": HINT}."""
+    emit({"result": "missing", "name": name, "hint": hint})
+
+
+def emit_unauth(name, hint):
+    """Print {"result": "unauthenticated", "name": NAME, "hint": HINT}."""
+    emit({"result": "unauthenticated", "name": name, "hint": hint})
+
+
 def json_main(name, run, argv):
     """The main() of the JSON helper NAME: the exit code of RUN(ARGV).
 

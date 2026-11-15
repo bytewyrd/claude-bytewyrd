@@ -32,6 +32,7 @@ import bw_rfc_frontmatter  # noqa: E402
 import bw_rfc_resolve  # noqa: E402
 import bw_rfc_set_status  # noqa: E402
 import bw_rfc_summary  # noqa: E402
+import bw_tool_probe  # noqa: E402
 
 BRAINDUMP = Path("docs/rfc-braindump.md")
 IS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
@@ -696,3 +697,80 @@ def test_summary_names_a_file_that_isn_t_utf_8_with_u_fffd():
 def test_summary_without_docs_rfcs_is_an_error_naming_the_directory(call):
     shutil.rmtree("docs")
     assert call(bw_rfc_summary) == (2, error("no docs/rfcs/ directory in " + os.getcwd()), b"")
+
+
+# --- tool-probe --------------------------------------------------------------
+
+MISSING = {
+    "gh": "gh CLI not on PATH. Install: https://cli.github.com.",
+    "git": "git not on PATH. Install: https://git-scm.com/downloads.",
+    "jq": "Install jq: https://stedolan.github.io/jq/download/",
+}
+
+
+@pytest.fixture
+def bin_dir(tmp_path, monkeypatch):
+    """A directory that is all of PATH, for stand-in tools."""
+    directory = tmp_path / "bin"
+    directory.mkdir()
+    monkeypatch.setenv("PATH", str(directory))
+    return directory
+
+
+def stand_in(directory, name, code=0, log=None):
+    """An executable DIRECTORY/NAME that exits CODE, appending its arguments to LOG."""
+    script = "#!/bin/sh\n" + ('echo "$@" >>"%s"\n' % log if log else "") + "exit %d\n" % code
+    (directory / name).write_text(script)
+    (directory / name).chmod(0o755)
+
+
+@pytest.mark.parametrize("name", ["gh", "git", "jq"])
+def test_probe_of_a_missing_tool_exits_1_with_its_hint(call, bin_dir, name):
+    # For jq this is new: the bash script needed jq, so it exited 2 first.
+    want = '{\n  "result": "missing",\n  "name": "%s",\n  "hint": "%s"\n}\n' % (name, MISSING[name])
+    assert call(bw_tool_probe, name) == (1, want.encode(), b"")
+
+
+@pytest.mark.parametrize("name", ["git", "jq"])
+def test_probe_of_a_tool_on_path_is_available(call, bin_dir, name):
+    stand_in(bin_dir, name, code=1)  # only gh is run
+    assert call(bw_tool_probe, name) == (0, b'{\n  "result": "available",\n  "name": "%s"\n}\n' % name.encode(), b"")
+
+
+def test_probe_needs_an_executable(call, bin_dir):
+    # bash's command -v also took a file without the execute bit.
+    (bin_dir / "git").write_text("")
+    assert call(bw_tool_probe, "git")[0] == 1
+
+
+def test_probe_of_gh_runs_gh_auth_status(call, bin_dir, tmp_path):
+    log = tmp_path / "log"
+    stand_in(bin_dir, "gh", code=1, log=log)
+    hint = "gh CLI present but not authenticated. Run: gh auth login."
+    want = '{\n  "result": "unauthenticated",\n  "name": "gh",\n  "hint": "%s"\n}\n' % hint
+    assert call(bw_tool_probe, "gh") == (1, want.encode(), b"")
+    stand_in(bin_dir, "gh", code=0, log=log)
+    assert call(bw_tool_probe, "gh") == (0, b'{\n  "result": "available",\n  "name": "gh"\n}\n', b"")
+    assert log.read_text() == "auth status\nauth status\n"
+
+
+@pytest.mark.parametrize(
+    "argv, message",
+    [
+        ([], "usage: tool-probe.sh <gh|git|jq>"),
+        ([""], "usage: tool-probe.sh <gh|git|jq>"),
+        (["nonsense"], "unrecognized probe name 'nonsense'"),
+        (["github-mcp"], "unrecognized probe name 'github-mcp'"),
+    ],
+)
+def test_probe_errors(call, argv, message):
+    assert call(bw_tool_probe, *argv) == (2, error(message), b"")
+
+
+def test_probe_names_a_probe_that_isn_t_utf_8_with_u_fffd():
+    proc = bw_run("tool-probe", b"caf\xe9")
+    assert (proc.returncode, json.loads(proc.stdout), proc.stderr) == (
+        2,
+        {"error": "unrecognized probe name 'caf\ufffd'"},
+        b"",
+    )

@@ -1553,6 +1553,23 @@ def test_pwd_is_getcwd_otherwise(tmp_path, monkeypatch, value):
     assert bw.pwd() == os.getcwd()
 
 
+def test_emit_available(capsysbinary):
+    bw.emit_available("gh")
+    assert capsysbinary.readouterr() == (b'{\n  "result": "available",\n  "name": "gh"\n}\n', b"")
+
+
+def test_emit_missing(capsysbinary):
+    bw.emit_missing("gh", "install gh first")
+    want = b'{\n  "result": "missing",\n  "name": "gh",\n  "hint": "install gh first"\n}\n'
+    assert capsysbinary.readouterr() == (want, b"")
+
+
+def test_emit_unauth(capsysbinary):
+    bw.emit_unauth("gh", "run gh auth login")
+    want = b'{\n  "result": "unauthenticated",\n  "name": "gh",\n  "hint": "run gh auth login"\n}\n'
+    assert capsysbinary.readouterr() == (want, b"")
+
+
 # --- scaffold ----------------------------------------------------------------
 
 
