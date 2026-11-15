@@ -1,20 +1,23 @@
 """Shared functions for the bw commands (scripts/bw).
 
 Nothing here exits the process: functions return values or raise, and each
-command's main() decides the exit code. Repo files are read from the index,
-through blob(), and every repo-derived string a command prints goes through
+command's main() decides the exit code. Detection reads repo files from the
+index, through blob(); the seed files themselves are read from the work tree,
+through read_text(). Every repo-derived string a command prints goes through
 quote().
 
 Contract: docs/rfcs/2026-11-09-scaffold-and-drift.md, Appendix B2.
 """
 
 import argparse
+import errno
 import fnmatch
 import hashlib
 import json
 import os
 import posixpath
 import re
+import stat as stat_module
 import subprocess
 import sys
 import tomllib
@@ -170,6 +173,18 @@ def blob(root, entry):
     return data.stdout
 
 
+def dirty(root):
+    """True when `git status --porcelain` prints anything for ROOT.
+
+    --no-optional-locks keeps git from refreshing the index on the way, so a
+    dry run writes nothing, not even .git/index.
+    """
+    proc = _git(root, "--no-optional-locks", "status", "--porcelain")
+    if proc.returncode != 0:
+        raise BwError("git status failed")
+    return bool(proc.stdout)
+
+
 # --- hashes, stamps and the plugin commit ------------------------------------
 
 
@@ -293,14 +308,21 @@ def render(tpl, comps, name):
 def exists(directory, name):
     """True when DIRECTORY/NAME exists, even as a dangling symlink, or an
     entry of DIRECTORY equals NAME ignoring case."""
+    return find_entry(directory, name) is not None
+
+
+def find_entry(directory, name):
+    """The entry of DIRECTORY that exists() finds for NAME: NAME itself, else
+    the first entry, in sorted order, that equals NAME ignoring case; None
+    when there is neither."""
     if os.path.lexists(os.path.join(directory, name)):
-        return True
+        return name
     try:
-        entries = os.listdir(directory)
+        entries = sorted(os.listdir(directory))
     except OSError:
-        return False
+        return None
     folded = name.casefold()
-    return any(entry.casefold() == folded for entry in entries)
+    return next((entry for entry in entries if entry.casefold() == folded), None)
 
 
 def pr_template(root):
@@ -349,6 +371,44 @@ def create(path, text):
         raise
 
 
+MAX_TEXT = 8 << 20  # read_text() reads work-tree files of at most 8 MiB
+
+
+def read_text(path):
+    """PATH's text, with every CR removed, decoded as UTF-8 with surrogateescape.
+
+    None when PATH is missing or, symlinks followed, is not a regular file (a
+    directory, a device, a FIFO), or is over 8 MiB: a seed path that points at
+    /dev/zero or a pipe is never read. Other errors, such as EACCES, raise
+    OSError.
+    """
+    try:
+        st = os.stat(path)
+    except OSError as e:
+        if e.errno in (errno.ENOENT, errno.ENOTDIR, errno.ELOOP):
+            return None
+        raise
+    if not stat_module.S_ISREG(st.st_mode):
+        return None
+    # O_NONBLOCK: should PATH become a FIFO after the stat, opening it can't hang.
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOCTTY", 0))
+    try:
+        if not stat_module.S_ISREG(os.fstat(fd).st_mode):
+            return None
+        chunks, size = [], 0
+        while size <= MAX_TEXT:
+            chunk = os.read(fd, 1 << 16)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            size += len(chunk)
+    finally:
+        os.close(fd)
+    if size > MAX_TEXT:
+        return None
+    return b"".join(chunks).replace(b"\r", b"").decode("utf-8", "surrogateescape")
+
+
 # --- quoting -----------------------------------------------------------------
 
 _SAFE = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._/-")
@@ -380,6 +440,20 @@ def attr_line(path):
     """A .gitattributes line whose root-anchored pattern opts out exactly PATH."""
     escaped = "".join("\\" + c if c in "\\*?[" else c for c in path)
     return quote("/" + escaped) + " -bytewyrd-ci"
+
+
+def describe(e):
+    """A one-line description of the exception E for an error message: the
+    text as it is when it is printable ASCII, else quote() of it."""
+    if isinstance(e, BwError):
+        text = str(e)
+    elif isinstance(e, OSError) and e.strerror:
+        text = e.strerror
+        if isinstance(e.filename, (str, bytes)):
+            text += ": " + os.fsdecode(e.filename)
+    else:
+        text = "%s: %s" % (type(e).__name__, e) if str(e) else type(e).__name__
+    return text if text.isascii() and text.isprintable() else quote(text)
 
 
 # --- detection ---------------------------------------------------------------
@@ -661,3 +735,73 @@ def detect(root):
     comps.sort(key=lambda c: (c.language, c.directory))
     skipped.sort(key=lambda s: s.path)
     return comps, skipped
+
+
+# --- seed targets (scaffold and drift) ---------------------------------------
+
+TEMPLATE_DIR = os.path.join(PLUGIN_DIR, "templates", "scaffold")
+CI_NOOP = "ci-noop.yml"
+CI_CALLER = "ci-caller.yml"
+TEMPLATES = ("AGENTS.md", "CLAUDE.md", "PULL_REQUEST_TEMPLATE.md", CI_NOOP, CI_CALLER)
+
+
+class Target(NamedTuple):
+    """A seed target: its root-relative path, its stamp kind ("md" or "yml")
+    and its template, which is None for ci.yml: template_for() picks that one
+    from the components."""
+
+    path: str
+    kind: str
+    template: object
+
+
+AGENTS_MD = Target("AGENTS.md", "md", "AGENTS.md")
+CLAUDE_MD = Target("CLAUDE.md", "md", "CLAUDE.md")
+PR_TEMPLATE = Target(".github/PULL_REQUEST_TEMPLATE.md", "md", "PULL_REQUEST_TEMPLATE.md")
+CI_YML = Target(".github/workflows/ci.yml", "yml", None)
+TARGETS = (AGENTS_MD, CLAUDE_MD, PR_TEMPLATE, CI_YML)
+
+
+def template_for(target, comps):
+    """The template scaffold seeds TARGET from: for ci.yml, the no-op job
+    when COMPS is empty, else the language caller."""
+    if target.template is not None:
+        return target.template
+    return CI_CALLER if comps else CI_NOOP
+
+
+def fits(target, name):
+    """True when NAME is a template that TARGET's stamp may name: one of the
+    plugin's templates of TARGET's kind."""
+    return name in TEMPLATES and name.endswith("." + target.kind)
+
+
+def read_template(name):
+    """The text of the plugin's template NAME and its file_hash(). Raises
+    BwError when the template can't be read or isn't UTF-8."""
+    path = os.path.join(TEMPLATE_DIR, name + ".tpl")
+    try:
+        with open(path, "rb") as f:
+            text = f.read().decode("utf-8")
+        return text, file_hash(path)
+    except (OSError, ValueError) as e:
+        raise BwError("cannot read template %s: %s" % (quote(name), describe(e))) from e
+
+
+def workflow_exists(root):
+    """True when ROOT's .github/workflows/ holds any *.yml or *.yaml entry."""
+    try:
+        names = os.listdir(os.path.join(root, ".github", "workflows"))
+    except OSError:
+        return False
+    return any(name.endswith((".yml", ".yaml")) for name in names)
+
+
+def lacks_import(root):
+    """True when ROOT's CLAUDE.md is a readable file, not AGENTS.md itself,
+    with no line "@AGENTS.md", so Claude Code won't read AGENTS.md."""
+    claude = os.path.join(root, "CLAUDE.md")
+    if os.path.realpath(claude) == os.path.realpath(os.path.join(root, "AGENTS.md")):
+        return False  # a symlink to AGENTS.md, or the other way round
+    text = read_text(claude)
+    return text is not None and "@AGENTS.md" not in text.split("\n")

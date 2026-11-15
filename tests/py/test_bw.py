@@ -1,6 +1,6 @@
 """Tests for scripts/_lib (RFC 2026-11-09-scaffold-and-drift, B2, B4 and B5):
 bw.py's shared functions and detection, bw_main.py's checks and dispatch, and
-the state-touch and compact-reminder commands.
+the scaffold, state-touch and compact-reminder commands.
 
 Detection cases build real throwaway git repositories, with the developer's
 git configuration kept out (see hermetic_git).
@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 import time
@@ -25,6 +26,7 @@ sys.path.insert(0, str(LIB))
 import bw  # noqa: E402
 import bw_compact_reminder  # noqa: E402
 import bw_main  # noqa: E402
+import bw_scaffold  # noqa: E402
 import bw_state_touch  # noqa: E402
 
 # --- helpers -----------------------------------------------------------------
@@ -119,6 +121,12 @@ def test_language_ids_equal_the_lang_ci_fixture_jobs():
 
 def test_manifest_languages_are_language_ids():
     assert set(bw.MANIFESTS.values()) == set(bw.LANGUAGES)
+
+
+def test_language_ids_equal_the_agents_template_tags():
+    lines = (REPO / "templates" / "scaffold" / "AGENTS.md.tpl").read_text().splitlines()
+    tags = [m.group(1) for m in (re.match(r"@@([a-z0-9_]+)@@ ", line) for line in lines) if m]
+    assert sorted(t for t in tags if t not in ("none", "job")) == sorted(bw.LANGUAGES)
 
 
 def test_dir_fd_and_no_follow_calls_are_supported_here():
@@ -1163,3 +1171,413 @@ def test_compact_reminder_always_exits_0(monkeypatch, capsys):
     assert bw_compact_reminder.main([]) == 0
     assert bw_compact_reminder.main(["--bogus"]) == 0
     assert "usage: bw compact-reminder" in capsys.readouterr().err
+
+
+# --- seed targets ------------------------------------------------------------
+
+ROOT_TEMPLATES = REPO / "templates" / "scaffold"
+IS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
+
+
+def test_targets_and_their_templates():
+    assert [t.path for t in bw.TARGETS] == [
+        "AGENTS.md",
+        "CLAUDE.md",
+        ".github/PULL_REQUEST_TEMPLATE.md",
+        ".github/workflows/ci.yml",
+    ]
+    assert [bw.template_for(t, []) for t in bw.TARGETS] == list(bw.TEMPLATES[:3]) + ["ci-noop.yml"]
+    assert bw.template_for(bw.CI_YML, [GO]) == "ci-caller.yml"
+    for name in bw.TEMPLATES:
+        text, digest = bw.read_template(name)
+        assert digest == bw.file_hash(str(ROOT_TEMPLATES / (name + ".tpl")))
+        assert "\r" not in text and "CLAUDE_PLUGIN_ROOT" not in text
+
+
+def test_fits_takes_only_templates_of_the_target_s_kind():
+    assert bw.fits(bw.CLAUDE_MD, "AGENTS.md")  # a CLAUDE.md that is a symlink to AGENTS.md
+    assert bw.fits(bw.CI_YML, "ci-noop.yml") and bw.fits(bw.CI_YML, "ci-caller.yml")
+    assert not bw.fits(bw.CI_YML, "AGENTS.md")
+    assert not bw.fits(bw.AGENTS_MD, "ci-caller.yml")
+    assert not bw.fits(bw.AGENTS_MD, "README.md")
+
+
+def test_read_template_raises_bw_error(tmp_path, monkeypatch):
+    monkeypatch.setattr(bw, "TEMPLATE_DIR", str(tmp_path))
+    with pytest.raises(bw.BwError, match=r"^cannot read template AGENTS\.md: No such file"):
+        bw.read_template("AGENTS.md")
+    (tmp_path / "AGENTS.md.tpl").write_bytes(b"\xff")
+    with pytest.raises(bw.BwError, match=r"^cannot read template AGENTS\.md: UnicodeDecodeError"):
+        bw.read_template("AGENTS.md")
+
+
+CALLER_PIN_LINE = (
+    r"^@@job@@     uses: bytewyrd/claude-bytewyrd/\.github/workflows/lang-ci-@@job_language@@\.yml@([0-9a-f]{40})$"
+)
+
+
+def test_the_caller_template_has_one_uses_line_of_the_pinned_shape():
+    # The same shape as the history job's pin checks (B4).
+    text = (ROOT_TEMPLATES / "ci-caller.yml.tpl").read_text()
+    assert text.count("uses:") == 1
+    assert len(re.findall(CALLER_PIN_LINE, text, re.M)) == 1
+
+
+def test_the_noop_fixture_workflow_is_the_noop_render_from_line_2():
+    # AC-8; consumer-sim's S22 checks the same through scaffold itself.
+    fixture = (REPO / ".github" / "workflows" / "scaffold-noop-fixture.yml").read_text()
+    text, _ = bw.read_template("ci-noop.yml")
+    assert fixture.split("\n", 1)[1] == bw.render(text, [], "any")
+
+
+def test_find_entry(tmp_path):
+    d = str(tmp_path)
+    (tmp_path / "b.md").write_text("x")
+    os.symlink("nowhere", tmp_path / "CLAUDE.md")
+    assert bw.find_entry(d, "b.md") == "b.md"
+    assert bw.find_entry(d, "B.MD") in ("b.md", "B.MD")  # B.MD on a case-insensitive filesystem
+    assert bw.find_entry(d, "CLAUDE.md") == "CLAUDE.md"  # a dangling symlink
+    assert bw.find_entry(d, "other.md") is None
+    assert bw.find_entry(str(tmp_path / "missing"), "b.md") is None
+
+
+def test_read_text_strips_crs_and_keeps_undecodable_bytes(tmp_path):
+    (tmp_path / "f").write_bytes(b"a\r\nb\xff\r\n")
+    os.symlink("f", tmp_path / "link")
+    for name in ("f", "link"):
+        assert bw.read_text(str(tmp_path / name)) == "a\nb\udcff\n"
+    (tmp_path / "exact").write_bytes(b"y" * bw.MAX_TEXT)
+    assert len(bw.read_text(str(tmp_path / "exact"))) == bw.MAX_TEXT
+
+
+def test_read_text_never_reads_what_is_not_a_regular_file(tmp_path):
+    (tmp_path / "dir").mkdir()
+    os.mkfifo(tmp_path / "fifo")
+    os.symlink("/dev/zero", tmp_path / "zero")
+    os.symlink("missing", tmp_path / "dangling")
+    os.symlink("loop", tmp_path / "loop")
+    (tmp_path / "big").write_bytes(b"x" * (bw.MAX_TEXT + 1))
+    (tmp_path / "file").write_text("x")
+    for name in ("dir", "fifo", "zero", "dangling", "loop", "big", "absent", "file/below"):
+        assert bw.read_text(str(tmp_path / name)) is None, name
+
+
+@pytest.mark.skipif(IS_ROOT, reason="root reads any file")
+def test_read_text_raises_for_other_errors(tmp_path):
+    path = tmp_path / "f"
+    path.write_text("x")
+    path.chmod(0)
+    try:
+        with pytest.raises(PermissionError):
+            bw.read_text(str(path))
+    finally:
+        path.chmod(0o644)
+
+
+def test_workflow_exists(tmp_path):
+    root = str(tmp_path)
+    assert not bw.workflow_exists(root)
+    workflows = tmp_path / ".github" / "workflows"
+    workflows.mkdir(parents=True)
+    (workflows / "notes.txt").write_text("x")
+    (workflows / "build.YML").write_text("x")  # *.yml and *.yaml as written
+    assert not bw.workflow_exists(root)
+    (workflows / "release.yaml").write_text("x")
+    assert bw.workflow_exists(root)
+
+
+def test_lacks_import(tmp_path):
+    root = str(tmp_path)
+    claude, agents = tmp_path / "CLAUDE.md", tmp_path / "AGENTS.md"
+    assert not bw.lacks_import(root)  # no CLAUDE.md
+    claude.write_bytes(b"<!-- stamp -->\r\n@AGENTS.md\r\n")
+    assert not bw.lacks_import(root)
+    claude.write_text("see @AGENTS.md\n  @AGENTS.md\n")
+    assert bw.lacks_import(root)
+    claude.unlink()
+    agents.write_text("# x\n")
+    os.symlink("AGENTS.md", claude)  # CLAUDE.md is AGENTS.md
+    assert not bw.lacks_import(root)
+    claude.unlink()
+    agents.unlink()
+    claude.write_text("# x\n")
+    os.symlink("CLAUDE.md", agents)  # and the other way round
+    assert not bw.lacks_import(root)
+    agents.unlink()
+    claude.unlink()
+    claude.mkdir()
+    assert not bw.lacks_import(root)
+
+
+def test_dirty_leaves_the_index_alone(tmp_path):
+    repo = make_repo(tmp_path / "r", {"a": "1"})
+    root, index = str(repo), repo / ".git" / "index"
+    assert not bw.dirty(root)
+    os.utime(repo / "a", (0, 0))  # a stat change that a refreshing git status would write back
+    before = index.stat().st_mtime_ns, index.read_bytes()
+    assert not bw.dirty(root)
+    assert (index.stat().st_mtime_ns, index.read_bytes()) == before
+    write(repo, "b", "x")
+    assert bw.dirty(root)
+    git(repo, "add", "b")
+    assert bw.dirty(root)
+
+
+def test_dirty_raises_outside_a_repo(tmp_path, monkeypatch):
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
+    with pytest.raises(bw.BwError, match="git status failed"):
+        bw.dirty(str(tmp_path))
+
+
+@pytest.mark.parametrize(
+    "error, want",
+    [
+        (bw.BwError("not inside a git work tree"), "not inside a git work tree"),
+        (PermissionError(13, "Permission denied", "/x/y"), "Permission denied: /x/y"),
+        (OSError(5, "Input/output error"), "Input/output error"),
+        (KeyError("k"), "KeyError: 'k'"),
+        (KeyboardInterrupt(), "KeyboardInterrupt"),
+        (bw.BwError("bad\nname"), '"bad\\nname"'),
+    ],
+)
+def test_describe(error, want):
+    assert bw.describe(error) == want
+
+
+# --- scaffold ----------------------------------------------------------------
+
+
+def call(module, cwd, argv, monkeypatch, capsys):
+    """Run MODULE's main(ARGV) in CWD; return (exit code, stdout, stderr)."""
+    monkeypatch.chdir(cwd)
+    code = module.main(list(argv))
+    out, err = capsys.readouterr()
+    return code, out, err
+
+
+def fresh_repo(path):
+    path.mkdir(parents=True)
+    git(path, "init", "-q")
+    return path
+
+
+def header(repo):
+    return "bytewyrd scaffold: " + bw.quote(os.path.realpath(repo))
+
+
+def test_scaffold_dry_run_lists_the_targets_and_writes_nothing(tmp_path, monkeypatch, capsys):
+    repo = fresh_repo(tmp_path / "r")
+    assert call(bw_scaffold, repo, [], monkeypatch, capsys) == (
+        0,
+        header(repo) + "\n"
+        "would create  AGENTS.md\n"
+        "would create  CLAUDE.md\n"
+        "would create  .github/PULL_REQUEST_TEMPLATE.md\n"
+        "would create  .github/workflows/ci.yml\n"
+        "dry run: 4 to create, 0 skipped; re-run with --apply to write\n",
+        "",
+    )
+    assert os.listdir(repo) == [".git"]
+
+
+def test_scaffold_apply_writes_the_stamp_and_the_render(tmp_path, monkeypatch, capsys):
+    repo = fresh_repo(tmp_path / "proj")
+    code, out, err = call(bw_scaffold, repo, ["--apply"], monkeypatch, capsys)
+    assert (code, err) == (0, "")
+    assert out.splitlines()[1:] == ["created  " + t.path for t in bw.TARGETS] + ["applied: 4 created, 0 skipped"]
+    sha = bw.plugin_sha(bw.PLUGIN_DIR)
+    for target in bw.TARGETS:
+        name = bw.template_for(target, [])
+        text, digest = bw.read_template(name)
+        assert (repo / target.path).read_text() == bw.stamp(target.kind, name, digest, sha) + "\n" + bw.render(
+            text, [], "proj"
+        )
+    assert (repo / "AGENTS.md").read_text().split("\n")[1] == "# proj"
+
+
+def test_scaffold_skips_existing_targets_and_their_stand_ins(tmp_path, monkeypatch, capsys):
+    files = {
+        "agents.md": "mine\n",
+        "CLAUDE.md": "@AGENTS.md\n",
+        "docs/Pull_Request_Template.md": "x\n",
+        ".github/workflows/build.yaml": "x\n",
+    }
+    repo = make_repo(tmp_path / "r", files)
+    assert call(bw_scaffold, repo, ["--apply"], monkeypatch, capsys) == (
+        0,
+        header(repo) + "\n"
+        "skip  AGENTS.md  (exists; scaffold never overwrites)\n"
+        "skip  CLAUDE.md  (exists; scaffold never overwrites)\n"
+        "skip  .github/PULL_REQUEST_TEMPLATE.md  (pull request template found: docs/Pull_Request_Template.md)\n"
+        "skip  .github/workflows/ci.yml  (another workflow exists)\n"
+        "applied: 0 created, 4 skipped\n",
+        "",
+    )
+    assert (repo / "agents.md").read_text() == "mine\n"
+
+
+def test_scaffold_notes_a_claude_md_without_the_import(tmp_path, monkeypatch, capsys):
+    repo = make_repo(tmp_path / "r", {"CLAUDE.md": "# mine\n"})
+    code, out, err = call(bw_scaffold, repo, ["--apply"], monkeypatch, capsys)
+    assert (code, err) == (0, "")
+    assert bw_scaffold.NOTE_IMPORT in out.splitlines()
+    assert (repo / "CLAUDE.md").read_text() == "# mine\n"
+
+
+@pytest.mark.parametrize("argv", [[], ["--apply"]])
+def test_scaffold_refuses_a_symlinked_directory_on_a_target_s_path(tmp_path, monkeypatch, capsys, argv):
+    repo, outside = fresh_repo(tmp_path / "r"), tmp_path / "outside"
+    outside.mkdir()
+    (repo / ".github").mkdir()
+    os.symlink(outside, repo / ".github" / "workflows")
+    message = "scaffold: .github/workflows is a symlink; refusing to write through it\n"
+    assert call(bw_scaffold, repo, argv, monkeypatch, capsys) == (1, "", message)
+    assert sorted(os.listdir(repo)) == [".git", ".github"] and os.listdir(outside) == []
+
+
+def test_scaffold_apply_refuses_a_dirty_tree_unless_allowed(tmp_path, monkeypatch, capsys):
+    repo = fresh_repo(tmp_path / "r")
+    write(repo, "untracked", "x")
+    assert call(bw_scaffold, repo, ["--apply"], monkeypatch, capsys) == (3, "", bw_scaffold.REFUSE_DIRTY + "\n")
+    assert sorted(os.listdir(repo)) == [".git", "untracked"]
+    code, out, err = call(bw_scaffold, repo, [], monkeypatch, capsys)
+    assert (code, err) == (0, "") and out.splitlines()[-2] == bw_scaffold.NOTE_DIRTY
+    code, out, err = call(bw_scaffold, repo, ["--apply", "--allow-dirty"], monkeypatch, capsys)
+    assert (code, err) == (0, "") and out.splitlines()[-1] == "applied: 4 created, 0 skipped"
+
+
+def failing_create(monkeypatch, fail_on):
+    real, calls = bw.create, []
+
+    def create(path, text):
+        calls.append(path)
+        if len(calls) == fail_on:
+            raise PermissionError(13, "Permission denied", path)
+        real(path, text)
+
+    monkeypatch.setattr(bw, "create", create)
+
+
+def test_scaffold_removes_what_it_created_when_a_write_fails(tmp_path, monkeypatch, capsys):
+    repo = fresh_repo(tmp_path / "r")
+    failing_create(monkeypatch, fail_on=4)
+    assert call(bw_scaffold, repo, ["--apply"], monkeypatch, capsys) == (
+        1,
+        "",
+        "scaffold: cannot create .github/workflows/ci.yml: Permission denied\n"
+        "scaffold: failed; removed: AGENTS.md CLAUDE.md .github/PULL_REQUEST_TEMPLATE.md\n",
+    )
+    assert os.listdir(repo) == [".git"]  # .github/ and .github/workflows/, which it made, are gone too
+
+
+def test_scaffold_lists_the_files_it_could_not_remove(tmp_path, monkeypatch, capsys):
+    repo = fresh_repo(tmp_path / "r")
+    failing_create(monkeypatch, fail_on=2)
+
+    def unlink(path, *args, **kwargs):
+        raise PermissionError(13, "Permission denied", path)
+
+    with monkeypatch.context() as m:
+        m.setattr(bw_scaffold.os, "unlink", unlink)
+        code, out, err = call(bw_scaffold, repo, ["--apply"], monkeypatch, capsys)
+    assert (code, out) == (1, "")
+    assert err == (
+        "scaffold: cannot create CLAUDE.md: Permission denied\n"
+        "scaffold: failed; remove these, then re-run: rm -- AGENTS.md\n"
+    )
+
+
+def test_scaffold_reports_an_unexpected_error_in_one_line(tmp_path, monkeypatch, capsys):
+    repo = fresh_repo(tmp_path / "r")
+    monkeypatch.setattr(bw_scaffold, "ci_notes", lambda *args: {}["boom"])
+    assert call(bw_scaffold, repo, ["--apply"], monkeypatch, capsys) == (1, "", "scaffold: KeyError: 'boom'\n")
+    assert os.listdir(repo) == [".git"]
+
+
+def check_usage_errors_and_outside_a_work_tree(module, prog, tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    assert call(module, plain, [], monkeypatch, capsys) == (1, "", prog + ": not inside a git work tree\n")
+    code, out, err = call(module, plain, ["--nope"], monkeypatch, capsys)
+    assert (code, out) == (1, "") and err.startswith("usage: bw " + prog)
+    code, out, err = call(module, plain, ["--help"], monkeypatch, capsys)
+    assert (code, err) == (0, "") and out.startswith("usage: bw " + prog)
+
+
+def test_scaffold_usage_errors_and_outside_a_work_tree_exit_1(tmp_path, monkeypatch, capsys):
+    check_usage_errors_and_outside_a_work_tree(bw_scaffold, "scaffold", tmp_path, monkeypatch, capsys)
+
+
+@pytest.mark.parametrize(
+    "files, gives",
+    [
+        ({}, False),
+        ({".ruby-version": "3.3.6\n"}, True),
+        ({".ruby-version": " \n\t\n"}, False),
+        ({".ruby-version": b"\xff3.3\n"}, False),  # not UTF-8: declares nothing
+        ({".tool-versions": "nodejs 24.0.0\nruby 3.3.6\n"}, True),
+        ({".tool-versions": "nodejs 24.0.0\n"}, False),
+        ({".tool-versions": "  ruby 3.3.6\n"}, True),  # setup-ruby trims the file before splitting it
+        ({".tool-versions": "x\n  ruby 3.3.6\n"}, False),
+        ({"mise.toml": '[tools]\nruby = "3.3"  # pinned\n'}, True),
+        ({"mise.toml": "[tools]\n  ruby='3.3'\n"}, True),
+        ({"mise.toml": "[tools]\nruby = 3.3\n"}, False),
+        ({".tool-versions": "nodejs 24\n", "mise.toml": 'ruby = "3.3"\n'}, False),  # the first file decides
+    ],
+)
+def test_gives_ruby_version(tmp_path, files, gives):
+    repo = make_repo(tmp_path / "r", {**{"app/" + k: v for k, v in files.items()}, "app/Gemfile": ""})
+    by_path = {e.path: e for e in bw.tracked(str(repo))}
+    assert bw_scaffold.gives_ruby_version(str(repo), by_path, "app") is gives
+
+
+def test_lockfile_platforms():
+    lock = (
+        "GEM\n  remote: https://rubygems.org/\n  specs:\n    rake (13.2.1)\n\n"
+        "PLATFORMS\n  arm64-darwin-24\n  x86_64-linux\n\nDEPENDENCIES\n  rake\n"
+    )
+    assert bw_scaffold.lockfile_platforms(lock) == ["arm64-darwin-24", "x86_64-linux"]
+    assert bw_scaffold.lockfile_platforms("PLATFORMS\r\n  ruby\r\nDEPENDENCIES\n") == ["ruby"]
+    assert bw_scaffold.lockfile_platforms("GEM\n  specs:\n") is None
+
+
+@pytest.mark.parametrize(
+    "text, want",
+    [
+        ('[dependency-groups]\ndev = ["pytest>=8"]\n', True),
+        ("[dependency-groups]\ntest = [\"PyTest[testing] ; python_version >= '3.11'\"]\n", True),
+        ('[dependency-groups]\ndev = ["pytest-cov", {include-group = "x"}]\n', False),
+        ('[project.optional-dependencies]\ntest = ["pytest"]\n', False),
+        ('[dependency-groups]\ndev = "pytest"\n', False),
+        ("[dependency-groups\n", False),
+    ],
+)
+def test_lists_pytest(text, want):
+    assert bw_scaffold.lists_pytest(text) is want
+
+
+def test_ci_notes(tmp_path):
+    files = {
+        "examples/x/go.mod": "",  # out of the default scope: no note at all
+        "bad dir/go.mod": "",
+        "py/pyproject.toml": PROJECT,
+        "rb/Gemfile": "",
+        "rb/Rakefile": "",
+        "rb/Gemfile.lock": "PLATFORMS\n  arm64-darwin-24\n",
+        "rb/pnpm-lock.yaml": "",
+        "ok/Gemfile": "",
+        "ok/Rakefile": "",
+        "ok/.ruby-version": "3.3.6\n",
+        "ok/Gemfile.lock": "PLATFORMS\n  ruby\n",
+    }
+    repo = str(make_repo(tmp_path / "r", files))
+    comps, skipped = bw.detect(repo)
+    assert bw_scaffold.ci_notes(repo, comps, skipped) == [
+        'note: no CI job for "bad dir/go.mod": ' + bw.REASON_NAME,
+        bw_scaffold.NOTE_PYTEST % "py/pyproject.toml",
+        bw_scaffold.NOTE_RUBY_VERSION % "rb",
+        bw_scaffold.NOTE_PLATFORM % "rb/Gemfile.lock",
+        bw_scaffold.NOTE_PNPM % "rb",
+    ]
+
