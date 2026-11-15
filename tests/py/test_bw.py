@@ -1,11 +1,12 @@
 """Tests for scripts/_lib (RFC 2026-11-09-scaffold-and-drift, B2, B4 and B5):
-bw.py's shared functions and detection, and the state-touch and
-compact-reminder commands.
+bw.py's shared functions and detection, bw_main.py's checks and dispatch, and
+the state-touch and compact-reminder commands.
 
 Detection cases build real throwaway git repositories, with the developer's
 git configuration kept out (see hermetic_git).
 """
 
+import ast
 import hashlib
 import json
 import os
@@ -23,6 +24,7 @@ sys.path.insert(0, str(LIB))
 
 import bw  # noqa: E402
 import bw_compact_reminder  # noqa: E402
+import bw_main  # noqa: E402
 import bw_state_touch  # noqa: E402
 
 # --- helpers -----------------------------------------------------------------
@@ -128,6 +130,106 @@ def test_dir_fd_and_no_follow_calls_are_supported_here():
 
 def test_plugin_dir_is_the_parent_of_scripts():
     assert Path(bw.PLUGIN_DIR) == REPO
+
+
+# --- bw_main.py --------------------------------------------------------------
+
+
+def run_main(argv, monkeypatch, version=None):
+    with monkeypatch.context() as m:
+        m.setattr(sys, "path", list(sys.path))
+        if version is not None:
+            m.setattr(sys, "version_info", version)
+        return bw_main.main(argv)
+
+
+PY310 = (3, 10, 14, "final", 0)
+
+
+@pytest.mark.parametrize("name", bw_main.CLASS_A)
+def test_bw_main_on_python_3_10_exits_1_for_class_a(name, monkeypatch, capsys):
+    assert run_main(["bw_main.py", name, "arg"], monkeypatch, PY310) == 1
+    out, err = capsys.readouterr()
+    assert (out, err) == ("", bw_main.NEEDS_PYTHON + "\n")
+
+
+@pytest.mark.parametrize("name", bw_main.CLASS_B)
+def test_bw_main_on_python_3_10_exits_2_with_json_for_class_b(name, monkeypatch, capsys):
+    assert run_main(["bw_main.py", name, "arg"], monkeypatch, PY310) == 2
+    out, err = capsys.readouterr()
+    assert out == ""
+    assert err == '{"error":"%s"}\n' % bw_main.NEEDS_PYTHON
+    assert json.loads(err) == {"error": bw_main.NEEDS_PYTHON}
+
+
+@pytest.mark.parametrize(
+    "argv, message",
+    [
+        (["bw_main.py"], "bw: usage: bw NAME [ARGS...]\n"),
+        (["bw_main.py", "nope"], "bw: unknown command: nope\n"),
+        (["bw_main.py", "../x"], "bw: unknown command: ../x\n"),
+        (["bw_main.py", "main"], "bw: unknown command: main\n"),
+    ],
+)
+def test_bw_main_rejects_unknown_names_on_any_version(argv, message, monkeypatch, capsys):
+    for version in (None, PY310):
+        assert run_main(argv, monkeypatch, version) == 1
+        assert capsys.readouterr() == ("", message)
+
+
+def test_bw_main_reports_a_missing_module_by_class(monkeypatch, capsys):
+    monkeypatch.setattr(bw_main, "CLASS_A", bw_main.CLASS_A + ("zz-absent-a",))
+    monkeypatch.setattr(bw_main, "CLASS_B", bw_main.CLASS_B + ("zz-absent-b",))
+    assert run_main(["bw_main.py", "zz-absent-a"], monkeypatch) == 1
+    assert capsys.readouterr().err == "bytewyrd: zz-absent-a is not available in this copy of the plugin\n"
+    assert run_main(["bw_main.py", "zz-absent-b"], monkeypatch) == 2
+    assert json.loads(capsys.readouterr().err) == {"error": "bytewyrd: zz-absent-b is not available in this copy of the plugin"}
+
+
+def test_bw_main_puts_lib_and_vendor_first_and_returns_the_command_exit(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    with monkeypatch.context() as m:
+        m.setattr(sys, "path", ["elsewhere"])
+        assert bw_main.main(["bw_main.py", "compact-reminder"]) == 0
+        assert sys.path == [str(LIB), str(REPO / "scripts" / "_vendor"), "elsewhere"]
+
+
+def test_bw_main_dispatches_under_the_launcher_flags(tmp_path):
+    cmd = [sys.executable, "-I", "-S", "-B", str(LIB / "bw_main.py"), "compact-reminder"]
+    proc = subprocess.run(cmd, cwd=tmp_path, capture_output=True, text=True)
+    assert (proc.returncode, proc.stdout, proc.stderr) == (0, "", "")
+    (tmp_path / ".bytewyrd").mkdir()
+    (tmp_path / ".bytewyrd" / "last-feature-engineer-stop").touch()
+    proc = subprocess.run(cmd, cwd=tmp_path, capture_output=True, text=True)
+    assert (proc.returncode, proc.stdout, proc.stderr) == (0, bw_compact_reminder.TEXT + "\n", "")
+
+
+def test_bw_main_parses_as_old_python_3():
+    source = (LIB / "bw_main.py").read_text()
+    tree = ast.parse(source, feature_version=(3, 7))  # rejects walrus and match
+    for node in ast.walk(tree):
+        assert not isinstance(node, (ast.JoinedStr, ast.AnnAssign)), "f-string or annotation at line %d" % node.lineno
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            assert node.returns is None, node.name
+            args = node.args
+            for arg in args.posonlyargs + args.args + args.kwonlyargs + [args.vararg, args.kwarg]:
+                assert arg is None or arg.annotation is None, node.name
+
+
+def test_launcher_and_bw_main_agree_on_classes_and_message():
+    text = (REPO / "scripts" / "bw").read_text()
+    class_a = re.search(r"^(scaffold \| .*)\) class=A ;;$", text, re.M).group(1)
+    class_b = re.search(r"^(rfc-.*)\) class=B ;;$", text, re.M).group(1)
+    assert tuple(class_a.split(" | ")) == bw_main.CLASS_A
+    assert tuple(class_b.split(" | ")) == bw_main.CLASS_B
+    assert "msg='%s'" % bw_main.NEEDS_PYTHON in text
+
+
+def test_each_class_b_name_is_a_json_helper_script_or_its_port():
+    for name in bw_main.CLASS_B:
+        script = REPO / "scripts" / (name + ".sh")
+        port = LIB / ("bw_" + name.replace("-", "_") + ".py")
+        assert script.exists() or port.exists(), name
 
 
 # --- quote() and attr_line() -------------------------------------------------
