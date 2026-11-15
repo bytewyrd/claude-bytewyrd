@@ -51,8 +51,10 @@ When the subagent finishes (Phase 7), present the structured report to the user 
 After presenting the report (whether the review ran successfully or the user cancelled), delete the sentinel file if it exists:
 
 ```bash
-rm -f .bytewyrd/last-feature-engineer-stop
+sh "${CLAUDE_PLUGIN_ROOT}/scripts/bw" state-touch --rm last-feature-engineer-stop
 ```
+
+Outside Claude Code, `${CLAUDE_PLUGIN_ROOT}` is not substituted; use the directory two levels above this SKILL.md.
 
 This prevents the `SessionStart compact` hook from re-echoing the reminder after the review has been completed or explicitly skipped. If the user wants to dismiss the reminder manually (without running `/docs-review`), they can run `rm -f .bytewyrd/last-feature-engineer-stop` directly.
 

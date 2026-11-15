@@ -270,7 +270,7 @@ For accumulated session learnings, see [BEST_PRACTICES.md](BEST_PRACTICES.md).
 After every invocation of this skill, regardless of whether any entries were added, run:
 
 ```bash
-mkdir -p .bytewyrd && : > .bytewyrd/precompact-extraction-done
+sh "${CLAUDE_PLUGIN_ROOT}/scripts/bw" state-touch precompact-extraction-done
 ```
 
 This writes the sentinel file the `PreCompact` hook uses as its release condition. The sentinel signals "extraction has run in this session" — the next compaction trigger will be allowed through without re-blocking.
