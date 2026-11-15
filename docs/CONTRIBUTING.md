@@ -14,7 +14,8 @@ Not here: what the project does or its architecture → README.md / docs/ARCHITE
 ## Prerequisites
 
 - [git](https://git-scm.com/)
-- Python 3.11 or newer, which runs the plugin's commands and hooks through `scripts/bw`. It takes `$BYTEWYRD_PYTHON` when that is 3.11 or newer, else the first of `python3.15` … `python3.11` on `PATH`, else `python3` when it is 3.11 or newer.
+- Python 3.11 or newer, which runs the plugin's commands, the JSON helpers behind its skills, and its hooks through `scripts/bw`. It takes `$BYTEWYRD_PYTHON` when that is 3.11 or newer, else the first of `python3.15` … `python3.11` on `PATH`, else `python3` when it is 3.11 or newer.
+- [jq](https://jqlang.org/), which the skills use to read the JSON helpers' output, and which the bats tests use too.
 
 ## Development Setup
 
@@ -102,6 +103,7 @@ CI (`.github/workflows/ci.yml`) runs eleven jobs on every pull request to `main`
   - Agent and skill frontmatter is strict YAML.
   - Relative Markdown links resolve.
   - The `lang-ci-<id>.yml` workflows pass their checks, each named by a comment in the step: one job per file, named by its language, each with a `lang-ci-fixture-<id>` job, SHA-pinned actions, only `contents: read`, and no secrets.
+  - `scripts/_vendor/yaml/` matches PyYAML 6.0.3's sdist, and nothing but `load_frontmatter()` in `scripts/_lib/bw.py` loads YAML.
   - CI's shellcheck, shfmt and actionlint versions match the pins in `mise.toml`.
   - The shell scripts have no shellcheck warnings and match the shfmt style in `.editorconfig`.
   - The workflows pass actionlint, which also runs shellcheck on their `run:` blocks.

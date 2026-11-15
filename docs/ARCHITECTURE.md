@@ -60,22 +60,23 @@ Current plugin-local skills:
 - `SubagentStop` for `feature-engineer` echoes a reminder to ask the user to run `/docs-review`, and runs `bw state-touch last-feature-engineer-stop`. `SessionStart` with matcher `compact` runs `bw compact-reminder`, which repeats the reminder while that sentinel is under a day old.
 - Every hook exits 0: the `bw` commands end in `|| true`, so without Python 3.11 or newer they print one stderr line and fail nothing. Hooks run outside the sandbox, so `state-touch`, the only writer into `.bytewyrd/`, refuses symlinks.
 
-### Commands (`scripts/bw`, `scripts/_lib/`, `templates/scaffold/`)
+### Commands (`scripts/bw`, `scripts/_lib/`, `scripts/_vendor/`, `templates/scaffold/`)
 
-**Purpose:** The plugin's deterministic commands. `scaffold` seeds a repository, `drift` checks it, `state-touch` is the only writer into `.bytewyrd/`, and `compact-reminder` backs the compact hook. Skills, hooks, tests and CI run each one as `sh scripts/bw NAME`.
-**Location:** `scripts/bw`, a POSIX-sh launcher; `scripts/_lib/bw_main.py`, the one check-and-dispatch module it runs; `scripts/_lib/bw.py`, the shared functions; `scripts/_lib/bw_<name>.py`, one module per command; `templates/scaffold/*.tpl`, the seed templates. `tests/scripts/{bw,hooks,state-touch}.bats` pin the command-line contracts, `tests/py/test_bw.py` covers the modules, and `tests/e2e/test_consumer_sim.py` runs scaffold and drift end to end, as a consumer repository sees them.
+**Purpose:** The plugin's deterministic commands. `scaffold` seeds a repository, `drift` checks it, `state-touch` is the only writer into `.bytewyrd/`, and `compact-reminder` backs the compact hook. The nine JSON helpers, `rfc-*` and `tool-probe`, do the scripted steps of the RFC skills and `/best-practices-extract`. Skills, hooks, tests and CI run each one as `sh scripts/bw NAME`.
+**Location:** `scripts/bw`, a POSIX-sh launcher; `scripts/_lib/bw_main.py`, the one check-and-dispatch module it runs; `scripts/_lib/bw.py`, the shared functions; `scripts/_lib/bw_<name>.py`, one module per command; `scripts/_vendor/yaml/`, an unmodified copy of PyYAML 6.0.3; `templates/scaffold/*.tpl`, the seed templates. The bats files in `tests/scripts/` pin the command-line contracts, `tests/py/` covers the modules and the vendored copy, and `tests/e2e/test_consumer_sim.py` runs scaffold and drift end to end, as a consumer repository sees them.
 **Key behavior:**
 - The launcher runs Python 3.11 or newer: `$BYTEWYRD_PYTHON` when it reports 3.11 or newer, else the first of `python3.15` … `python3.11` on `PATH`, else `python3` when it reports 3.11 or newer. It starts it with `-I -S -B`, so `PYTHON*` variables, a virtualenv's `.pth` files and bytecode stay out. Without such an interpreter, `scaffold`, `drift` and the hook commands exit 1 and the JSON helpers exit 2, except that `state-touch precompact-extraction-done` still writes its sentinel in plain sh.
 - The plugin root is the parent of `scripts/`, found from `__file__`. No command reads `CLAUDE_PLUGIN_ROOT`, which commands run through the Bash tool don't get.
 - `scaffold` writes at most four files, at the top of the work tree and only where none exists, each stamped on line 1 with its template's hash and the plugin commit. It is a dry run unless `--apply`. `drift` never writes, and exits 0 when clean, 2 on drift and 1 when it can't run.
-- The bash helpers behind the RFC skills (`scripts/*.sh`, `scripts/_lib/*.bash`) stay until they are ported to Python behind the same launcher.
+- Each JSON helper prints one JSON object on stdout, which the skills read with jq, and exits 0, or 2 on an error. Exit 1 means no RFC found for `rfc-resolve`, no matching entry for `rfc-braindump-remove`, and a missing or logged-out tool for `tool-probe`.
+- Only `load_frontmatter()` in `bw.py` parses YAML, the frontmatter of an RFC, with the vendored PyYAML and a loader that keeps every plain scalar a string and refuses aliases.
 
 ### CI (`.github/workflows/ci.yml`, `.github/scripts/`)
 
 **Purpose:** Gates merges to `main`. Three of its jobs, `lint`, `validate`, and `test`, are the checks the branch ruleset is meant to require.
 **Location:** `.github/workflows/ci.yml`. The Python lint helpers `lint-frontmatter.py` and `check-links.py` live in `.github/scripts/` and are tested by `tests/scripts/ci-lint.bats`. `.github/workflows/lang-ci-<id>.yml` (go, js, python, ruby, rust) are reusable workflows, one per language, which consumer repositories' CI calls by commit SHA (RFC `2026-11-09-scaffold-and-drift`). `.github/actionlint.yaml` configures actionlint.
 **Key behavior:**
-- `lint` checks the JSON manifests, strict-YAML agent and skill frontmatter, relative Markdown links, the `lang-ci-<id>.yml` workflows' pins, permissions and fixtures, the lint tools' versions against `mise.toml`, shellcheck warnings, shfmt formatting (style in `.editorconfig`), and actionlint on every workflow.
+- `lint` checks the JSON manifests, strict-YAML agent and skill frontmatter, relative Markdown links, the `lang-ci-<id>.yml` workflows' pins, permissions and fixtures, the vendored PyYAML against its sdist, that nothing but `load_frontmatter()` loads YAML, the lint tools' versions against `mise.toml`, shellcheck warnings, shfmt formatting (style in `.editorconfig`), and actionlint on every workflow.
 - `validate` runs `claude plugin validate .` with a pinned Claude Code CLI.
 - `test` runs the bats suite, then pytest over `tests/py` and `tests/e2e`.
 - `lang-ci-fixture-<id>` runs each `lang-ci-<id>.yml` on its fixture in `tests/fixtures/lang-ci/<id>/`.
@@ -116,7 +117,7 @@ Agents → spawned as subtask processes. Receive a goal and a tool allow-list fr
 | Plugin-local vs exported skills | Plugin-local in `.claude/skills/`, exported in `skills/` | Keeps maintenance tools out of consumer installs; plugin.json is the explicit export declaration |
 | Best-practices flow | Record → global file → manual sync into the `best-practices` skill's references | Puts human review between personal capture and distribution; prevents one user's project-specific notes from polluting the practices that every project reads |
 | RFC process distribution | The `rfc-process` skill, read from the plugin at runtime; a `docs/rfcs/` directory opts a repository in | No install or update step: repositories keep no copy, since per-repository copies drift from the plugin's (RFC `2026-11-09-scaffold-and-drift`, Options) |
-| Script language | Python 3.11 or newer with the standard library, behind the POSIX-sh launcher `scripts/bw`; nothing installs at run time | The 0.2.x sync scripts already needed Python 3.11 for `tomllib`, while the bash scripts needed bash 4, jq and GNU/BSD workarounds, and Claude Code installs only npm and Bun packages for a plugin (RFC `2026-11-09-scaffold-and-drift`, Language policy) |
+| Script language | Python 3.11 or newer with the standard library and a vendored pure-Python PyYAML 6.0.3, behind the POSIX-sh launcher `scripts/bw`; nothing installs at run time | The 0.2.x sync scripts already needed Python 3.11 for `tomllib`, while the bash scripts needed bash 4, jq and GNU/BSD workarounds, and Claude Code installs only npm and Bun packages for a plugin (RFC `2026-11-09-scaffold-and-drift`, Language policy) |
 | Repository seeding | `scaffold` seeds at most four stamped files once; `drift` checks them, read-only, with CI exit codes | Merging plugin content into consumer files on every run caused the 0.2.x defects; a seeded file belongs to the project, and drift reports what changed instead of rewriting it |
 | Always-on conventions | Five factual statements in `hooks/always-on-rules.json`, emitted as SessionStart `additionalContext` and capped at 2,000 characters in CI | A small always-on context serves better than a large one, and skills alone often go uninvoked, so the rules name the skills that hold the detail |
 | Companion plugins | `github`, `context7` and `code-review` are hard `dependencies` | Installing bytewyrd installs them; the cost is that bytewyrd doesn't load while one is missing or disabled |
@@ -148,5 +149,6 @@ Teams that want Claude Code to auto-install the plugin for any collaborator who 
 |------------|---------|
 | [VoltAgent/awesome-claude-code-subagents](https://github.com/VoltAgent/awesome-claude-code-subagents) | Historical source of agent definitions (MIT). Files are now locally owned; no active sync dependency. |
 | Claude Code plugin system | Runtime host — discovers skills and agents |
-| Python 3.11 or newer | Runs the commands behind `scripts/bw` and the hooks that use them; standard library only |
+| Python 3.11 or newer | Runs the commands and JSON helpers behind `scripts/bw` and the hooks that use them, with the standard library and the vendored PyYAML in `scripts/_vendor/` |
+| jq | The skills read the JSON helpers' output with it |
 | `github`, `context7` and `code-review` from `claude-plugins-official` | Hard plugin dependencies: the GitHub MCP server, library documentation lookup and the `/review` pre-pass |
