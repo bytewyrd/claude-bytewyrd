@@ -91,7 +91,7 @@ chore(scope): tooling, deps, config
 
 ## Quality Gate
 
-CI (`.github/workflows/ci.yml`) runs three jobs on every pull request to `main`. Their names are the checks the branch ruleset is meant to require:
+CI (`.github/workflows/ci.yml`) runs eight jobs on every pull request to `main`. Three of them are the checks the branch ruleset is meant to require:
 
 - **`lint`**:
   - The JSON manifests parse, and `bootstrap-manifest.json` is current.
@@ -103,6 +103,8 @@ CI (`.github/workflows/ci.yml`) runs three jobs on every pull request to `main`.
   - The workflows pass actionlint, which also runs shellcheck on their `run:` blocks.
 - **`validate`**: `claude plugin validate .` with the pinned Claude Code CLI.
 - **`test`**: the bats suite.
+
+The other five, `lang-ci-fixture-<id>`, run each `lang-ci-<id>.yml` on its fixture in `tests/fixtures/lang-ci/<id>/`, and are not required.
 
 To run the same checks locally before pushing (PyYAML must be installed; `mise install --locked` installs CI's shellcheck, shfmt and actionlint versions, needs [mise](https://mise.jdx.dev/) 2026.11.1 or newer, and `mise activate` puts them first on `PATH`):
 
