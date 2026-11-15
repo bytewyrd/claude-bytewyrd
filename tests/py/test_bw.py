@@ -1,6 +1,6 @@
 """Tests for scripts/_lib (RFC 2026-11-09-scaffold-and-drift, B2, B4 and B5):
 bw.py's shared functions and detection, bw_main.py's checks and dispatch, and
-the scaffold, state-touch and compact-reminder commands.
+the scaffold, drift, state-touch and compact-reminder commands.
 
 Detection cases build real throwaway git repositories, with the developer's
 git configuration kept out (see hermetic_git).
@@ -25,6 +25,7 @@ sys.path.insert(0, str(LIB))
 
 import bw  # noqa: E402
 import bw_compact_reminder  # noqa: E402
+import bw_drift  # noqa: E402
 import bw_main  # noqa: E402
 import bw_scaffold  # noqa: E402
 import bw_state_touch  # noqa: E402
@@ -1581,3 +1582,503 @@ def test_ci_notes(tmp_path):
         bw_scaffold.NOTE_PNPM % "rb",
     ]
 
+
+# --- drift -------------------------------------------------------------------
+
+
+def drift(repo, monkeypatch, capsys, *argv):
+    """drift's (exit code, stdout lines); stderr must be empty."""
+    code, out, err = call(bw_drift, repo, argv, monkeypatch, capsys)
+    assert err == ""
+    return code, out.splitlines()
+
+
+def seeded(path, monkeypatch, capsys, files=None):
+    """A repo with FILES committed, then scaffold's files applied and committed."""
+    repo = make_repo(path, files or {})
+    assert call(bw_scaffold, repo, ["--apply"], monkeypatch, capsys)[0] == 0
+    commit(repo)
+    return repo
+
+
+def codes(lines):
+    """The (severity, path, code) of each coded finding line."""
+    found = []
+    for line in lines:
+        m = re.match(r"(ok|info|warn|drift)  (.+?)  ([a-z-]+): ", line)
+        if m:
+            found.append(m.groups())
+    return found
+
+
+DRIFT_LINE = re.compile(r"(ok  |info  |warn  |drift  |  |result: )")
+
+
+def check_drift_lines(lines):
+    """Each line starts with a documented prefix and is printable ASCII, but
+    for diff lines, whose text may be any printable UTF-8."""
+    for line in lines:
+        assert DRIFT_LINE.match(line), line
+        assert all(ord(c) >= 0x20 and ord(c) != 0x7F for c in line), line
+
+
+def test_drift_usage_errors_and_outside_a_work_tree_exit_1(tmp_path, monkeypatch, capsys):
+    check_usage_errors_and_outside_a_work_tree(bw_drift, "drift", tmp_path, monkeypatch, capsys)
+
+
+def test_caller_pin_reads_the_template_s_one_pin():
+    text = (ROOT_TEMPLATES / "ci-caller.yml.tpl").read_text()
+    assert bw_drift.caller_pin(text) == re.search(CALLER_PIN_LINE, text, re.M).group(1)
+    line = next(x for x in text.split("\n") if "uses:" in x)
+    shifted = text.replace(line, line.replace("@@job@@     ", "@@job@@ "))
+    for bad in (text.replace(line + "\n", ""), text + line + "\n", shifted):
+        with pytest.raises(bw.BwError, match="no single pinned"):
+            bw_drift.caller_pin(bad)
+
+
+def test_drift_on_a_freshly_seeded_repo(tmp_path, monkeypatch, capsys):
+    repo = seeded(tmp_path / "r", monkeypatch, capsys)
+    assert drift(repo, monkeypatch, capsys) == (
+        0,
+        [
+            "ok  AGENTS.md",
+            "ok  CLAUDE.md",
+            "ok  .github/PULL_REQUEST_TEMPLATE.md",
+            "ok  .github/workflows/ci.yml",
+            "result: 4 ok, 0 info, 0 warn, 0 drift (exit 0)",
+        ],
+    )
+
+
+def test_drift_exits_1_when_a_check_raises(tmp_path, monkeypatch, capsys):
+    # AC-11: an exception before the footer exits 1, with no partial output.
+    repo = seeded(tmp_path / "r", monkeypatch, capsys)
+
+    def boom(ctx):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(bw_drift, "check_legacy", boom)
+    assert call(bw_drift, repo, [], monkeypatch, capsys) == (1, "", "drift: RuntimeError: boom\n")
+
+
+def test_drift_exits_1_for_an_unreadable_template(tmp_path, monkeypatch, capsys):
+    repo = seeded(tmp_path / "r", monkeypatch, capsys)
+    monkeypatch.setattr(bw, "TEMPLATE_DIR", str(tmp_path / "nowhere"))
+    code, out, err = call(bw_drift, repo, [], monkeypatch, capsys)
+    assert (code, out) == (1, "") and err.startswith("drift: cannot read template AGENTS.md: No such file")
+
+
+def test_drift_reports_missing_targets(tmp_path, monkeypatch, capsys):
+    repo = make_repo(tmp_path / "r", {})
+    code, lines = drift(repo, monkeypatch, capsys)
+    assert code == 0
+    assert lines == [
+        "warn  AGENTS.md  missing: " + bw_drift.MISSING["AGENTS.md"],
+        "  fix: run scaffold --apply",
+        "warn  CLAUDE.md  missing: " + bw_drift.MISSING["CLAUDE.md"],
+        "  fix: run scaffold --apply",
+        "warn  .github/PULL_REQUEST_TEMPLATE.md  missing: " + bw_drift.MISSING[".github/PULL_REQUEST_TEMPLATE.md"],
+        "  fix: run scaffold --apply",
+        "warn  .github/workflows/ci.yml  missing: " + bw_drift.MISSING[".github/workflows/ci.yml"],
+        "  fix: run scaffold --apply",
+        "result: 0 ok, 0 info, 4 warn, 0 drift (exit 0)",
+    ]
+    assert drift(repo, monkeypatch, capsys, "--strict")[0] == 2
+    write(repo, "docs/PULL_REQUEST_TEMPLATE/a.md", "x")
+    write(repo, ".github/workflows/x.yml", "x")
+    left = codes(drift(repo, monkeypatch, capsys)[1])
+    assert left == [("warn", "AGENTS.md", "missing"), ("warn", "CLAUDE.md", "missing")]
+
+
+def test_drift_template_changed_prints_the_diff_and_the_stamp_that_restores_0(tmp_path, monkeypatch, capsys):
+    repo = seeded(tmp_path / "r", monkeypatch, capsys)
+    templates = tmp_path / "templates"
+    templates.mkdir()
+    for name in bw.TEMPLATES:
+        (templates / (name + ".tpl")).write_bytes((ROOT_TEMPLATES / (name + ".tpl")).read_bytes())
+    tpl = templates / "AGENTS.md.tpl"
+    tpl.write_text(tpl.read_text().replace("## Workflow", "## Working here") + "- One more line.\n")
+    monkeypatch.setattr(bw, "TEMPLATE_DIR", str(templates))
+    code, lines = drift(repo, monkeypatch, capsys)
+    assert code == 2
+    i = lines.index(next(line for line in lines if line.startswith("drift  AGENTS.md  template-changed: ")))
+    new = bw.stamp("md", "AGENTS.md", bw.file_hash(str(tpl)), bw.plugin_sha(bw.PLUGIN_DIR))
+    assert lines[i + 1] == "  fix: apply the diff, then replace line 1 with: " + new
+    assert lines[i + 2 : i + 4] == ["  --- a/AGENTS.md", "  +++ b/AGENTS.md"]
+    body = lines[i + 4 : lines.index("ok  CLAUDE.md")]
+    assert "  -## Workflow" in body and "  +## Working here" in body and "  +- One more line." in body
+    check_drift_lines(lines)
+    agents = repo / "AGENTS.md"
+    agents.write_text(new + "\n" + agents.read_text().split("\n", 1)[1])
+    assert drift(repo, monkeypatch, capsys)[0] == 0
+
+
+@pytest.mark.parametrize(
+    "first, detail",
+    [
+        ("<!-- bytewyrd:scaffold v2 tpl=AGENTS.md:0123456789ab plugin=unknown -->", "does not parse"),
+        ("<!-- bytewyrd:scaffold v1 tpl=README.md:0123456789ab plugin=unknown -->", "names README.md"),
+        ("<!-- bytewyrd:scaffold v1 tpl=ci-caller.yml:0123456789ab plugin=unknown -->", "names ci-caller.yml"),
+    ],
+)
+def test_drift_bad_stamp(tmp_path, monkeypatch, capsys, first, detail):
+    repo = seeded(tmp_path / "r", monkeypatch, capsys)
+    agents = repo / "AGENTS.md"
+    agents.write_text(first + "\n" + agents.read_text().split("\n", 1)[1])
+    code, lines = drift(repo, monkeypatch, capsys)
+    assert code == 2 and codes(lines) == [("drift", "AGENTS.md", "bad-stamp")]
+    assert detail in lines[0]
+    text, digest = bw.read_template("AGENTS.md")
+    current = bw.stamp("md", "AGENTS.md", digest, bw.plugin_sha(bw.PLUGIN_DIR))
+    assert lines[1] == "  fix: replace line 1 with: %s after reviewing the diff" % current
+    assert lines[2] == "ok  CLAUDE.md"  # the body matches the render, so the diff is empty
+
+
+def test_drift_bad_stamp_on_ci_yml_diffs_against_the_template_scaffold_picks(tmp_path, monkeypatch, capsys):
+    repo = seeded(tmp_path / "r", monkeypatch, capsys, {"go.mod": "module x\n"})
+    ci = repo / ".github" / "workflows" / "ci.yml"
+    first = "<!-- bytewyrd:scaffold v1 tpl=AGENTS.md:0123456789ab plugin=unknown -->"
+    ci.write_text(first + "\n" + ci.read_text().split("\n", 1)[1])
+    code, lines = drift(repo, monkeypatch, capsys)
+    assert code == 2 and codes(lines) == [("drift", ".github/workflows/ci.yml", "bad-stamp")]
+    assert "tpl=ci-caller.yml:" in lines[lines.index(next(x for x in lines if "bad-stamp" in x)) + 1]
+
+
+def test_drift_unstamped_targets_are_info(tmp_path, monkeypatch, capsys):
+    repo = seeded(tmp_path / "r", monkeypatch, capsys)
+    (repo / "AGENTS.md").write_text("# my own\n")
+    pr = repo / ".github" / "PULL_REQUEST_TEMPLATE.md"
+    pr.unlink()
+    pr.mkdir()
+    code, lines = drift(repo, monkeypatch, capsys)
+    assert code == 0
+    assert lines[0] == "info  AGENTS.md  unstamped: line 1 has no scaffold stamp, so drift compares it with no template"
+    assert "info  .github/PULL_REQUEST_TEMPLATE.md  unstamped: not a regular file that drift can read" in lines
+
+
+def test_drift_no_import(tmp_path, monkeypatch, capsys):
+    repo = seeded(tmp_path / "r", monkeypatch, capsys)
+    claude = repo / "CLAUDE.md"
+    claude.write_text(claude.read_text().replace("@AGENTS.md\n", ""))
+    code, lines = drift(repo, monkeypatch, capsys)
+    assert code == 2 and codes(lines) == [("drift", "CLAUDE.md", "no-import")]
+    assert "  fix: add the line @AGENTS.md to CLAUDE.md" in lines
+    claude.unlink()
+    os.symlink("AGENTS.md", claude)  # CLAUDE.md is AGENTS.md: nothing to import, and its stamp is AGENTS.md's
+    assert drift(repo, monkeypatch, capsys) == (
+        0,
+        [
+            "ok  AGENTS.md",
+            "ok  CLAUDE.md",
+            "ok  .github/PULL_REQUEST_TEMPLATE.md",
+            "ok  .github/workflows/ci.yml",
+            "result: 4 ok, 0 info, 0 warn, 0 drift (exit 0)",
+        ],
+    )
+
+
+@pytest.mark.parametrize("over", [None, "AGENTS.md", "CLAUDE.md"])
+def test_drift_too_long_by_lines(tmp_path, monkeypatch, capsys, over):
+    repo = seeded(tmp_path / "r", monkeypatch, capsys)
+    for name, limit in (("AGENTS.md", 100), ("CLAUDE.md", 200)):
+        path = repo / name
+        text = path.read_text()
+        path.write_text(text + "x\n" * (limit - bw_drift.line_count(text) + (name == over)))
+        assert bw_drift.line_count(path.read_text()) == limit + (name == over)
+    code, lines = drift(repo, monkeypatch, capsys)
+    assert code == 0 and codes(lines) == ([] if over is None else [("warn", over, "too-long")])
+
+
+def test_line_count():
+    assert [bw_drift.line_count(t) for t in ("", "a", "a\n", "a\nb", "a\n\n")] == [0, 1, 1, 2, 2]
+
+
+def test_drift_too_long_by_characters(tmp_path, monkeypatch, capsys):
+    repo = seeded(tmp_path / "r", monkeypatch, capsys)
+    agents = repo / "AGENTS.md"
+    text = agents.read_text()
+    agents.write_text(text + "x" * (8000 - len(text)))
+    assert codes(drift(repo, monkeypatch, capsys)[1]) == []
+    agents.write_text(text + "x" * (8001 - len(text)))
+    code, lines = drift(repo, monkeypatch, capsys)
+    assert codes(lines) == [("warn", "AGENTS.md", "too-long")] and "8001 characters" in lines[1]
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "<!-- bootstrap-content-version: bytewyrd/CLAUDE.md@6cbeb80b:61f9b5c01dba -->",
+        "<!--bootstrap-content-version: x:0123456789ab -->",
+        "# bootstrap-content-version: bytewyrd/mise.toml@ebf354bf:e3b0c44298fc",
+        "#\tbootstrap-content-version: x",
+        "<!-- Managed by the Bytewyrd plugin. /sync refreshes the plugin-owned sections -->",
+        "<!-- Managed by the Bytewyrd plugin — do not customize. This file is overwritten on every /sync. -->",
+        "<!-- Bootstrapped by the Bytewyrd plugin. This file is now owned by this project -->",
+    ],
+)
+def test_legacy_lines_finds_the_0_2_headers_and_banners(line):
+    for n in (1, 2, 3):
+        assert bw_drift.legacy_lines("\n" * (n - 1) + line + "\nbody\n") == [n]
+    assert bw_drift.legacy_lines("a\nb\nc\n" + line + "\n") == []  # line 4 is out of reach
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "# bytewyrd:scaffold v1 tpl=ci-noop.yml:0123456789ab plugin=unknown",
+        "  <!-- bootstrap-content-version: indented -->",
+        "<!-- managed by the Bytewyrd plugin -->",
+        "Managed by the Bytewyrd plugin.",
+        "# bytewyrd:base",
+    ],
+)
+def test_legacy_lines_ignores_other_lines(line):
+    assert bw_drift.legacy_lines(line + "\n") == []
+
+
+def test_drift_lists_every_0_2_artifact(tmp_path, monkeypatch, capsys):
+    header = "<!-- bootstrap-content-version: bytewyrd/%s@1:0123456789ab -->\n"
+    banner = "<!-- Bootstrapped by the Bytewyrd plugin. This file is now owned by this project -->\n"
+    files = {
+        "CLAUDE.md": header % "CLAUDE.md" + banner + "# app\n",
+        ".github/PULL_REQUEST_TEMPLATE.md": header % "PR" + "## Summary\n",
+        ".github/workflows/ci.yml": "# bootstrap-content-version: bytewyrd/ci.yml@1:0123456789ab\nname: CI\n",
+        "README.md": '<div align="center">\n' + header % "README.md" + "</div>\n",
+        "docs/ARCHITECTURE.md": banner + "# Architecture\n",
+        "docs/BEST_PRACTICES.md": header % "BP" + banner + "## Pitfall\n",
+        "docs/CONTRIBUTING.md": "# Contributing\n\n" + header % "C",
+        "mise.toml": "# bootstrap-content-version: bytewyrd/mise.toml@1:0123456789ab\n[tools]\n",
+        ".gitignore": "# bootstrap-content-version: x@1:0123456789ab\n# bytewyrd:base\n.x/\n\n# bytewyrd:js\n",
+        "docs/rfc-process.md": "# RFC Process\n",
+        ".claude/settings.json": '{"hooks": {"Stop": [{"hooks": [{"command": "echo Consider running /sync"}]}]}}\n',
+        ".bytewyrd/.bootstrap-versions.json": "{}\n",
+        ".claude/.bootstrap-versions.json": "{}\n",
+        ".bytewyrd/plugin-version": "0.2.0\n",
+    }
+    repo = make_repo(tmp_path / "r", files)
+    os.symlink("nowhere", repo / ".bytewyrd" / "docs-agent-version")  # a dangling one counts too
+    code, lines = drift(repo, monkeypatch, capsys)
+    assert code == 2
+    assert codes(lines) == [
+        ("warn", "AGENTS.md", "missing"),
+        ("drift", "CLAUDE.md", "legacy-header"),
+        ("drift", ".github/PULL_REQUEST_TEMPLATE.md", "legacy-header"),
+        ("drift", ".github/workflows/ci.yml", "legacy-header"),
+        ("drift", "README.md", "legacy-header"),
+        ("drift", "docs/ARCHITECTURE.md", "legacy-header"),
+        ("drift", "docs/BEST_PRACTICES.md", "legacy-header"),
+        ("drift", "docs/CONTRIBUTING.md", "legacy-header"),
+        ("drift", "mise.toml", "legacy-header"),
+        ("drift", ".gitignore", "legacy-gitignore"),
+        ("drift", "docs/rfc-process.md", "legacy-rfc-process-copy"),
+        ("drift", ".claude/settings.json", "legacy-settings-hooks"),
+        ("drift", ".bytewyrd/.bootstrap-versions.json", "legacy-sidecar"),
+        ("drift", ".claude/.bootstrap-versions.json", "legacy-sidecar"),
+        ("drift", ".bytewyrd/plugin-version", "legacy-state"),
+        ("drift", ".bytewyrd/docs-agent-version", "legacy-state"),
+    ]
+    check_drift_lines(lines)
+    text = "\n".join(lines)
+    assert "legacy-header: a 0.2.x /sync header or banner on lines 1 and 2" in text
+    assert "README.md  legacy-header: a 0.2.x /sync header or banner on line 2" in text
+    assert "  fix: delete line 1 so the repo's own file stays; drift then reports it as unstamped" in text
+    assert "legacy-gitignore: a 0.2.x /sync header or # bytewyrd: tag on lines 1, 2 and 5" in text
+    assert "  fix: git mv CLAUDE.md CLAUDE.legacy.md; once every fix is committed, run scaffold --apply" in text
+
+
+@pytest.mark.parametrize("marker", bw_drift.SETTINGS_MARKERS)
+def test_drift_settings_hooks_markers(tmp_path, monkeypatch, capsys, marker):
+    repo = seeded(tmp_path / "r", monkeypatch, capsys, {".claude/settings.json": json.dumps({"x": "a " + marker})})
+    assert codes(drift(repo, monkeypatch, capsys)[1]) == [("drift", ".claude/settings.json", "legacy-settings-hooks")]
+
+
+def test_drift_ignores_a_settings_json_without_0_2_hooks(tmp_path, monkeypatch, capsys):
+    settings = {"enabledPlugins": {"github@claude-plugins-official": True}, "extraKnownMarketplaces": {}}
+    repo = seeded(tmp_path / "r", monkeypatch, capsys, {".claude/settings.json": json.dumps(settings)})
+    assert drift(repo, monkeypatch, capsys)[0] == 0
+
+
+# --- drift: caller checks ----------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "rest, want",
+    [
+        (" a/b@c", "a/b@c"),
+        ('  "a/b@c"  ', "a/b@c"),
+        (" 'a/b@c' # v1", "a/b@c"),
+        (' "a/b@c"\t# v1', "a/b@c"),
+        (" a#b", "a#b"),
+        (" \"a'", "\"a'"),
+        (' "', '"'),
+        ("", ""),
+    ],
+)
+def test_uses_value(rest, want):
+    assert bw_drift.uses_value(rest) == want
+
+
+@pytest.mark.parametrize(
+    "value, name",
+    [
+        ("bytewyrd/claude-bytewyrd/.github/workflows/lang-ci-go.yml@main", "lang-ci-go.yml"),
+        ("evil/x/.github/workflows/lang-ci-go.yml@feature/x", "lang-ci-go.yml"),
+        ("./.github/workflows/x.yml", "x.yml"),
+        ("lang-ci.yml", "lang-ci.yml"),
+    ],
+)
+def test_workflow_name(value, name):
+    assert bw_drift.workflow_name(value) == name
+
+
+def test_job_blocks():
+    lines = (
+        "# stamp\nname: CI\non:\n  push:\njobs:\n"
+        "  go:\n    uses: a\n\n# a note\n    with:\n"
+        "  js-web: # comment\n    uses: b\n"
+        "  - not: a job\n"
+        "env:\n  ignored:\n    uses: c\n"
+    ).split("\n")
+    blocks = bw_drift.job_blocks(lines)
+    assert [(b.job_id, b.start, b.body) for b in blocks] == [("go", 5, (6, 7, 8, 9)), ("js-web", 10, (11, 12))]
+
+
+@pytest.mark.parametrize(
+    "value, language, want",
+    [
+        (PIN.replace("0", "1"), "go", None),
+        ("bytewyrd/claude-bytewyrd/.github/workflows/lang-ci-ruby.yml@main", "ruby", "main"),
+        ("bytewyrd/claude-bytewyrd/.github/workflows/lang-ci-ruby.yml@main", None, "main"),
+        ("evil/x/.github/workflows/lang-ci-ruby.yml@main", "ruby", None),
+        ("bytewyrd/claude-bytewyrd/.github/workflows/lang-ci-go.yml@" + PIN, "ruby", None),
+        ("bytewyrd/claude-bytewyrd/.github/workflows/lang-ci-java.yml@v1", None, "v1"),
+        ("bytewyrd/claude-bytewyrd/.github/workflows/lang-ci-ruby.yml@a b", "ruby", '"a b"'),
+    ],
+)
+def test_pin_fixes(value, language, want):
+    pin = "f" * 40
+    fixes = bw_drift.pin_fixes(value, language, pin)
+    named = language or re.search(r"lang-ci-(\w+)\.yml", value).group(1)
+    assert fixes[-1] == "set this uses: to bytewyrd/claude-bytewyrd/.github/workflows/lang-ci-%s.yml@%s" % (named, pin)
+    if want is None:
+        assert len(fixes) == 1
+    else:
+        assert fixes[0] == "review https://github.com/bytewyrd/claude-bytewyrd/compare/%s...%s" % (want, pin)
+
+
+def test_pin_fixes_for_a_value_that_names_no_id():
+    assert bw_drift.pin_fixes("x/lang-ci.yml@v1", None, "f" * 40) == (
+        "set this uses: to bytewyrd/claude-bytewyrd/.github/workflows/lang-ci-<id>.yml@" + "f" * 40,
+    )
+
+
+def caller_repo(path, monkeypatch, capsys):
+    """A seeded, committed repo with root go and ruby components, and its ci.yml path and pin."""
+    repo = seeded(path, monkeypatch, capsys, {"go.mod": "module x\n", "Gemfile": "", "Rakefile": ""})
+    ci = repo / ".github" / "workflows" / "ci.yml"
+    return repo, ci, bw_drift.caller_pin(bw.read_template("ci-caller.yml")[0])
+
+
+def test_drift_pin_changed_one_finding_per_distinct_value_in_file_order(tmp_path, monkeypatch, capsys):
+    repo, ci, pin = caller_repo(tmp_path / "r", monkeypatch, capsys)
+    assert drift(repo, monkeypatch, capsys)[0] == 0
+    good = ci.read_text()
+    evil = "evil/x/.github/workflows/lang-ci-go.yml@main"
+    ci.write_text(
+        good.replace("lang-ci-go.yml@" + pin, "lang-ci-go.yml@main  # tag")
+        .replace("lang-ci-ruby.yml@" + pin, "lang-ci-ruby.yml@main")
+        + "  extra:\n    uses: '%s'\n  more:\n    uses: %s\n" % (evil, evil)
+        + "  mine:\n    uses: ./.github/workflows/mine.yml\n"
+    )
+    code, lines = drift(repo, monkeypatch, capsys)
+    assert code == 2
+    pinned = [line for line in lines if "pin-changed" in line]
+    finding = 'drift  .github/workflows/ci.yml  pin-changed: line %d uses "%s"'
+    assert pinned == [
+        finding % (12, "bytewyrd/claude-bytewyrd/.github/workflows/lang-ci-go.yml@main"),
+        finding % (16, "bytewyrd/claude-bytewyrd/.github/workflows/lang-ci-ruby.yml@main"),
+        finding % (20, evil),
+    ]
+    i = lines.index(pinned[0])
+    assert lines[i + 1 : i + 3] == [
+        "  fix: review https://github.com/bytewyrd/claude-bytewyrd/compare/main...%s" % pin,
+        "  fix: set this uses: to bytewyrd/claude-bytewyrd/.github/workflows/lang-ci-go.yml@%s" % pin,
+    ]
+    j = lines.index(pinned[2])
+    assert lines[j + 1] == "  fix: set this uses: to bytewyrd/claude-bytewyrd/.github/workflows/lang-ci-go.yml@%s" % pin
+    check_drift_lines(lines)
+
+
+def test_drift_pin_changed_for_a_component_job_without_uses(tmp_path, monkeypatch, capsys):
+    repo, ci, pin = caller_repo(tmp_path / "r", monkeypatch, capsys)
+    call_line = "    uses: bytewyrd/claude-bytewyrd/.github/workflows/lang-ci-ruby.yml@%s\n" % pin
+    ci.write_text(ci.read_text().replace(call_line, ""))
+    code, lines = drift(repo, monkeypatch, capsys)
+    assert code == 2
+    i = lines.index("drift  .github/workflows/ci.yml  pin-changed: job ruby has no uses: line")
+    assert lines[i + 1] == "  fix: set this uses: to " + call_line.strip()[len("uses: ") :]
+
+
+def test_drift_finds_a_component_s_block_by_id_and_directory(tmp_path, monkeypatch, capsys):
+    repo, ci, pin = caller_repo(tmp_path / "r", monkeypatch, capsys)
+    good = ci.read_text()
+    noted = good.replace("  ruby:\n", "  # the ruby job\n  ruby:  # ours\n")
+    ci.write_text(noted.replace('directory: "."\n', 'directory: "." \n', 1))
+    assert drift(repo, monkeypatch, capsys)[0] == 0  # comments and trailing blanks don't hide a block
+    ci.write_text(good.replace('      directory: "."\n', '      directory: "./"\n', 1))
+    code, lines = drift(repo, monkeypatch, capsys)
+    assert code == 0 and codes(lines) == [("warn", ".github/workflows/ci.yml", "ci-variant")]
+    i = lines.index("warn  .github/workflows/ci.yml  ci-variant: no job block for go (job id go)")
+    assert lines[i + 1 :] == [
+        "  fix: add this job under jobs:, or mark the directory's manifests:",
+        "  fix: /go.mod -bytewyrd-ci",
+        "    go:",
+        "      uses: bytewyrd/claude-bytewyrd/.github/workflows/lang-ci-go.yml@" + pin,
+        "      with:",
+        '        directory: "."',
+        "result: 4 ok, 0 info, 1 warn, 0 drift (exit 0)",
+    ]
+
+
+def test_drift_ci_variant_when_the_components_change(tmp_path, monkeypatch, capsys):
+    repo, ci, pin = caller_repo(tmp_path / "r", monkeypatch, capsys)
+    git(repo, "rm", "-q", "go.mod", "Gemfile", "Rakefile")
+    commit(repo, add_all=False)
+    code, lines = drift(repo, monkeypatch, capsys)
+    assert code == 0
+    assert lines[3:5] == [
+        "warn  .github/workflows/ci.yml  ci-variant: the stamp names ci-caller.yml, and scaffold now picks ci-noop.yml"
+        " for this repo's components",
+        "  fix: " + bw_drift.FIX_CI_VARIANT,
+    ]
+    assert drift(repo, monkeypatch, capsys, "--strict")[0] == 2
+
+
+def test_drift_ci_skipped_appears_only_with_the_caller(tmp_path, monkeypatch, capsys):
+    files = {"go.mod": "module x\n", "bad dir/go.mod": "", "web/package.json": "{}"}
+    repo = seeded(tmp_path / "r", monkeypatch, capsys, {**files, ".gitattributes": "/web/package.json -bytewyrd-ci\n"})
+    code, lines = drift(repo, monkeypatch, capsys)
+    assert code == 0
+    assert lines[4:8] == [
+        'info  "bad dir/go.mod"  ci-skipped: ' + bw.REASON_NAME,
+        '  fix: rename the directory, or mark the manifest: "/bad dir/go.mod" -bytewyrd-ci',
+        "info  web/package.json  ci-skipped: opted out by -bytewyrd-ci",
+        "result: 4 ok, 2 info, 0 warn, 0 drift (exit 0)",
+    ]
+    noop = seeded(tmp_path / "n", monkeypatch, capsys, {"bad dir/go.mod": ""})
+    assert codes(drift(noop, monkeypatch, capsys)[1]) == []
+
+
+def test_drift_quotes_diff_lines_with_control_characters(tmp_path, monkeypatch, capsys):
+    repo = seeded(tmp_path / "r", monkeypatch, capsys)
+    agents = repo / "AGENTS.md"
+    body = agents.read_bytes().split(b"\n", 1)[1]
+    odd = b"tab\there\nesc\x1b[2J\nlatin \xe9\nfine \xc3\xa9\n"
+    agents.write_bytes(b"<!-- bytewyrd:scaffold v0 -->\n" + body + odd)
+    code, lines = drift(repo, monkeypatch, capsys)
+    assert code == 2
+    assert '  -"tab\\there"' in lines
+    assert '  -"esc\\033[2J"' in lines
+    assert '  -"latin \\351"' in lines
+    assert "  -fine é" in lines
+    check_drift_lines(lines)
