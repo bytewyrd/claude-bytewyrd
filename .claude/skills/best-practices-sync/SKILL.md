@@ -1,6 +1,6 @@
 ---
 name: best-practices-sync
-description: Use inside the bytewyrd plugin's checkout to promote vetted global best-practice entries into the plugin's sync content. Run after accumulating a few entries via /best-practices-record. For each candidate it detects whether a conceptually similar entry already exists in the sync file — if so, it shows both versions plus an Opus-generated combined version and asks the user to pick one. Approved entries are appended to skills/sync/SKILL.md and removed from ~/.claude/BEST_PRACTICES.md.
+description: Use inside the bytewyrd plugin's checkout to promote vetted global best-practice entries into the best-practices skill's reference files. Run after accumulating a few entries via /best-practices-record. For each candidate it detects whether a conceptually similar entry already exists in the matching reference file — if so, it shows both versions plus an Opus-generated combined version and asks the user to pick one. Approved entries are written to skills/best-practices/references/<stack>.md and removed from ~/.claude/BEST_PRACTICES.md.
 disable-model-invocation: true
 ---
 
@@ -8,21 +8,21 @@ disable-model-invocation: true
 
 ## Overview
 
-Promote entries from the user's global pool (`~/.claude/BEST_PRACTICES.md`) into this plugin's distributed sync content (`skills/sync/SKILL.md`), and then remove the promoted entries from the global pool. This is the *only* path for a global entry to reach a freshly-synced project — the global file is private to the user; the plugin file is what consumers receive.
+Promote entries from the user's global pool (`~/.claude/BEST_PRACTICES.md`) into the `best-practices` skill's reference files (`skills/best-practices/references/<stack>.md`), and then remove the promoted entries from the global pool. This is the *only* path for a global entry to reach consumer projects — the global file is private to the user; the reference files are what consumers read, through the `best-practices` skill, at runtime.
 
-For the full model of which file holds what and how entries move between files, see the "Where do entries live, and why?" header at the top of `~/.claude/BEST_PRACTICES.md` (or any project's `docs/BEST_PRACTICES.md` — both files carry the same rationale block).
+For the full model of which file holds what and how entries move between files, see the "Where do entries live, and why?" header at the top of `~/.claude/BEST_PRACTICES.md` (or in `skills/best-practices/SKILL.md` — both carry the same rationale block).
 
-This skill is plugin-local: it lives at `.claude/skills/best-practices-sync/` inside the plugin checkout and is not exported via `.claude-plugin/plugin.json`. It is only invokable from within the bytewyrd plugin checkout. If the cwd does not contain `skills/sync/SKILL.md` and `.claude-plugin/plugin.json`, stop with: "best-practices-sync only runs inside the bytewyrd plugin checkout. cd into the plugin repo and try again."
+This skill is plugin-local: it lives at `.claude/skills/best-practices-sync/` inside the plugin checkout and is not exported via `.claude-plugin/plugin.json`. It is only invokable from within the bytewyrd plugin checkout. If the cwd does not contain `skills/best-practices/SKILL.md` and `.claude-plugin/plugin.json`, stop with: "best-practices-sync only runs inside the bytewyrd plugin checkout. cd into the plugin repo and try again."
 
-## Step 1 — Read both files
+## Step 1 — Read the source and the destination
 
 Read `~/.claude/BEST_PRACTICES.md` (the source). If absent or empty, stop with: "No global entries found at ~/.claude/BEST_PRACTICES.md — nothing to sync."
 
-Read `skills/sync/SKILL.md` (the destination). Locate the language-and-section blocks that get appended to the synced `docs/BEST_PRACTICES.md`. Each block is identified by its section header (e.g., `## Testing`, `## Architecture`, `## Rust`, `## Kubernetes / CUE / kapply`).
+Read `skills/best-practices/SKILL.md` and every file in `skills/best-practices/references/` (the destination). The table in `SKILL.md` lists each reference file with the sections it holds: `general.md` holds the general sections, `## Pitfall` through `## Error Handling` (for example `## Testing` and `## Architecture`), and each stack file holds its stack's section (for example `rust.md` holds `## Rust`, and `k8s-cue.md` holds `## Kubernetes / CUE / kapply`). Each section is identified by its section header.
 
 ## Step 2 — Classify each global entry
 
-For every entry in the global file, normalize it and compare against the matching section in the sync file.
+For every entry in the global file, normalize it and compare against the matching section in the reference files.
 
 **Normalization rule:** strip the italic-category prefix matching `_[^_]+_:` followed by surrounding whitespace from the start of each line. This collapses entries that differ only in label form (e.g., `_JS/TS_: Use bun install...` vs `_JavaScript / TypeScript_: Use bun install...`) into the same statement body for dedup purposes.
 
@@ -30,11 +30,11 @@ Entries no longer carry a date prefix as of RFC 2026-05-12-drop-dates-from-best-
 
 **Classification after normalization:**
 
-- **EXACT_DUPLICATE** — normalized statement body is text-equal to an existing entry in the sync file's same section. Skip silently; no user action needed.
-- **CONFLICT** — normalized statement body is *not* text-equal to any sync entry, but you (as Claude) judge that an existing entry in the same section covers the same concept or overlaps significantly in meaning. Record which existing sync entry it conflicts with.
-- **NEW** — no conceptually related entry exists in the section, OR the section does not yet exist in `sync/SKILL.md`. Candidate for direct promotion; missing sections are created automatically in Step 5.
+- **EXACT_DUPLICATE** — normalized statement body is text-equal to an existing entry in the same section of the reference files. Skip silently; no user action needed.
+- **CONFLICT** — normalized statement body is *not* text-equal to any plugin entry, but you (as Claude) judge that an existing entry in the same section covers the same concept or overlaps significantly in meaning. Record which existing plugin entry it conflicts with.
+- **NEW** — no conceptually related entry exists in the section, OR the section does not yet exist in any reference file. Candidate for direct promotion; missing sections are created automatically in Step 5.
 
-Use judgment to distinguish CONFLICT from NEW: if the global entry and an existing sync entry give the same advice to a developer (even with different wording, emphasis, or examples), it is a CONFLICT. If the global entry adds genuinely new guidance that the section does not cover, it is NEW.
+Use judgment to distinguish CONFLICT from NEW: if the global entry and an existing plugin entry give the same advice to a developer (even with different wording, emphasis, or examples), it is a CONFLICT. If the global entry adds genuinely new guidance that the section does not cover, it is NEW.
 
 ## Step 2a — Re-triage (defense in depth)
 
@@ -60,15 +60,15 @@ For each entry that fails re-triage:
   - Option 1: Skip — leave in ~/.claude/BEST_PRACTICES.md (manual cleanup later)
   - Option 2: Delete — remove from global file (it should not be there)
   - Option 3: Lift now — open the lift procedure interactively, rewrite the entry,
-             then re-classify (NEW or CONFLICT) against the sync file
+             then re-classify (NEW or CONFLICT) against the reference files
   ```
 
 - Act on the user's choice:
   - **Skip**: leave the entry in the global file and exclude it from this sync run. It may be re-triaged on the next run.
-  - **Delete**: remove the entry from `~/.claude/BEST_PRACTICES.md` and exclude it from sync. Do not write to the sync file.
+  - **Delete**: remove the entry from `~/.claude/BEST_PRACTICES.md` and exclude it from sync. Do not write to the reference files.
   - **Lift now**: walk the user through Pass 1 → Pass 2 → Verification interactively (one AskUserQuestion call per pass for confirmation). Replace the entry text with the lifted version, then re-run Step 2's classification on the new text.
 
-EXACT_DUPLICATE entries are not re-triaged — they already exist in the sync file and are handled by Step 6's removal-from-global step.
+EXACT_DUPLICATE entries are not re-triaged — they already exist in the reference files and are handled by Step 6's removal-from-global step.
 
 Entries that pass re-triage proceed to Step 3 unchanged.
 
@@ -83,7 +83,7 @@ For each CONFLICT entry, resolve it before moving on to Step 4.
    > "You are helping merge two best-practice entries into one. Both cover the same concept but are worded differently. Write a single combined entry (≤ 2 sentences) that preserves the most useful insight from each. Output only the merged sentence(s), no preamble.
    >
    > Global version: <global entry text, normalized>
-   > Plugin version: <existing sync entry text, normalized>"
+   > Plugin version: <existing plugin entry text, normalized>"
 
 2. **Dedup check before asking.** Compare the three versions (normalized, whitespace-collapsed). If any two are identical, auto-resolve without asking:
    - Global == Combined: use Global (Opus validated it), record as auto-resolved.
@@ -94,19 +94,19 @@ For each CONFLICT entry, resolve it before moving on to Step 4.
 
 3. Present the three versions to the user with AskUserQuestion (single-select):
    - **Option 1 — Global**: `<global entry text>` *(from ~/.claude/BEST_PRACTICES.md)*
-   - **Option 2 — Plugin**: `<existing sync entry text>` *(currently in skills/sync/SKILL.md)*
+   - **Option 2 — Plugin**: `<existing plugin entry text>` *(currently in skills/best-practices/references/<file>)*
    - **Option 3 — Combined (Opus)**: `<Opus output>`
 
 4. Act on the user's choice (or auto-resolved outcome):
-   - **Global**: the global entry replaces the existing sync entry. Record: promote global text, delete existing sync entry, delete global line.
-   - **Plugin**: keep the existing sync entry as-is. Record: delete global line (it's been reviewed and the plugin version wins), no change to sync file.
-   - **Combined**: the Opus-generated text replaces the existing sync entry. Record: write Opus text, delete existing sync entry, delete global line.
+   - **Global**: the global entry replaces the existing plugin entry. Record: promote global text, delete existing plugin entry, delete global line.
+   - **Plugin**: keep the existing plugin entry as-is. Record: delete global line (it's been reviewed and the plugin version wins), no change to the reference files.
+   - **Combined**: the Opus-generated text replaces the existing plugin entry. Record: write Opus text, delete existing plugin entry, delete global line.
 
 If there are multiple CONFLICT entries, resolve them one at a time (sequential AskUserQuestion calls — do not batch conflicts into a multi-select).
 
 ### Lift the Combined version (when chosen)
 
-If the user picked the **Combined (Opus)** option for a CONFLICT resolution, run one final lift pass on the Opus output before writing it to the sync file. Apply Pass 1 (strip) and Pass 2 (name domain) from the shared procedure; skip the user-facing verification dialog (the user has already approved the Combined text). If Pass 1 changes the text, surface the change with AskUserQuestion (single-select):
+If the user picked the **Combined (Opus)** option for a CONFLICT resolution, run one final lift pass on the Opus output before writing it to the reference file. Apply Pass 1 (strip) and Pass 2 (name domain) from the shared procedure; skip the user-facing verification dialog (the user has already approved the Combined text). If Pass 1 changes the text, surface the change with AskUserQuestion (single-select):
 
 ```
 You picked the Combined version:
@@ -124,7 +124,7 @@ Use which?
 
 Default is Lifted. The Original-Combined option exists because Opus may produce a generic example that the lift step incorrectly interprets as a project-specific reference.
 
-Global and Plugin choices do not get an extra lift pass — the Plugin version is already in the sync file (so it has been lifted previously), and the Global version was lifted at record time (and just passed Step 2a re-triage).
+Global and Plugin choices do not get an extra lift pass — the Plugin version is already in the reference files (so it has been lifted previously), and the Global version was lifted at record time (and just passed Step 2a re-triage).
 
 ## Step 4 — Present NEW candidates for batch approval
 
@@ -144,30 +144,30 @@ Found N new candidates to add:
 Promote which? (numbers, "all", "none")
 ```
 
-## Step 5 — Write changes to the sync file
+## Step 5 — Write changes to the reference files
 
-Apply the outcomes from Steps 3 and 4 to `skills/sync/SKILL.md`:
+Apply the outcomes from Steps 3 and 4 to the files in `skills/best-practices/references/`:
 
-**For conflict resolutions where the sync entry must change (Global or Combined choice):**
-- Find the existing entry line in the sync file and replace it with the new text (using the canonical abbreviated category label, no date prefix).
+**For conflict resolutions where the plugin entry must change (Global or Combined choice):**
+- Find the existing entry line in its reference file and replace it with the new text (using the canonical abbreviated category label, no date prefix).
 
 **For new entries being added:**
-- Append to the matching section. Insert the new line before the closing ` ``` ` of the section's code fence, after the last existing entry.
+- Append to the matching section, after its last existing entry.
 - Use the canonical abbreviated category label (e.g., `_JS/TS_`, not `_JavaScript / TypeScript_`). Do not include any date prefix.
 
-**Fence structure for reference:**
+**Section structure for reference:**
 ```
 ## <SectionName>
 
 - _<SectionName>_: ...
-- _<SectionName>_: ...   ← insert before the closing ``` fence
+- _<SectionName>_: ...   ← insert after the section's last entry
 ```
 
 **If the target section does not exist — create it automatically:**
 
-`skills/sync/SKILL.md` contains multiple labeled addition blocks (each a fenced markdown block). New general sections go into the **base content block** — the first fenced block in the file, which currently ends with the `## Claude Code` entries. Do not create a new labeled addition block; just append the new section inside the existing base content fence.
+New sections go into `references/general.md`, which the `best-practices` skill reads for every task. Do not create a new reference file. Add the new section's name to the `general.md` row of the table in `skills/best-practices/SKILL.md`, and to the general topics that file's `description` lists.
 
-Insert the new section immediately before the closing ` ``` ` of the base content block, in this form:
+Append the new section at the end of `general.md`, after a blank line, in this form:
 
 ```
 ## <SectionName>
@@ -175,7 +175,7 @@ Insert the new section immediately before the closing ` ``` ` of the base conten
 - _<SectionName>_: <entry text>
 ```
 
-After creating the section, insert the entry as normal. Note in the Step 8 report which sections were auto-created.
+After creating the section, insert the entry as normal. Note in the Step 7 report which sections were auto-created.
 
 ## Step 6 — Remove processed entries from the global file
 
@@ -191,13 +191,7 @@ Entries that remain untouched in the global file:
 
 Rewrite `~/.claude/BEST_PRACTICES.md` with the deletions applied.
 
-## Step 7 — Bump the sync content version
-
-`skills/sync/SKILL.md` carries a content-version marker near the top: `<!-- bootstrap-content-version: <YYYY-MM-DD>-<short-hash> -->`. After all writes in Step 5, recompute the marker: `<YYYY-MM-DD>` is today's date, `<short-hash>` is a 7-character hex digest of the concatenated content of every fenced markdown block in the file. Update the marker line in place. The `SessionStart` hook compares this marker against the value cached in the project's `docs/BEST_PRACTICES.md` to remind users to re-run `/sync`.
-
-Only update the version if the sync file actually changed (i.e., at least one entry was written or replaced in Step 5).
-
-## Step 8 — Report
+## Step 7 — Report
 
 Print a summary:
 
@@ -206,18 +200,16 @@ Resolved conflicts: N
   - [Architecture] kept Combined (Opus) version
   - [Workflow] kept Plugin version
 
-Promoted N new entries to skills/sync/SKILL.md:
+Promoted N new entries to skills/best-practices/references/:
   - [Testing] 2
   - [Code Design] 2  ← new section created
   - [Code Style] 1   ← new section created
 
-Skipped N exact duplicates (already in sync).
+Skipped N exact duplicates (already in the reference files).
 
 Removed N entries from ~/.claude/BEST_PRACTICES.md.
 
-Sync content version: <new-version-marker>
-
-Run `git diff skills/sync/SKILL.md` to review.
+Run `git diff skills/best-practices/` to review.
 ```
 
 The skill never commits. Review and commit are the user's call.
@@ -225,5 +217,5 @@ The skill never commits. Review and commit are the user's call.
 ## Red Flags — Stop and Reconsider
 
 - A candidate is project-specific (mentions a project name, internal service, or repo path) → Step 2a should have caught this. If it didn't, the triage predicate may need refinement — see [`../../../skills/best-practices-extract/TRIAGE-AND-LIFT.md`](../../../skills/best-practices-extract/TRIAGE-AND-LIFT.md). Skip the entry, surface the miss to the user, and ask whether to update the predicate.
-- A candidate is > 2 sentences → note this in the presentation ("Note: this entry is N sentences — sync entries are typically ≤ 2. Consider using the Combined option to get a tighter version.") but do NOT skip it; let the user decide. If it goes in via conflict resolution, the Opus combined version will naturally be more concise.
+- A candidate is > 2 sentences → note this in the presentation ("Note: this entry is N sentences — plugin entries are typically ≤ 2. Consider using the Combined option to get a tighter version.") but do NOT skip it; let the user decide. If it goes in via conflict resolution, the Opus combined version will naturally be more concise.
 - The destination section already has > 12 entries → warn the user that the section is getting long and may need a split, but proceed unless the user says to stop.
