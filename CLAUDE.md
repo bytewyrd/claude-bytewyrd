@@ -130,18 +130,17 @@ Use `"./run *"` (with wildcard), not `"./run"`. Keep in `settings.local.json` (g
 2. Run `git fetch --all` before creating branches or worktrees.
 3. On `main` with new work: `git worktree add .worktrees/<branch> -b <branch>`.
 
-### Requirement-check hook
+### Plugin hooks
 
-The plugin ships a `SessionStart` hook (`hooks/hooks.json` → `scripts/check-requirements.sh`) that runs once per session in every project where the plugin is enabled. The hook probes:
+`hooks/hooks.json` declares three hooks, which run in every project where the plugin is enabled:
 
-- Companion plugin enable-state (`github@claude-plugins-official`, `context7@claude-plugins-official`, `code-review@claude-plugins-official`) via `~/.claude/settings.json` and the project's `.claude/settings.json`.
-- MCP server configuration (Exa, Firefox MCP) via permission entries in user or project settings.
-- `git` and `gh` CLI availability on `PATH`.
-- Stale references in the project's `.claude/settings.json` pointing at uninstalled plugins.
+- **Always-on rules** (`SessionStart`, matcher `startup|clear|compact`): `cat` prints `hooks/always-on-rules.json`, whose `additionalContext` adds the five workflow conventions to the session. It needs no Python. CI caps that context at 2,000 characters, and the rules change only by reviewed PR.
+- **Compact reminder** (`SessionStart`, matcher `compact`): `scripts/bw compact-reminder` reminds Claude to ask the user to run `/docs-review` while `.bytewyrd/last-feature-engineer-stop` is under a day old.
+- **SubagentStop reminder** (matcher `(^|:)feature-engineer$`): when a `feature-engineer` subagent finishes, an `echo` reminds Claude to ask the user to run `/docs-review` if the change is user-visible, and `scripts/bw state-touch last-feature-engineer-stop` writes the sentinel the compact reminder reads. `/docs-review` removes it with `state-touch --rm`.
 
-The hook outputs nothing when everything is satisfied. It outputs a warning bundle when soft dependencies are missing (session continues). It exits with status 2 only on two conditions: missing `git`, or a stale `claude-plugins-official` reference that Claude Code itself would error on later. Individual warnings can be suppressed via `BYTEWYRD_SKIP_WARN=<id1>,<id2>` in the user's shell environment.
+The two `scripts/bw` commands need Python 3.11 or newer and end in `|| true`, so without it they print one stderr line and the hook still exits 0. Hooks run outside the sandbox, so `state-touch`, the only writer into `.bytewyrd/`, refuses symlinks. `tests/scripts/hooks.bats` runs each hook's command string from `hooks.json`.
 
-When you add a new skill or agent that depends on a specific external tool, decide whether to (a) add a probe to the skill body (the in-skill pattern used by `best-practices-extract`, `refactor`, and `rfc-implement`), or (b) extend `scripts/check-requirements.sh` to surface the gap at session start. Use (a) when the dependency is specific to one skill and the failure can be handled locally; use (b) when the dependency is plugin-wide and the user should know about it on day one rather than mid-task.
+When you add a skill or agent that depends on a specific external tool, add a probe to the skill body (the in-skill pattern used by `best-practices-extract`, `refactor`, and `rfc-implement`) and handle a missing tool there.
 
 ### During work
 
@@ -167,7 +166,7 @@ The skill enforces a six-phase protocol: pre-flight (resolve scope, discover tes
 
 Ask the user to run `/docs-review <scope-hint>` when:
 
-- A `/rfc-implement` just landed user-visible changes (a new skill, an agent change, a new flag, a new workflow) — check whether `docs/guide/**` needs updates to match. (The `SubagentStop` reminder hook on `feature-engineer` is temporarily removed until PR 1 of RFC `2026-11-09-scaffold-and-drift` re-adds it safely, so nothing prompts for this today.)
+- A `/rfc-implement` just landed user-visible changes (a new skill, an agent change, a new flag, a new workflow) — check whether `docs/guide/**` needs updates to match.
 - `/sync` reports the docs-agent definition has improved — re-audit `docs/guide/**` with the updated checks.
 - A user reports a tutorial does not work, a how-to guide references a missing flag, or a reference page is out of date.
 - Before a release — sweep `docs/guide/**` to confirm no broken examples or stale references ship to users.

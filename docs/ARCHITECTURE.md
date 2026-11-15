@@ -48,11 +48,14 @@ Current plugin-local skills:
 **Purpose:** Defines the plugin's identity. This is the entrypoint the Claude Code plugin system reads; skills and agents are auto-discovered from their respective root directories.
 **Location:** `.claude-plugin/plugin.json`
 
-### Hooks (`hooks/`, `scripts/`)
+### Hooks (`hooks/`)
 
-**Purpose:** Shell-level automation that Claude Code executes in response to session lifecycle events. The plugin currently ships one hook: a `SessionStart` probe that runs once per session in every project where the plugin is enabled.
-**Location:** `hooks/hooks.json` (hook declarations) + `scripts/check-requirements.sh` (probe logic)
-**Key behavior:** The hook is silent when all requirements are met. It emits a warning bundle for soft-dependency gaps (companion plugins not enabled, MCP servers not configured, optional CLI tools absent) and exits with status 2 only for hard failures (`git` missing, or a stale `claude-plugins-official` reference that Claude Code would error on later). Individual warnings can be suppressed via `BYTEWYRD_SKIP_WARN=<id>` in the user's shell environment. The `plugin-version` probe, which compared the installed version with the one recorded by `/sync`, is inert now that `plugin.json` carries no `version`.
+**Purpose:** Automation that Claude Code runs on session lifecycle events, in every project where the plugin is enabled: the always-on rules at session start, and the `/docs-review` reminders after a `feature-engineer` subagent finishes.
+**Location:** `hooks/hooks.json` (hook declarations) and `hooks/always-on-rules.json` (the rules). The two hooks that need Python run `scripts/bw`.
+**Key behavior:**
+- `SessionStart` with matcher `startup|clear|compact` runs `cat` on `hooks/always-on-rules.json`, whose `hookSpecificOutput.additionalContext` adds five workflow conventions to Claude's context. They are written as factual statements, and CI caps them at 2,000 characters.
+- `SubagentStop` for `feature-engineer` echoes a reminder to ask the user to run `/docs-review`, and runs `bw state-touch last-feature-engineer-stop`. `SessionStart` with matcher `compact` runs `bw compact-reminder`, which repeats the reminder while that sentinel is under a day old.
+- Every hook exits 0: the `bw` commands end in `|| true`, so without Python 3.11 or newer they print one stderr line and fail nothing. Hooks run outside the sandbox, so `state-touch`, the only writer into `.bytewyrd/`, refuses symlinks.
 
 ### CI (`.github/workflows/ci.yml`, `.github/scripts/`)
 
@@ -72,7 +75,9 @@ Skills → executed by Claude Code in-session. No persistent side effects unless
 
 Agents → spawned as subtask processes. Receive a goal and a tool allow-list from the calling skill; return a result message.
 
-`SessionStart` hook → `scripts/check-requirements.sh` → warns or blocks when companion plugins, MCP servers, or required CLI tools are missing.
+`SessionStart` hook (`startup|clear|compact`) → `hooks/always-on-rules.json` → the five conventions, as `additionalContext`.
+
+`SubagentStop` hook (`feature-engineer`) → `bw state-touch` → `.bytewyrd/last-feature-engineer-stop` → `SessionStart` hook (`compact`) → `bw compact-reminder` → the `/docs-review` reminder. `/docs-review` removes the sentinel with `bw state-touch --rm`.
 
 `best-practices-extract` (skill) → `docs/BEST_PRACTICES.md` (project file); entries the user marks as generalizable → optional Promotion Step → `~/.claude/BEST_PRACTICES.md` (user-global file).
 
