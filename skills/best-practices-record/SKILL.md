@@ -1,7 +1,7 @@
 ---
 name: best-practices-record
 description: Use when the user wants to capture a single best practice into the global cross-project pool at ~/.claude/BEST_PRACTICES.md — typically after seeing a pattern repeat across projects, or learning a stack-level lesson that future projects should ship with from day one.
-compatibility: "Claude Code only: relies on Claude Code subagents, AskUserQuestion or ~/.claude paths. Helper scripts need git, jq, bash >= 4 and python3 >= 3.11."
+compatibility: "Claude Code only: relies on Claude Code subagents, AskUserQuestion or ~/.claude paths. Helper scripts need git, jq and python3 >= 3.11."
 ---
 
 # Record Best Practice

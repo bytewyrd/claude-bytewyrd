@@ -2,8 +2,7 @@
 # Tests for scripts/bw, the POSIX-sh launcher (RFC 2026-11-09-scaffold-and-drift,
 # B2 and B4): which interpreter it picks, the per-class exit contracts when no
 # Python 3.11 or newer is found, the plain-sh PreCompact sentinel, NAME checks,
-# the -I -S -B flags that keep a venv's .pth files and bytecode out, and the
-# bash fallback for a class-B helper whose Python port doesn't exist yet.
+# and the -I -S -B flags that keep a venv's .pth files and bytecode out.
 
 bats_require_minimum_version 1.5.0 # run --separate-stderr
 
@@ -30,31 +29,6 @@ _asked() {
     none) printf '' ;;
     old) printf 'custom report\npython3 report' ;;
   esac
-}
-
-# _plugin_copy DIR: a copy of the launcher at DIR/scripts/bw with an empty
-# DIR/scripts/_lib, so a test decides which class-B modules exist whatever
-# the port has reached in the real scripts/_lib.
-_plugin_copy() {
-  mkdir -p "$1/scripts/_lib"
-  cp "$BW" "$1/scripts/bw"
-}
-
-# _module DIR NAME: create the module the launcher looks for, bw_<name>.py
-# with hyphens as underscores, in DIR/scripts/_lib.
-_module() {
-  : >"$1/scripts/_lib/bw_${2//-/_}.py"
-}
-
-# _stub_bash: a bash on $STUB_BIN that logs "bash exec" in $STUB_LOG, then
-# prints "ran bash" and each argument on its own line.
-_stub_bash() {
-  cat >"$STUB_BIN/bash" <<EOF
-#!/bin/sh
-echo 'bash exec' >>'$STUB_LOG'
-printf '%s\n' 'ran bash' "\$@"
-EOF
-  chmod +x "$STUB_BIN/bash"
 }
 
 # --- interpreter selection ---------------------------------------------------
@@ -141,17 +115,11 @@ EOF
   [ ! -e .bytewyrd ] || fail "a class-A command wrote .bytewyrd without Python"
 }
 
-@test "without Python 3.11+, each ported class-B command exits 2 with a JSON error on stderr" {
-  # In a copy where every class-B module exists, as after the port.
-  plugin="$TEST_TMPDIR/plugin"
-  _plugin_copy "$plugin"
-  for name in "${CLASS_B[@]}"; do
-    _module "$plugin" "$name"
-  done
+@test "without Python 3.11+, each class-B command exits 2 with a JSON error on stderr" {
   for setup in none old; do
     for name in "${CLASS_B[@]}"; do
       : >"$STUB_LOG"
-      run --separate-stderr with_python "$setup" "$SH" "$plugin/scripts/bw" "$name" some-arg
+      run --separate-stderr with_python "$setup" "$SH" "$BW" "$name" some-arg
       assert_failure 2
       assert_equal "$output" ""
       assert_equal "$stderr" "{\"error\":\"$NEEDS\"}"
@@ -206,45 +174,6 @@ EOF
   done
   assert_equal "$(cat "$TEST_TMPDIR/outside/victim")" "keep"
   assert_file_not_exists "$TEST_TMPDIR/outside/new"
-}
-
-# --- bash fallback, until the port's retire commit ---------------------------
-
-@test "a class-B command with no Python module runs its bash script, before any interpreter is asked" {
-  plugin="$TEST_TMPDIR/plugin"
-  _plugin_copy "$plugin"
-  _stub_bash
-  stub_python "$TEST_TMPDIR/stub-new" custom new
-  for name in "${CLASS_B[@]}"; do
-    for setup in none old new; do
-      : >"$STUB_LOG"
-      if [ "$setup" = new ]; then
-        run --separate-stderr env PATH="$STUB_BIN" BYTEWYRD_PYTHON="$TEST_TMPDIR/stub-new/custom" "$SH" "$plugin/scripts/bw" "$name" '' 'two words'
-      else
-        run --separate-stderr with_python "$setup" "$SH" "$plugin/scripts/bw" "$name" '' 'two words'
-      fi
-      assert_success
-      assert_equal "$stderr" ""
-      assert_equal "$output" "$(printf '%s\n' 'ran bash' "$plugin/scripts/$name.sh" '' 'two words')"
-      assert_equal "$(cat "$STUB_LOG")" "bash exec"
-    done
-  done
-}
-
-@test "once its Python module exists, a class-B command runs under Python, not bash" {
-  plugin="$TEST_TMPDIR/plugin"
-  _plugin_copy "$plugin"
-  _stub_bash
-  stub_python "$STUB_BIN" python3.15 new
-  for name in "${CLASS_B[@]}"; do
-    _module "$plugin" "$name"
-    : >"$STUB_LOG"
-    run --separate-stderr env -u BYTEWYRD_PYTHON PATH="$STUB_BIN" "$SH" "$plugin/scripts/bw" "$name" '' 'two words'
-    assert_success
-    assert_equal "$stderr" ""
-    assert_equal "$output" "$(printf '%s\n' 'ran python3.15' -I -S -B "$plugin/scripts/_lib/bw_main.py" "$name" '' 'two words')"
-    assert_equal "$(cat "$STUB_LOG")" "python3.15 exec"
-  done
 }
 
 # --- NAME checks ---------------------------------------------------------------

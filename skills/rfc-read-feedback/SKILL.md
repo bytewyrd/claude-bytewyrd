@@ -2,7 +2,7 @@
 name: rfc-read-feedback
 description: >-
   Use to address inline FEEDBACK: comments that humans have added to an RFC file. Spawns rfc-architect to incorporate each comment, removes the markers, and runs the self-review checklist. Triggered by "/rfc-read-feedback [RFC number or filename]".
-compatibility: "Claude Code only: relies on Claude Code subagents, AskUserQuestion or ~/.claude paths. Helper scripts need git, jq, bash >= 4 and python3 >= 3.11."
+compatibility: "Claude Code only: relies on Claude Code subagents, AskUserQuestion or ~/.claude paths. Helper scripts need git, jq and python3 >= 3.11."
 ---
 
 # RFC Read Feedback

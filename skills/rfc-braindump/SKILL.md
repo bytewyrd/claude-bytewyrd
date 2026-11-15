@@ -1,7 +1,7 @@
 ---
 name: rfc-braindump
 description: Use to capture a quick RFC idea or potential RFC candidate without creating a full RFC. Triggered by "/rfc-braindump <idea>".
-compatibility: "Claude Code only: relies on Claude Code subagents, AskUserQuestion or ~/.claude paths. Helper scripts need git, jq, bash >= 4 and python3 >= 3.11."
+compatibility: "Claude Code only: relies on Claude Code subagents, AskUserQuestion or ~/.claude paths. Helper scripts need git, jq and python3 >= 3.11."
 ---
 
 # RFC Braindump

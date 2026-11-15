@@ -1,7 +1,7 @@
 ---
 name: rfc-new
 description: Use to create a new RFC. Generates a date-based identifier, creates the file from template, spawns rfc-architect to fill it in, runs review agents, runs consensus review, fixes critical findings, and presents the finished Draft to the human. Triggered by "/rfc-new <description>".
-compatibility: "Claude Code only: relies on Claude Code subagents, AskUserQuestion or ~/.claude paths. Helper scripts need git, jq, bash >= 4 and python3 >= 3.11."
+compatibility: "Claude Code only: relies on Claude Code subagents, AskUserQuestion or ~/.claude paths. Helper scripts need git, jq and python3 >= 3.11."
 ---
 
 # RFC New

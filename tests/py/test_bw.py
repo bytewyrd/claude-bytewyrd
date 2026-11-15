@@ -239,11 +239,9 @@ def test_launcher_and_bw_main_agree_on_classes_and_message():
     assert "msg='%s'" % bw_main.NEEDS_PYTHON in text
 
 
-def test_each_class_b_name_is_a_json_helper_script_or_its_port():
+def test_each_class_b_name_has_its_python_port():
     for name in bw_main.CLASS_B:
-        script = REPO / "scripts" / (name + ".sh")
-        port = LIB / ("bw_" + name.replace("-", "_") + ".py")
-        assert script.exists() or port.exists(), name
+        assert (LIB / ("bw_" + name.replace("-", "_") + ".py")).is_file(), name
 
 
 # --- quote() and attr_line() -------------------------------------------------

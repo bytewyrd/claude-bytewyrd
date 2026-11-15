@@ -45,7 +45,7 @@ jobs:
     env:
       # Shell files held to shellcheck and shfmt, as git pathspecs. Formatting
       # style comes from .editorconfig.
-      SHELL_FILES: scripts/bw scripts/*.sh scripts/_lib/*.bash hooks/pre-commit/*.sh tests/run.sh tests/scripts/helpers.bash
+      SHELL_FILES: scripts/bw tests/run.sh tests/scripts/helpers.bash
       # sha256 values are the digests GitHub records for these release assets.
       SHELLCHECK_VERSION: "0.11.0"
       SHELLCHECK_SHA256: "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
@@ -252,9 +252,8 @@ jobs:
       directory: tests/fixtures/lang-ci/rust
 
   # bats and pytest on the oldest supported Python under Linux and the latest
-  # 3.x under macOS. macOS gets Homebrew bash: its image has bash 3.2, and the
-  # helpers need bash 4 until the port's retire commit. PyYAML is installed
-  # too, since under CI ci-lint.bats and rfc-set-status.bats fail without it.
+  # 3.x under macOS. PyYAML is installed too, since under CI ci-lint.bats and
+  # rfc-set-status.bats fail without it.
   compat:
     strategy:
       fail-fast: false
@@ -275,8 +274,6 @@ jobs:
         id: py
         with:
           python-version: ${{ matrix.python }}
-      - if: runner.os == 'macOS'
-        run: brew install bash
       - run: python -m pip install --disable-pip-version-check "pytest==${PYTEST_VERSION}" "pyyaml==${PYYAML_VERSION}"
       - env:
           BYTEWYRD_PYTHON: ${{ steps.py.outputs.python-path }}

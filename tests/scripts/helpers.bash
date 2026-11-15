@@ -9,9 +9,7 @@
 # scripts/ via absolute path. Run a helper through the launcher, the way the
 # skills do, with bw: bw rfc-resolve 2026-01-01-alpha
 
-# bw NAME [ARGS...]: run sh "$SCRIPT_ROOT/scripts/bw" NAME [ARGS...]. The
-# launcher runs a helper's bash script until its Python port exists, then the
-# port, so the same tests check both.
+# bw NAME [ARGS...]: run sh "$SCRIPT_ROOT/scripts/bw" NAME [ARGS...].
 bw() { sh "$SCRIPT_ROOT/scripts/bw" "$@"; }
 
 setup_common() {

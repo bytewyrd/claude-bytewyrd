@@ -1,7 +1,7 @@
 ---
 name: rfc-consensus-review
 description: Spawns 5 parallel independent reviewer agents on an RFC, synthesizes findings by consensus, verifies factual claims, auto-fixes all verified bugs, then walks the human through design decisions one-by-one with RFC context. Critical = 4-5/5 reviewers; Moderate = 3/5; Minor = 1-2/5. Triggered by "/rfc-consensus-review [RFC number or filename]".
-compatibility: "Claude Code only: relies on Claude Code subagents, AskUserQuestion or ~/.claude paths. Helper scripts need git, jq, bash >= 4 and python3 >= 3.11."
+compatibility: "Claude Code only: relies on Claude Code subagents, AskUserQuestion or ~/.claude paths. Helper scripts need git, jq and python3 >= 3.11."
 ---
 
 # RFC Consensus Review

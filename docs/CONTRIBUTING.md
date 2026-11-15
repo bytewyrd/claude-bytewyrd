@@ -111,7 +111,7 @@ CI (`.github/workflows/ci.yml`) runs eleven jobs on every pull request to `main`
 The other eight are not required:
 
 - **`lang-ci-fixture-<id>`**, five jobs, run each `lang-ci-<id>.yml` on its fixture in `tests/fixtures/lang-ci/<id>/`.
-- **`compat`** runs bats and pytest on Python 3.11 under Linux and on the latest 3.x under macOS, with Homebrew bash there.
+- **`compat`** runs bats and pytest on Python 3.11 under Linux and on the latest 3.x under macOS.
 - **`history`** runs bats at every commit of the pull request, checks that no `refactor(scripts): port …` commit edits `tests/scripts/`, and checks that `templates/scaffold/ci-caller.yml.tpl` pins a `main` commit that has every `lang-ci-<id>.yml`. Keep bats passing at every commit.
 - **`install-check`** installs the plugin into a temporary HOME from the checkout, and updates an install of `main` to the pull request's branch; any load error that `claude plugin list --json` reports fails it.
 
@@ -124,7 +124,7 @@ tests/run.sh
 python3 -m pytest -q tests/py tests/e2e
 python3 .github/scripts/lint-frontmatter.py agents/*.md skills/*/SKILL.md .claude/skills/*/SKILL.md
 python3 .github/scripts/check-links.py
-SHELL_FILES=$(git ls-files -- scripts/bw 'scripts/*.sh' 'scripts/_lib/*.bash' 'hooks/pre-commit/*.sh' tests/run.sh tests/scripts/helpers.bash)
+SHELL_FILES=$(git ls-files -- scripts/bw tests/run.sh tests/scripts/helpers.bash)
 shellcheck -x --source-path=SCRIPTDIR --severity=warning $SHELL_FILES
 shfmt -d $SHELL_FILES   # shfmt -w applies the fixes
 actionlint -config-file .github/actionlint.yaml .github/workflows/*.yml

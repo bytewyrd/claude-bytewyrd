@@ -2,7 +2,7 @@
 name: rfc-implement
 description: Use to begin implementing an Approved RFC. Spawns a feature-engineer agent with the RFC as primary input and marks the RFC as Done when complete. Triggered by "/rfc-implement [RFC number or filename]".
 disable-model-invocation: true
-compatibility: "Claude Code only: relies on Claude Code subagents, AskUserQuestion or ~/.claude paths. Helper scripts need git, jq, bash >= 4 and python3 >= 3.11."
+compatibility: "Claude Code only: relies on Claude Code subagents, AskUserQuestion or ~/.claude paths. Helper scripts need git, jq and python3 >= 3.11."
 ---
 
 # RFC Implement
