@@ -1532,6 +1532,27 @@ def test_each_module_compiles_without_a_warning(path):
         compile(path.read_text(encoding="utf-8"), str(path), "exec")
 
 
+def test_pwd_is_pwd_when_it_names_the_current_directory(tmp_path, monkeypatch):
+    link = tmp_path / "link"
+    link.symlink_to(tmp_path)
+    monkeypatch.chdir(link)
+    monkeypatch.setenv("PWD", str(link))
+    assert bw.pwd() == str(link) != os.getcwd()
+
+
+@pytest.mark.parametrize("value", [None, "", "link", "{link}/", "{link}/.", "{tmp}/link/../link", "{tmp}//link", "{other}", "{tmp}/gone"])
+def test_pwd_is_getcwd_otherwise(tmp_path, monkeypatch, value):
+    (tmp_path / "link").symlink_to(tmp_path)
+    (tmp_path / "other").mkdir()
+    monkeypatch.chdir(tmp_path / "link")
+    if value is None:
+        monkeypatch.delenv("PWD", raising=False)
+    else:
+        link = str(tmp_path / "link")
+        monkeypatch.setenv("PWD", value.format(tmp=tmp_path, link=link, other=tmp_path / "other"))
+    assert bw.pwd() == os.getcwd()
+
+
 # --- scaffold ----------------------------------------------------------------
 
 

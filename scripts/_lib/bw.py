@@ -1065,3 +1065,17 @@ def split_lines(data):
     if lines[-1] == b"":
         lines.pop()
     return lines
+
+
+def pwd():
+    """The current directory as bash's pwd prints it: $PWD when that is an
+    absolute, normalized path to the current directory, so a directory reached
+    through a symlink keeps that name; else os.getcwd()."""
+    path = os.environ.get("PWD", "")
+    if path.startswith("/") and posixpath.normpath(path) == path:
+        try:
+            if os.path.samefile(path, "."):
+                return path
+        except OSError:
+            pass
+    return os.getcwd()

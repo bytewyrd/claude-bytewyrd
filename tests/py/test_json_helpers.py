@@ -29,6 +29,7 @@ import bw_rfc_braindump_list  # noqa: E402
 import bw_rfc_braindump_remove  # noqa: E402
 import bw_rfc_feedback_list  # noqa: E402
 import bw_rfc_frontmatter  # noqa: E402
+import bw_rfc_resolve  # noqa: E402
 
 BRAINDUMP = Path("docs/rfc-braindump.md")
 IS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
@@ -375,3 +376,132 @@ def test_frontmatter_names_a_path_that_isn_t_utf_8_with_u_fffd():
         {"error": "rfc-frontmatter: file not found: caf\ufffd.md"},
         b"",
     )
+
+
+# --- rfc-resolve -------------------------------------------------------------
+
+
+def git(*args):
+    subprocess.run(["git", *args], check=True, capture_output=True)
+
+
+@pytest.fixture
+def hermetic_git(tmp_path, monkeypatch):
+    """Keep the developer's git configuration and any enclosing repository out."""
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path.parent))
+    for var in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY"):
+        monkeypatch.delenv(var, raising=False)
+
+
+@pytest.fixture
+def repo(hermetic_git):
+    """A git repository here with three RFCs committed."""
+    git("init", "-q")
+    for name in ("2026-01-01-alpha", "2026-02-01-beta", "2026-03-01-gamma"):
+        Path("docs/rfcs/%s.md" % name).write_text("---\nrfc: %s\n---\n" % name)
+    git("add", "-A")
+    git("-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "x")
+
+
+def label(out):
+    return json.loads(out)["label"]
+
+
+def test_resolve_an_identifier_as_jq_did(call, repo):
+    path = os.path.join(os.getcwd(), "docs/rfcs/2026-01-01-alpha.md")
+    want = ('{\n  "path": "%s",\n  "label": "RFC 2026-01-01-alpha (matched argument)"\n}\n' % path).encode()
+    for arg in ("2026-01-01-alpha", "2026-01-01-alpha.md", "docs/rfcs/2026-01-01-alpha.md"):
+        assert call(bw_rfc_resolve, arg) == (0, want, b"")
+
+
+def test_resolve_takes_the_directory_from_pwd_as_bash_did(call, repo, tmp_path, monkeypatch):
+    link = tmp_path / "via-link"
+    link.symlink_to(tmp_path)
+    monkeypatch.chdir(link)
+    monkeypatch.setenv("PWD", str(link))
+    code, out, _ = call(bw_rfc_resolve, "2026-01-01-alpha")
+    assert (code, json.loads(out)["path"]) == (0, str(link) + "/docs/rfcs/2026-01-01-alpha.md")
+
+
+@pytest.mark.parametrize(
+    "arg, code, message",
+    [
+        ("does-not-exist", 1, "rfc-resolve: no RFC found at docs/rfcs/does-not-exist.md"),
+        ("2026-01-01-alpha.md.md", 1, "rfc-resolve: no RFC found at docs/rfcs/2026-01-01-alpha.md.md"),
+        ("foo/bar", 2, "rfc-resolve: identifier must not contain '/' (got: foo/bar)"),
+        ("docs/rfcs/a/b.md", 2, "rfc-resolve: identifier must not contain '/' (got: docs/rfcs/a/b.md)"),
+    ],
+)
+def test_resolve_errors(call, repo, arg, code, message):
+    assert call(bw_rfc_resolve, arg) == (code, error(message), b"")
+
+
+def test_resolve_without_docs_rfcs_is_an_error_before_the_argument_is_read(call):
+    shutil.rmtree("docs")
+    message = "rfc-resolve: no docs/rfcs/ directory in %s; run from project root" % os.getcwd()
+    assert call(bw_rfc_resolve, "a/b") == (2, error(message), b"")
+
+
+def test_resolve_picks_the_only_modified_rfc(call, repo):
+    with open("docs/rfcs/2026-02-01-beta.md", "a") as f:
+        f.write("more\n")
+    code, out, _ = call(bw_rfc_resolve, "")
+    assert (code, label(out)) == (0, "RFC 2026-02-01-beta (unique modified file)")
+
+
+def test_resolve_reads_git_status_as_the_bash_script_s_awk_did(call, repo):
+    # A deletion is skipped and a rename gives its new path.
+    git("rm", "-q", "docs/rfcs/2026-03-01-gamma.md")
+    git("mv", "docs/rfcs/2026-01-01-alpha.md", "docs/rfcs/2026-05-01-moved.md")
+    assert label(call(bw_rfc_resolve)[1]) == "RFC 2026-05-01-moved (unique modified file)"
+
+
+def test_resolve_ignores_a_path_git_status_quotes(call, repo):
+    # Untracked, so the only modified file, but quoted for its space; it
+    # sorts first, so the fallback still finds gamma.
+    Path("docs/rfcs/0 with space.md").write_text("x")
+    assert label(call(bw_rfc_resolve)[1]) == "RFC 2026-03-01-gamma (most recently dated file)"
+
+
+def test_resolve_a_modified_path_that_is_no_longer_a_file_exits_1(call, repo):
+    os.unlink("docs/rfcs/2026-02-01-beta.md")
+    os.symlink("nowhere", "docs/rfcs/2026-02-01-beta.md")  # a type change, which status lists
+    message = "rfc-resolve: modified file docs/rfcs/2026-02-01-beta.md no longer exists"
+    assert call(bw_rfc_resolve) == (1, error(message), b"")
+
+
+def test_resolve_falls_back_to_the_last_regular_file_in_code_point_order(call, hermetic_git):
+    for name in ("2026-01-01-b.md", "2026-01-01-a-z.md", "2026-01-01-B.md", ".zz.md", "zz.txt"):
+        Path("docs/rfcs", name).write_text("x")
+    Path("docs/rfcs/zz.md").mkdir()  # not a regular file
+    code, out, _ = call(bw_rfc_resolve)
+    assert (code, label(out)) == (0, "RFC 2026-01-01-b (most recently dated file)")
+
+
+def test_resolve_without_rfc_files_exits_1(call, hermetic_git):
+    Path("docs/rfcs/.hidden.md").write_text("x")
+    assert call(bw_rfc_resolve) == (1, error("rfc-resolve: no RFC files under docs/rfcs/"), b"")
+
+
+def test_resolve_names_an_identifier_that_isn_t_utf_8_with_u_fffd():
+    proc = bw_run("rfc-resolve", b"caf\xe9")
+    assert (proc.returncode, json.loads(proc.stdout), proc.stderr) == (
+        1,
+        {"error": "rfc-resolve: no RFC found at docs/rfcs/caf\ufffd.md"},
+        b"",
+    )
+
+
+def test_resolve_prints_a_directory_that_isn_t_utf_8_with_u_fffd(tmp_path, monkeypatch):
+    project = os.path.join(os.fsencode(tmp_path), b"caf\xe9")
+    try:
+        os.makedirs(os.path.join(project, b"docs", b"rfcs"))
+    except OSError:
+        pytest.skip("this filesystem refuses a name that isn't UTF-8")
+    open(os.path.join(project, b"docs", b"rfcs", b"x.md"), "w").close()
+    monkeypatch.chdir(project)
+    proc = bw_run("rfc-resolve", "x")
+    want = bw.jq_string(os.fsdecode(os.getcwd())) + "/docs/rfcs/x.md"
+    assert (proc.returncode, json.loads(proc.stdout)["path"], proc.stderr) == (0, want, b"")
