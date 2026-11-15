@@ -9,8 +9,9 @@
 # release it corresponds to. Jobs run on ubuntu-26.04 rather than
 # ubuntu-latest, so moving to the next Ubuntu release happens in a reviewed
 # PR. GitHub still refreshes that image every week, so the lint tools that
-# decide pass/fail (shellcheck, shfmt) are downloaded at pinned versions and
-# checked against their sha256 instead of being taken from the image.
+# decide pass/fail (shellcheck, shfmt, actionlint) are downloaded at pinned
+# versions and checked against their sha256 instead of being taken from the
+# image.
 
 name: CI
 
@@ -50,6 +51,8 @@ jobs:
       SHELLCHECK_SHA256: "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
       SHFMT_VERSION: "3.14.1"
       SHFMT_SHA256: "76e77641faa025814b77f153b29796b8e6fa2fca03e0c76a691608b86c7ea7bf"
+      ACTIONLINT_VERSION: "1.7.12"
+      ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -98,7 +101,13 @@ jobs:
           grep -qx CHECKSUMS tests/fixtures/lang-ci/ruby/Gemfile.lock  # no CHECKSUMS section
           grep -qE '^  rake \([0-9.]+\) sha256=[0-9a-f]{64}$' tests/fixtures/lang-ci/ruby/Gemfile.lock  # a CHECKSUMS entry without its hash
 
-      - name: Install shellcheck and shfmt
+      - name: CI's lint tool versions match mise.toml
+        run: |
+          grep -qxF "shellcheck = \"$SHELLCHECK_VERSION\"" mise.toml
+          grep -qxF "shfmt = \"$SHFMT_VERSION\"" mise.toml
+          grep -qxF "\"aqua:rhysd/actionlint\" = \"$ACTIONLINT_VERSION\"" mise.toml
+
+      - name: Install shellcheck, shfmt and actionlint
         run: |
           bin="$RUNNER_TEMP/bin"
           mkdir -p "$bin"
@@ -109,7 +118,11 @@ jobs:
           curl -fsSL --retry 3 -o "$bin/shfmt" \
             "https://github.com/mvdan/sh/releases/download/v${SHFMT_VERSION}/shfmt_v${SHFMT_VERSION}_linux_amd64"
           echo "${SHFMT_SHA256}  $bin/shfmt" | sha256sum -c -
-          chmod +x "$bin/shellcheck" "$bin/shfmt"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/actionlint.tar.gz" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$bin" actionlint
+          chmod +x "$bin/shellcheck" "$bin/shfmt" "$bin/actionlint"
           echo "$bin" >> "$GITHUB_PATH"
 
       # Info-level notes are advisory; warnings and errors fail the job.
@@ -117,13 +130,21 @@ jobs:
         run: |
           set -f  # SHELL_FILES holds git pathspecs; keep bash from globbing them
           shellcheck --version
+          # shellcheck disable=SC2086 # split on purpose, one pathspec per word; set -f stops globbing
           git ls-files -z -- $SHELL_FILES | xargs -0 shellcheck -x --source-path=SCRIPTDIR --severity=warning
 
       - name: Shell scripts are shfmt-formatted
         run: |
           set -f  # SHELL_FILES holds git pathspecs; keep bash from globbing them
           shfmt --version
+          # shellcheck disable=SC2086 # split on purpose, one pathspec per word; set -f stops globbing
           git ls-files -z -- $SHELL_FILES | xargs -0 shfmt -d
+
+      # After the install step, so actionlint runs the pinned shellcheck on every run: block.
+      - name: Workflows pass actionlint
+        run: |
+          actionlint -version
+          actionlint -config-file .github/actionlint.yaml .github/workflows/*.yml
 
   validate:
     name: validate
