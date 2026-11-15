@@ -74,13 +74,15 @@ def test_the_sha256_file_names_the_sdist():
 
 def test_no_command_imports_yaml_until_it_reads_frontmatter(tmp_path):
     (tmp_path / "x.md").write_text("---\nrfc: a\n---\n")
+    modules = sorted(p.stem for p in LIB.glob("bw*.py"))
+    assert {"bw", "bw_main", "bw_scaffold", "bw_drift", "bw_state_touch", "bw_compact_reminder"} <= set(modules)
     code = (
-        "import sys; sys.path[0:0] = [sys.argv[1], sys.argv[2]]; "
-        "import bw, bw_main, bw_scaffold, bw_drift, bw_state_touch, bw_compact_reminder; "
-        "print('yaml' in sys.modules); bw.load_frontmatter('x.md'); print('yaml' in sys.modules)"
+        "import importlib, sys; sys.path[0:0] = sys.argv[1:3]; "
+        "[importlib.import_module(m) for m in sys.argv[3:]]; "
+        "print('yaml' in sys.modules); import bw; bw.load_frontmatter('x.md'); print('yaml' in sys.modules)"
     )
     proc = subprocess.run(
-        [sys.executable, "-I", "-S", "-B", "-c", code, str(LIB), str(VENDOR)],
+        [sys.executable, "-I", "-S", "-B", "-c", code, str(LIB), str(VENDOR), *modules],
         cwd=tmp_path,
         capture_output=True,
         encoding="utf-8",

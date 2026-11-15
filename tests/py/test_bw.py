@@ -9,9 +9,11 @@ runs scaffold and drift end to end; the cases here cover their parts.
 
 import ast
 import hashlib
+import io
 import json
 import os
 import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -1345,6 +1347,163 @@ def test_dirty_raises_outside_a_repo(tmp_path, monkeypatch):
 )
 def test_describe(error, want):
     assert bw.describe(error) == want
+
+
+# --- JSON output (the class-B helpers) ---------------------------------------
+# The helpers' outputs as jq printed them before their port, byte for byte.
+
+
+@pytest.mark.parametrize(
+    "value, want",
+    [
+        ({"error": "x"}, '{\n  "error": "x"\n}\n'),
+        (
+            {"appended": True, "file": "docs/rfc-braindump.md", "created_file": False},
+            '{\n  "appended": true,\n  "file": "docs/rfc-braindump.md",\n  "created_file": false\n}\n',
+        ),
+        ({"entries": []}, '{\n  "entries": []\n}\n'),
+        (
+            {"markers": [{"line": 3, "text": "FEEDBACK: x"}]},
+            '{\n  "markers": [\n    {\n      "line": 3,\n      "text": "FEEDBACK: x"\n    }\n  ]\n}\n',
+        ),
+        ({"rfcs": [], "warnings": ["a", "b"]}, '{\n  "rfcs": [],\n  "warnings": [\n    "a",\n    "b"\n  ]\n}\n'),
+    ],
+)
+def test_jq_dumps_prints_what_jq_printed(value, want):
+    assert bw.jq_dumps(value) == want
+
+
+def test_jq_dumps_escapes_as_jq_does():
+    # json's escapes, raw UTF-8, and \u007f for DEL, which json leaves raw.
+    s = '"\\/\b\f\n\r\t\x00\x01\x1f\x7f é — 😀 \u2028'
+    want = '"\\"\\\\/\\b\\f\\n\\r\\t\\u0000\\u0001\\u001f\\u007f é — 😀 \u2028"'
+    assert bw.jq_dumps({"s": s}) == '{\n  "s": %s\n}\n' % want
+
+
+def test_jq_dumps_matches_jq_itself(tmp_path):
+    jq = shutil.which("jq")
+    if jq is None:
+        if os.environ.get("CI"):
+            pytest.fail("jq is not on PATH, and CI must not skip")
+        pytest.skip("jq is not on PATH")
+    s = "".join(map(chr, range(0, 0xD800))) + "\ue000\ufffd\U0001f600\U0010ffff"
+    (tmp_path / "s.txt").write_bytes(s.encode("utf-8"))
+    program = "{s: $s, n: 12, t: true, f: false, l: [], o: {}, a: [{k: $s}, 1]}"
+    want = subprocess.run([jq, "-n", "--rawfile", "s", str(tmp_path / "s.txt"), program], capture_output=True, check=True)
+    value = {"s": s, "n": 12, "t": True, "f": False, "l": [], "o": {}, "a": [{"k": s}, 1]}
+    assert bw.jq_dumps(value).encode("utf-8") == want.stdout
+
+
+def escaped(raw):
+    """RAW as os.fsdecode() holds bytes that aren't UTF-8, in any locale."""
+    return raw.decode("utf-8", "surrogateescape")
+
+
+@pytest.mark.parametrize(
+    "raw, want",
+    [
+        (b"caf\xe9", "caf\ufffd"),
+        (b"caf\xe9 au lait", "caf\ufffd au lait"),
+        (b"a\xffb\xfe", "a\ufffdb\ufffd"),
+        (b"\xe2\x82", "\ufffd"),  # one sequence cut short: one U+FFFD
+        (b"\xe2\x82A", "\ufffdA"),
+        (b"caf\xc3\xa9 \xe9", "café \ufffd"),
+    ],
+)
+def test_jq_string_decodes_escaped_bytes_with_u_fffd_as_jq_did(raw, want):
+    assert bw.jq_string(escaped(raw)) == want
+
+
+def test_jq_string_replaces_any_other_lone_surrogate():
+    # As a YAML "\ud800" escape makes; os.fsdecode() never does.
+    assert bw.jq_string("a\ud800b\udbff\udc00\udd00\udfff") == "a\ufffdb\ufffd\ufffd\ufffd\ufffd"
+
+
+def test_jq_string_returns_valid_text_as_it_is():
+    s = "plain é — 😀 \x00\x7f"
+    assert bw.jq_string(s) is s
+
+
+def test_jq_dumps_cleans_keys_and_nested_strings():
+    value = {escaped(b"k\xe9"): [escaped(b"v\xe9"), {"x": "\ud800"}], "n": None}
+    assert bw.jq_dumps(value) == '{\n  "k\ufffd": [\n    "v\ufffd",\n    {\n      "x": "\ufffd"\n    }\n  ],\n  "n": null\n}\n'
+
+
+def test_emit_prints_on_stdout(capsysbinary):
+    bw.emit({"a": "é\x7f", "b": escaped(b"caf\xe9")})
+    assert capsysbinary.readouterr() == ('{\n  "a": "é\\u007f",\n  "b": "caf\ufffd"\n}\n'.encode(), b"")
+
+
+def test_emit_writes_utf_8_to_a_stdout_of_another_encoding(monkeypatch):
+    buffer = io.BytesIO()
+    monkeypatch.setattr(sys, "stdout", io.TextIOWrapper(buffer, encoding="latin-1"))
+    bw.emit({"a": "é — 😀"})
+    assert buffer.getvalue() == '{\n  "a": "é — 😀"\n}\n'.encode("utf-8")
+
+
+def test_emit_error(capsysbinary):
+    # common.bats: .error is the argument, and there is no other key.
+    bw.emit_error("something went wrong")
+    assert capsysbinary.readouterr() == (b'{\n  "error": "something went wrong"\n}\n', b"")
+
+
+def test_json_main_returns_the_command_s_exit_code(capsys):
+    assert bw.json_main("x", lambda argv: len(argv), ["a", "b", "c"]) == 3
+    assert capsys.readouterr() == ("", "")
+
+
+@pytest.mark.parametrize(
+    "error, message",
+    [
+        (PermissionError(13, "Permission denied", "docs/x.md"), "rfc-x: Permission denied: docs/x.md"),
+        (ValueError("bad value"), "rfc-x: ValueError: bad value"),
+        (bw.BwError("one line"), "rfc-x: one line"),
+    ],
+)
+def test_json_main_prints_an_exception_as_a_json_error_with_exit_2(error, message, capsys):
+    def run(argv):
+        raise error
+
+    assert bw.json_main("rfc-x", run, []) == 2
+    out, err = capsys.readouterr()
+    assert (json.loads(out), err) == ({"error": message}, "")
+
+
+def test_json_main_lets_keyboard_interrupt_through():
+    def run(argv):
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        bw.json_main("x", run, [])
+
+
+def test_json_main_sends_a_failing_stdout_to_dev_null(tmp_path, monkeypatch):
+    fd = os.open(tmp_path / "out", os.O_WRONLY | os.O_CREAT)
+
+    class Broken:
+        buffer = property(lambda self: self)
+
+        def flush(self):
+            pass
+
+        def write(self, data):
+            raise BrokenPipeError(32, "Broken pipe")
+
+        def fileno(self):
+            return fd
+
+    monkeypatch.setattr(sys, "stdout", Broken())
+    try:
+        assert bw.json_main("x", lambda argv: bw.emit({}), []) == 2
+        assert os.path.samestat(os.fstat(fd), os.stat(os.devnull))
+    finally:
+        os.close(fd)
+
+
+def test_a_helper_with_stdout_closed_exits_2_without_a_traceback(tmp_path):
+    cmd = [sys.executable, "-I", "-S", "-B", str(LIB / "bw_main.py"), "rfc-braindump-append"]
+    proc = subprocess.run(cmd, cwd=tmp_path, stderr=subprocess.PIPE, preexec_fn=lambda: os.close(1))
+    assert (proc.returncode, proc.stderr) == (2, b"")
 
 
 # --- scaffold ----------------------------------------------------------------
