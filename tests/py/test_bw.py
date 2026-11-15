@@ -1,5 +1,6 @@
-"""Tests for scripts/_lib/bw.py (RFC 2026-11-09-scaffold-and-drift, B2, B4
-and B5): the shared functions and detection.
+"""Tests for scripts/_lib (RFC 2026-11-09-scaffold-and-drift, B2, B4 and B5):
+bw.py's shared functions and detection, and the state-touch and
+compact-reminder commands.
 
 Detection cases build real throwaway git repositories, with the developer's
 git configuration kept out (see hermetic_git).
@@ -21,6 +22,8 @@ LIB = REPO / "scripts" / "_lib"
 sys.path.insert(0, str(LIB))
 
 import bw  # noqa: E402
+import bw_compact_reminder  # noqa: E402
+import bw_state_touch  # noqa: E402
 
 # --- helpers -----------------------------------------------------------------
 
@@ -114,6 +117,13 @@ def test_language_ids_equal_the_lang_ci_fixture_jobs():
 
 def test_manifest_languages_are_language_ids():
     assert set(bw.MANIFESTS.values()) == set(bw.LANGUAGES)
+
+
+def test_dir_fd_and_no_follow_calls_are_supported_here():
+    # state-touch works through a directory descriptor; this runs on each CI platform.
+    for fn in (os.open, os.mkdir, os.stat, os.utime, os.unlink):
+        assert fn in os.supports_dir_fd, fn.__name__
+    assert os.utime in os.supports_follow_symlinks
 
 
 def test_plugin_dir_is_the_parent_of_scripts():
@@ -968,3 +978,86 @@ def test_skip_fix_lines():
 
 def test_reason_taken_quotes_its_values():
     assert bw.reason_taken("go-a-b", "a.b") == "job id go-a-b is taken by a.b"
+
+
+# --- state-touch -------------------------------------------------------------
+
+
+def test_state_touch_writes_where_it_opened_even_after_a_swap(tmp_path, monkeypatch):
+    repo, outside = tmp_path / "repo", tmp_path / "outside"
+    repo.mkdir()
+    outside.mkdir()
+    monkeypatch.chdir(repo)
+    opened = bw_state_touch.open_state_dir
+
+    def open_then_swap():
+        fd = opened()
+        os.rename(".bytewyrd", "moved")
+        os.symlink(outside, ".bytewyrd")
+        return fd
+
+    monkeypatch.setattr(bw_state_touch, "open_state_dir", open_then_swap)
+    assert bw_state_touch.main(["last-feature-engineer-stop"]) == 0
+    assert list(outside.iterdir()) == []
+    assert sorted(p.name for p in (repo / "moved").iterdir()) == [".gitignore", "last-feature-engineer-stop"]
+
+    # --rm after a swap removes from the directory it opened, not the outside one.
+    os.unlink(repo / ".bytewyrd")
+    os.rename(repo / "moved", repo / ".bytewyrd")
+    (outside / "last-feature-engineer-stop").write_text("keep")
+    assert bw_state_touch.main(["--rm", "last-feature-engineer-stop"]) == 0
+    assert (outside / "last-feature-engineer-stop").read_text() == "keep"
+    assert sorted(p.name for p in (repo / "moved").iterdir()) == [".gitignore"]
+
+
+@pytest.mark.parametrize("error", [RuntimeError("boom"), OSError(5, "Input/output error"), KeyboardInterrupt()])
+def test_state_touch_always_exits_0(error, monkeypatch, capsys):
+    def fail(argv):
+        raise error
+
+    monkeypatch.setattr(bw_state_touch, "run", fail)
+    assert bw_state_touch.main(["x"]) == 0
+    assert capsys.readouterr().err.count("\n") == 1
+
+
+# --- compact-reminder --------------------------------------------------------
+
+
+def test_compact_reminder_text():
+    # hooks/hooks.json's compact reminder at ae97f77, asking the user to run
+    # /docs-review instead of "Consider running /docs-review" [R77].
+    assert bw_compact_reminder.TEXT == (
+        "Post-compact reminder: a feature-engineer agent finished in the last 24 hours and "
+        "/docs-review may not yet have run. Ask the user to run /docs-review against the implemented files."
+    )
+
+
+def test_compact_reminder_prints_only_while_the_sentinel_is_under_a_day_old(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    remind = bw_compact_reminder.TEXT + "\n"
+    assert bw_compact_reminder.main([]) == 0
+    assert capsys.readouterr() == ("", "")
+    (tmp_path / ".bytewyrd").mkdir()
+    sentinel = tmp_path / ".bytewyrd" / "last-feature-engineer-stop"
+    sentinel.touch()
+    for age, want in [(0, remind), (86000, remind), (86401, ""), (-60, remind)]:
+        mtime = time.time() - age
+        os.utime(sentinel, (mtime, mtime))
+        assert bw_compact_reminder.main([]) == 0
+        assert capsys.readouterr() == (want, ""), age
+    sentinel.unlink()
+    (tmp_path / "fresh").touch()
+    os.symlink(tmp_path / "fresh", sentinel)  # never a sentinel state-touch wrote
+    assert bw_compact_reminder.main([]) == 0
+    assert capsys.readouterr() == ("", "")
+    sentinel.unlink()
+    sentinel.mkdir()
+    assert bw_compact_reminder.main([]) == 0
+    assert capsys.readouterr() == ("", "")
+
+
+def test_compact_reminder_always_exits_0(monkeypatch, capsys):
+    monkeypatch.setattr(bw_compact_reminder, "due", lambda: 1 / 0)
+    assert bw_compact_reminder.main([]) == 0
+    assert bw_compact_reminder.main(["--bogus"]) == 0
+    assert "usage: bw compact-reminder" in capsys.readouterr().err
