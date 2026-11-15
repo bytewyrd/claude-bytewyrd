@@ -4,3 +4,4 @@
 .claude/settings.local.json
 .bytewyrd/*
 !.bytewyrd/.bootstrap-versions.json
+__pycache__/
