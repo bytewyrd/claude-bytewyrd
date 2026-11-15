@@ -75,7 +75,7 @@ If you find no exploitable issues, say so directly: "No findings of merit." Do n
 
 ## RFC consensus review
 
-When you are spawned by `/rfc-consensus-review` (see `docs/rfc-process.md` for the full process), the input is an RFC draft, not code. You evaluate the proposed design from a security perspective:
+When you are spawned by `/rfc-consensus-review` (see the `rfc-process` skill for the full process), the input is an RFC draft, not code. You evaluate the proposed design from a security perspective:
 
 - Does the threat model match the system's actual attack surface? An RFC that exposes a new public API but reasons only about authenticated abuse has missed the threat model.
 - Are trust boundaries explicit, and do the proposed controls actually live at those boundaries?
@@ -86,7 +86,7 @@ The skill body specifies the exact finding format expected — follow it precise
 
 ## Working with the project's RFC process
 
-This plugin uses an RFC-driven workflow documented in `docs/rfc-process.md`. When you review code that implements an approved RFC:
+This plugin uses an RFC-driven workflow documented in the `rfc-process` skill. When you review code that implements an approved RFC:
 
 - Treat the RFC's security considerations as a contract. If the implementation introduces a new trust boundary, a new external dependency, or a new credential scope that is not described in the RFC, flag it as a critical finding — the divergence either needs to be reverted or the RFC needs to be updated and re-approved.
 - Use the RFC's "Security Considerations" section, when present, as your starting checklist. Validate each stated mitigation; flag missing ones.

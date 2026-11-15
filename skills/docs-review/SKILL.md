@@ -181,7 +181,7 @@ Do not edit the report after returning it. The parent decides what to do with th
 
 ## Constraints (inherited from the agent definition; restated here for clarity)
 
-- **Ownership boundary first.** Never edit `docs/ARCHITECTURE.md`, `docs/CONTRIBUTING.md`, `docs/BEST_PRACTICES.md`, `docs/project-brief.md`, `docs/rfcs/**`, `docs/rfc-process.md`, or `docs/rfc-braindump.md`. `README.md` **is** in scope — it is bootstrap-once (written by `/sync` at project creation, then project-owned) and may drift as the plugin evolves. If a finding seems to require editing one of the off-limits files, surface the boundary violation in the plan with a suggested split.
+- **Ownership boundary first.** Never edit `docs/ARCHITECTURE.md`, `docs/CONTRIBUTING.md`, `docs/BEST_PRACTICES.md`, `docs/project-brief.md`, `docs/rfcs/**`, or `docs/rfc-braindump.md`. `README.md` **is** in scope — it is bootstrap-once (written by `/sync` at project creation, then project-owned) and may drift as the plugin evolves. If a finding seems to require editing one of the off-limits files, surface the boundary violation in the plan with a suggested split.
 - **Trust the codebase.** When code and docs disagree, the code is the spec; the doc gets updated. Never edit code from this skill.
 - **One commit per finding.** Bundling unrelated findings into one commit destroys reviewability.
 - **Respect the scope.** Do not audit files outside the resolved scope. Mention adjacent-scope drift in recommended follow-ups.

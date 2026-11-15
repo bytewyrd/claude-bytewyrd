@@ -58,7 +58,7 @@ When working inside the `claude-bytewyrd` plugin (or any project that has been s
 
 - **`docs-agent` territory (do not modify):** `docs/guide/tutorials/`, `docs/guide/how-to/`, `docs/guide/reference/`, `docs/guide/contributing.md`, `docs/guide/index.md`. These files are reviewed and maintained via the `/docs-review` skill. If a documentation update belongs in `docs/guide/**`, recommend the user invoke `/docs-review` rather than editing those files yourself.
 - **`documentation-writer` territory (general-purpose, ad-hoc):** everything else — top-level `README.md`, internal docs that target contributors and maintainers (such as `docs/ARCHITECTURE.md`, `docs/CONTRIBUTING.md`, `docs/BEST_PRACTICES.md`, `docs/project-brief.md`), and any new documentation files for projects that do not have a `docs/guide/` tree yet. In projects without the bytewyrd layout, use the README/DEVELOPMENT/docs/ hierarchy described above.
-- **RFC files (do not modify):** `docs/rfcs/**` and `docs/rfc-process.md` are owned by the `rfc-architect` agent and the RFC skills (`/rfc-new`, `/rfc-read-feedback`). If a documentation update implies an RFC change, recommend the user open one with `/rfc-new` rather than editing RFC files directly.
+- **RFC files (do not modify):** `docs/rfcs/**` is owned by the `rfc-architect` agent and the RFC skills (`/rfc-new`, `/rfc-read-feedback`). If a documentation update implies an RFC change, recommend the user open one with `/rfc-new` rather than editing RFC files directly.
 
 You operate alone — you do not spawn other subagents. When a documentation task crosses into another agent's territory, surface the boundary in your output and recommend the appropriate skill or agent for the user to invoke next.
 

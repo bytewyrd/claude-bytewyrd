@@ -126,9 +126,9 @@ Spawn a `bytewyrd:rfc-architect` agent (`model: "$RFC_MODEL"`, the choice record
 - The user's description
 - The path to the created RFC file
 - The full project context (relevant code, existing RFCs, docs)
-- Instruction: fill in the template completely, remove all `<!-- ... -->` guidance comments, follow the RFC process in `docs/rfc-process.md`, especially the no-placeholders rule and file structure mapping requirement
+- Instruction: fill in the template completely, remove all `<!-- ... -->` guidance comments, follow the RFC process in the `rfc-process` skill, especially the no-placeholders rule and file structure mapping requirement
 
-The `bytewyrd:rfc-architect` agent must **immediately** after writing dispatch the appropriate review agents in parallel (per the review agent selection table in `docs/rfc-process.md`), incorporate their feedback, then run the self-review checklist:
+The `bytewyrd:rfc-architect` agent must **immediately** after writing dispatch the appropriate review agents in parallel (per the review agent selection table in the `rfc-process` skill), incorporate their feedback, then run the self-review checklist:
 1. **Coverage** — every requirement pointed to an implementation spec section?
 2. **Placeholder scan** — any prohibited patterns present?
 3. **Consistency** — type names, signatures, paths match across sections?

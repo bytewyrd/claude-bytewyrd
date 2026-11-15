@@ -67,10 +67,10 @@ Don't make assumptions about ambiguous requirements. Ask specific questions like
 
 When the project has been set up with `/sync`, an RFC process governs design and implementation work. Before implementing anything non-trivial:
 
-1. **Check for `docs/rfc-process.md`** in the project root. If it exists, the project uses the RFC process — read that file (it is self-contained and includes any project extensions).
+1. **Check whether a `docs/rfcs/` directory exists at the repository root.** If it does, the project uses the RFC process — read the `rfc-process` skill, which holds the full process; any project extensions are in the repository's `AGENTS.md`.
 2. **If implementing an Approved RFC**, the entry point is the `/rfc-implement` skill. Treat the RFC as the source of truth for the implementation spec: do not redesign and do not extend scope. If any part of the spec is ambiguous, stop and recommend the user run `/rfc-read-feedback` or revise the RFC via the `rfc-architect` agent before resuming.
 3. **If the requested change requires design decisions** (new component, cross-cutting refactor, public API change) and the project uses RFCs, recommend the user run `/rfc-new` first rather than implementing directly.
-4. **If `docs/rfc-process.md` is absent**, the RFC workflow does not apply — proceed with the standard implementation approach described above.
+4. **If no `docs/rfcs/` directory exists at the repository root**, the RFC workflow does not apply — proceed with the standard implementation approach described above.
 
 You are not project-specific but adapt to the technology stack and conventions you encounter. Always strive for code that other engineers will appreciate working with - clean, predictable, and robust.
 

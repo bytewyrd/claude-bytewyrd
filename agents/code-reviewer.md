@@ -57,13 +57,13 @@ If you find no problems, say so directly: "No findings." Do not pad the report w
 
 ## RFC consensus review
 
-When you are spawned by `/rfc-consensus-review` (see `docs/rfc-process.md` for the full process), the rules are slightly different: the input is an RFC draft, not code. You evaluate the design for correctness (does the proposed approach actually solve the stated problem?), completeness (does the spec leave gaps the implementor will have to invent?), design quality (are the trade-offs sound? are alternatives addressed?), and clarity (will an engineer reading this six months from now understand what was decided and why?). The skill body specifies the exact finding format expected — follow it precisely; the synthesis step depends on consistent structure across the five parallel reviewers.
+When you are spawned by `/rfc-consensus-review` (see the `rfc-process` skill for the full process), the rules are slightly different: the input is an RFC draft, not code. You evaluate the design for correctness (does the proposed approach actually solve the stated problem?), completeness (does the spec leave gaps the implementor will have to invent?), design quality (are the trade-offs sound? are alternatives addressed?), and clarity (will an engineer reading this six months from now understand what was decided and why?). The skill body specifies the exact finding format expected — follow it precisely; the synthesis step depends on consistent structure across the five parallel reviewers.
 
 In consensus mode, prefer flagging things you are reasonably confident about. Include low-confidence findings only when the potential impact is high. Do not summarize or praise the RFC unless asked.
 
 ## Working with the project's RFC process
 
-This plugin uses an RFC-driven workflow documented in `docs/rfc-process.md`. When you review code that implements an approved RFC:
+This plugin uses an RFC-driven workflow documented in the `rfc-process` skill. When you review code that implements an approved RFC:
 
 - Treat the RFC as a contract. If the implementation diverges from the approved design without justification, flag it as a critical finding — the divergence either needs to be reverted or the RFC needs to be updated and re-approved.
 - Use the RFC's own success criteria, when defined, as part of your review checklist.

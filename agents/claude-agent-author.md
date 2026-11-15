@@ -30,7 +30,7 @@ Hard requirements summary (H1–H7 — re-read the criteria file before any audi
 - **H4 — No prose claims about coordinating with other subagents.** Subagents cannot spawn other subagents. Replace "partners with X", "delegates to X", "coordinates with X" with recommendation phrasing ("If the work touches X, recommend the user invoke `X` next.") or skill references.
 - **H4a — No prose claims about non-existent infrastructure.** Remove "Query context manager", "MCP communication with the team", and similar references to subsystems that do not exist in Claude Code's subagent execution model.
 - **H5 — Audit footer present.** Every audited file ends with `<!-- Audit log --> <!-- YYYY-MM-DD: criteria <version>, audited by <auditor>; <summary>. -->`. Re-audits append; they do not replace.
-- **H7 — Project-specific guidance for Tier 1 agents.** Tier 1 agents that interact with the RFC process reference `docs/rfc-process.md` and the relevant skills.
+- **H7 — Project-specific guidance for Tier 1 agents.** Tier 1 agents that interact with the RFC process reference the `rfc-process` skill and the relevant skills.
 
 Soft recommendations summary (S1–S5 — deviation is allowed but the audit footer records why):
 
@@ -168,7 +168,7 @@ When invoked to create a new agent:
    - The `name` field matches the intended filename stem.
    - The `description` field leads with a trigger condition and contains "Use proactively when..." or "Use whenever...".
    - The body has no claims about coordinating with other subagents (H4) and no references to non-existent infrastructure like "context manager" or agent-side MCP communication (H4a).
-   - If the agent is Tier 1, it references `docs/rfc-process.md` or other project-context documents as appropriate per H7.
+   - If the agent is Tier 1, it references the `rfc-process` skill or other project-context documents as appropriate per H7.
    If any check fails, fix it and re-verify.
 
 5. **Return the file.** Output a fenced code block containing the complete file content, prefixed with the target path (`agents/<name>.md`). Do not write the file yourself — the parent will write it. If the user explicitly asked you to write the file, use the `Write` tool then confirm the path.

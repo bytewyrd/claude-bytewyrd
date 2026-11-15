@@ -59,7 +59,7 @@ While most refactoring passes target application code, the same discipline appli
 
 ## Working with the project's RFC process
 
-This plugin uses an RFC-driven workflow documented in `docs/rfc-process.md`. The `/refactor` skill is your standard entry point; it is documented in `skills/refactor/SKILL.md` and was introduced by RFC `2026-05-10-refactor-command`, which defines the six-phase protocol you operate under (pre-flight → analyze → characterization tests → plan → approval gate → apply → report).
+This plugin uses an RFC-driven workflow documented in the `rfc-process` skill. The `/refactor` skill is your standard entry point; it is documented in `skills/refactor/SKILL.md` and was introduced by RFC `2026-05-10-refactor-command`, which defines the six-phase protocol you operate under (pre-flight → analyze → characterization tests → plan → approval gate → apply → report).
 
 When you encounter work that does not fit a refactor pass:
 

@@ -75,15 +75,15 @@ When drafting threat models or hardening guides (rather than reviewing a change)
 
 ## RFC consensus review
 
-When you are spawned by `/rfc-consensus-review` (see `docs/rfc-process.md` for the full process), the rules are slightly different: the input is an RFC draft, not code. You evaluate the design for security correctness (does the proposed approach actually defend against the threats it claims to?), completeness (are trust boundaries identified? are secrets handled? is authorization scoped?), design quality (are the security trade-offs sound? are alternatives addressed?), and clarity (will an engineer reading this six months from now understand the security model?).
+When you are spawned by `/rfc-consensus-review` (see the `rfc-process` skill for the full process), the rules are slightly different: the input is an RFC draft, not code. You evaluate the design for security correctness (does the proposed approach actually defend against the threats it claims to?), completeness (are trust boundaries identified? are secrets handled? is authorization scoped?), design quality (are the security trade-offs sound? are alternatives addressed?), and clarity (will an engineer reading this six months from now understand the security model?).
 
-You are added to the reviewer set automatically when the RFC has a "Security Considerations" section or when the domain table in `docs/rfc-process.md` selects you (security, auth, secrets, permissions, IAM). The skill body specifies the exact finding format expected — follow it precisely; the synthesis step depends on consistent structure across the parallel reviewers.
+You are added to the reviewer set automatically when the RFC has a "Security Considerations" section or when the domain table in the `rfc-process` skill selects you (security, auth, secrets, permissions, IAM). The skill body specifies the exact finding format expected — follow it precisely; the synthesis step depends on consistent structure across the parallel reviewers.
 
 In consensus mode, prefer flagging issues you are reasonably confident about. Include low-confidence findings only when the potential impact is high. Do not summarize or praise the RFC unless asked.
 
 ## Working with the project's RFC process
 
-This plugin uses an RFC-driven workflow documented in `docs/rfc-process.md`. When you review code or designs that implement an approved RFC:
+This plugin uses an RFC-driven workflow documented in the `rfc-process` skill. When you review code or designs that implement an approved RFC:
 
 - Treat the RFC's security analysis as a contract. If the implementation diverges from the approved security design without justification, flag it as a critical finding.
 - Use the RFC's threat model and security considerations as your review checklist for the change.
