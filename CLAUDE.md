@@ -9,6 +9,8 @@ Opinionated Claude Code plugin for Bytewyrd projects — skills, agents, and RFC
 
 No language-specific toolchain detected. Add source code and re-run `/sync` to pick up language tooling.
 
+The plugin's commands and hooks need Python 3.11 or newer: `scripts/bw` takes `$BYTEWYRD_PYTHON` when it is 3.11 or newer, else the first of `python3.15` … `python3.11` on `PATH`, else `python3` when it is 3.11 or newer. Tests run with `tests/run.sh` (bats) and `python3 -m pytest -q tests/py tests/e2e` (pytest 9.2.0).
+
 ## File structure
 
 ```
