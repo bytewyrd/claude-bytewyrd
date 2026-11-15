@@ -25,8 +25,10 @@ sys.path[0:0] = [str(LIB), str(VENDOR)]
 
 import bw  # noqa: E402
 import bw_rfc_braindump_append  # noqa: E402
+import bw_rfc_braindump_list  # noqa: E402
 
 BRAINDUMP = Path("docs/rfc-braindump.md")
+IS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
 
 
 @pytest.fixture(autouse=True)
@@ -113,3 +115,50 @@ def test_append_reports_a_failed_write_as_a_json_error(call):
     shutil.rmtree("docs")
     message = "rfc-braindump-append: No such file or directory: docs/rfc-braindump.md"
     assert call(bw_rfc_braindump_append, "x") == (2, error(message), b"")
+
+
+# --- rfc-braindump-list ------------------------------------------------------
+
+NO_ENTRIES = b'{\n  "entries": []\n}\n'
+
+
+def bodies(out):
+    return [e["body"] for e in json.loads(out)["entries"]]
+
+
+def test_list_prints_the_bullets_as_jq_did(call):
+    BRAINDUMP.write_bytes(b"# RFC Braindump\n\nIdeas.\n\n* Alpha idea.\n* Beta idea.\n")
+    want = (
+        b'{\n  "entries": [\n    {\n      "n": 1,\n      "body": "Alpha idea."\n    },\n'
+        b'    {\n      "n": 2,\n      "body": "Beta idea."\n    }\n  ]\n}\n'
+    )
+    assert call(bw_rfc_braindump_list) == (0, want, b"")
+
+
+def test_list_without_a_regular_file_is_empty(call):
+    assert call(bw_rfc_braindump_list) == (0, NO_ENTRIES, b"")
+    BRAINDUMP.mkdir()
+    assert call(bw_rfc_braindump_list) == (0, NO_ENTRIES, b"")
+
+
+def test_list_reads_lines_as_the_bash_read_loop_did(call):
+    # Kept from the bash script: a last line without a newline is not read,
+    # NUL bytes are dropped, and only "* " starts a bullet.
+    BRAINDUMP.write_bytes(b"* a\n*\tb\n* c\r\n* d\0e\n\0* f\n*  g\n* \n**h\n * i\n* last")
+    code, out, err = call(bw_rfc_braindump_list)
+    assert (code, err) == (0, b"")
+    assert bodies(out) == ["a", "c\r", "de", "f", " g", ""]
+
+
+def test_list_replaces_what_isn_t_utf_8_with_u_fffd(call):
+    BRAINDUMP.write_bytes(b"* caf\xe9\n* x\xffy\n* caf\xc3\xa9\n")
+    code, out, _ = call(bw_rfc_braindump_list)
+    assert (code, bodies(out)) == (0, ["caf\ufffd", "x\ufffdy", "caf\xe9"])
+
+
+@pytest.mark.skipif(IS_ROOT, reason="root reads any file")
+def test_list_of_an_unreadable_file_is_empty_with_one_stderr_line(call):
+    BRAINDUMP.write_bytes(b"* a\n")
+    BRAINDUMP.chmod(0)
+    message = b"rfc-braindump-list: Permission denied: docs/rfc-braindump.md\n"
+    assert call(bw_rfc_braindump_list) == (0, NO_ENTRIES, message)
