@@ -18,6 +18,7 @@ import stat
 import subprocess
 import sys
 import time
+import warnings
 from pathlib import Path
 
 import pytest
@@ -1520,6 +1521,15 @@ def test_a_helper_with_stdout_closed_exits_2_without_a_traceback(tmp_path):
 )
 def test_split_lines_splits_as_awk_and_grep_read_lines(data, want):
     assert bw.split_lines(data) == want
+
+
+@pytest.mark.parametrize("path", sorted(LIB.glob("*.py")), ids=lambda p: p.name)
+def test_each_module_compiles_without_a_warning(path):
+    # Under the launcher's -B, every run compiles each module it imports, so
+    # a warning, such as one for an invalid escape, would reach stderr.
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        compile(path.read_text(encoding="utf-8"), str(path), "exec")
 
 
 # --- scaffold ----------------------------------------------------------------

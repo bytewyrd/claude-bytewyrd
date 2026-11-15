@@ -27,6 +27,7 @@ import bw  # noqa: E402
 import bw_rfc_braindump_append  # noqa: E402
 import bw_rfc_braindump_list  # noqa: E402
 import bw_rfc_braindump_remove  # noqa: E402
+import bw_rfc_feedback_list  # noqa: E402
 
 BRAINDUMP = Path("docs/rfc-braindump.md")
 IS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
@@ -228,3 +229,85 @@ def test_remove_reports_a_failed_write_as_a_json_error(call):
     message = "rfc-braindump-remove: Permission denied: docs/rfc-braindump.md"
     assert call(bw_rfc_braindump_remove, "a") == (2, error(message), b"")
     assert BRAINDUMP.read_bytes() == b"* a\n"
+
+
+# --- rfc-feedback-list -------------------------------------------------------
+
+NO_MARKERS = b'{\n  "markers": []\n}\n'
+
+
+def test_feedback_list_prints_the_markers_as_jq_did(call):
+    Path("f.md").write_bytes(b"## A\n\nFEEDBACK: First.\n- FEEDBACK: Second.\n")
+    want = (
+        b'{\n  "markers": [\n    {\n      "line": 3,\n      "text": "FEEDBACK: First."\n    },\n'
+        b'    {\n      "line": 4,\n      "text": "- FEEDBACK: Second."\n    }\n  ]\n}\n'
+    )
+    assert call(bw_rfc_feedback_list, "f.md") == (0, want, b"")
+
+
+@pytest.mark.parametrize(
+    "line, text",
+    [
+        (b"FEEDBACK: x", "FEEDBACK: x"),
+        (b"  - FEEDBACK: nested", "  - FEEDBACK: nested"),
+        (b"> FEEDBACK: quoted", "> FEEDBACK: quoted"),
+        (b"--*> FEEDBACK: any run of - * >", "--*> FEEDBACK: any run of - * >"),
+        (b" \x0b\x0c\r* FEEDBACK: ASCII whitespace", " \x0b\x0c\r* FEEDBACK: ASCII whitespace"),
+        (b"FEEDBACK:", "FEEDBACK:"),
+        (b"FEEDBACK: crlf\r", "FEEDBACK: crlf\r"),
+        # Kept from the bash script: the text ends at the first tab, so a
+        # tab-indented marker's text is "".
+        (b"FEEDBACK: a\tb", "FEEDBACK: a"),
+        (b"\tFEEDBACK: tab-indented", ""),
+    ],
+)
+def test_feedback_list_finds(call, line, text):
+    Path("f.md").write_bytes(b"x\n" + line + b"\ny\n")
+    code, out, err = call(bw_rfc_feedback_list, "f.md")
+    assert (code, json.loads(out), err) == (0, {"markers": [{"line": 2, "text": text}]}, b"")
+
+
+@pytest.mark.parametrize(
+    "line",
+    [b"> - FEEDBACK: no", b"* *FEEDBACK: no", b"xFEEDBACK: no", b"NOTE: FEEDBACK: no", b"feedback: no", b"\xc2\xa0FEEDBACK: no"],
+)
+def test_feedback_list_ignores(call, line):
+    Path("f.md").write_bytes(line + b"\n")
+    assert call(bw_rfc_feedback_list, "f.md") == (0, NO_MARKERS, b"")
+
+
+def test_feedback_list_counts_a_last_line_without_a_newline(call):
+    Path("f.md").write_bytes(b"a\nFEEDBACK: last")
+    code, out, _ = call(bw_rfc_feedback_list, "f.md")
+    assert json.loads(out) == {"markers": [{"line": 2, "text": "FEEDBACK: last"}]}
+
+
+def test_feedback_list_decodes_each_line_on_its_own(call):
+    # U+FFFD for what isn't UTF-8, and the next marker stays its own: in the
+    # C locale, jq -R -s let "caf\xe9\n" swallow the newline and merged them.
+    Path("f.md").write_bytes(b"FEEDBACK: caf\xe9\nFEEDBACK: ok\n")
+    code, out, _ = call(bw_rfc_feedback_list, "f.md")
+    want = {"markers": [{"line": 1, "text": "FEEDBACK: caf\ufffd"}, {"line": 2, "text": "FEEDBACK: ok"}]}
+    assert (code, json.loads(out)) == (0, want)
+
+
+@pytest.mark.parametrize(
+    "argv, message",
+    [
+        ([], "usage: rfc-feedback-list.sh <path-to-rfc.md>"),
+        ([""], "usage: rfc-feedback-list.sh <path-to-rfc.md>"),
+        (["missing.md"], "rfc-feedback-list: file not found: missing.md"),
+        (["docs"], "rfc-feedback-list: file not found: docs"),
+    ],
+)
+def test_feedback_list_errors(call, argv, message):
+    assert call(bw_rfc_feedback_list, *argv) == (2, error(message), b"")
+
+
+def test_feedback_list_names_a_path_that_isn_t_utf_8_with_u_fffd():
+    proc = bw_run("rfc-feedback-list", b"caf\xe9.md")
+    assert (proc.returncode, json.loads(proc.stdout), proc.stderr) == (
+        2,
+        {"error": "rfc-feedback-list: file not found: caf\ufffd.md"},
+        b"",
+    )
