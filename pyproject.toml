@@ -29,3 +29,21 @@ package = false
 # table of its own, so its pytest run reads this one too: keep it to this.
 [tool.pytest]
 pythonpath = ["scripts", "scripts/_vendor"]
+
+# ruff lints and formats the repository's own Python. It never touches
+# scripts/_vendor, PyYAML's sdist as it ships, or the bats submodules, which
+# are other projects' code: force-exclude keeps them out even when a path
+# under them is passed to ruff. src makes bytewyrd a first-party import.
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+src = ["scripts"]
+force-exclude = true
+extend-exclude = [
+  "scripts/_vendor",
+  "tests/bats-assert",
+  "tests/bats-core",
+  "tests/bats-file",
+  "tests/bats-support",
+  "*.md",  # D7 has ruff on the plugin's Python, not Markdown docs; this also skips sandbox placeholders like .claude/loop.md
+]

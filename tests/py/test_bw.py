@@ -64,7 +64,9 @@ def write(repo, rel, content=""):
 def commit(repo, add_all=True):
     if add_all:
         run_git(repo, "add", "-A")
-    run_git(repo, "-c", "user.name=ci", "-c", "user.email=ci@example.invalid", "commit", "-q", "--allow-empty", "-m", "x")
+    run_git(
+        repo, "-c", "user.name=ci", "-c", "user.email=ci@example.invalid", "commit", "-q", "--allow-empty", "-m", "x"
+    )
 
 
 def make_repo(path, files, attributes=None):
@@ -100,8 +102,8 @@ def creatable(tmp_path, name):
         return False
 
 
-PROJECT = "[project]\nname = \"x\"\nversion = \"0\"\n"
-CRATE = "[package]\nname = \"x\"\nversion = \"0.1.0\"\n"
+PROJECT = '[project]\nname = "x"\nversion = "0"\n'
+CRATE = '[package]\nname = "x"\nversion = "0.1.0"\n'
 
 # --- ids and platform checks -------------------------------------------------
 
@@ -194,7 +196,9 @@ def test_bootstrap_reports_a_missing_module_by_class(monkeypatch, capsys):
     assert run_main(["__main__.py", "zz-absent-a"], monkeypatch) == 1
     assert capsys.readouterr().err == "bytewyrd: zz-absent-a is not available in this copy of the plugin\n"
     assert run_main(["__main__.py", "zz-absent-b"], monkeypatch) == 2
-    assert json.loads(capsys.readouterr().err) == {"error": "bytewyrd: zz-absent-b is not available in this copy of the plugin"}
+    assert json.loads(capsys.readouterr().err) == {
+        "error": "bytewyrd: zz-absent-b is not available in this copy of the plugin"
+    }
 
 
 def test_bootstrap_puts_scripts_and_vendor_first_and_returns_the_command_exit(tmp_path, monkeypatch):
@@ -317,7 +321,16 @@ ATTR_NAMES = [
     "esc\x1bx",
 ]
 # Paths that an unescaped or unanchored pattern for one of ATTR_NAMES would also match.
-ATTR_DECOYS = ["go.mod", "svc/go.mod", "a1/go.mod", "stXr/go.mod", "qyx/go.mod", "x/go.mod", "bad/go.mod", "back/go.mod"]
+ATTR_DECOYS = [
+    "go.mod",
+    "svc/go.mod",
+    "a1/go.mod",
+    "stXr/go.mod",
+    "qyx/go.mod",
+    "x/go.mod",
+    "bad/go.mod",
+    "back/go.mod",
+]
 
 
 def test_each_attr_line_opts_out_exactly_its_manifest(tmp_path):
@@ -437,7 +450,11 @@ def test_detection_validates_directories_and_job_ids(tmp_path):
         long_ok + "/go.mod": "",
         long_bad + "/go.mod": "",
     }
-    odd = [n for n in ("w\n::warning::x/go.mod", "\x1b[2J/go.mod", "web\n/package.json") if creatable(tmp_path, n.split("/")[0])]
+    odd = [
+        n
+        for n in ("w\n::warning::x/go.mod", "\x1b[2J/go.mod", "web\n/package.json")
+        if creatable(tmp_path, n.split("/")[0])
+    ]
     files.update({n: "{}" if n.endswith(".json") else "" for n in odd})
     repo = make_repo(tmp_path / "r", files)
     comps, skipped = detect.detect(str(repo))
@@ -470,7 +487,11 @@ def test_detection_reads_attribute_values_macros_and_only_the_index(tmp_path):
     repo = make_repo(tmp_path / "r", files, attributes=attributes)
     comps, skipped = detect.detect(str(repo))
     assert [c.job_id for c in comps] == ["go-plain", "go-s"]
-    assert skipped == [("q/go.mod", detect.REASON_OPTED_OUT), ("u/go.mod", detect.REASON_OPTED_OUT), ("v/go.mod", detect.REASON_VALUE)]
+    assert skipped == [
+        ("q/go.mod", detect.REASON_OPTED_OUT),
+        ("u/go.mod", detect.REASON_OPTED_OUT),
+        ("v/go.mod", detect.REASON_VALUE),
+    ]
     # An unstaged .gitattributes edit changes nothing: check-attr reads the index.
     write(repo, ".gitattributes", "/plain/go.mod -bytewyrd-ci\n")
     assert detect.detect(str(repo)) == (comps, skipped)
@@ -496,7 +517,9 @@ def test_detection_python_needs_a_counted_pyproject(tmp_path):
 
 
 def test_detection_ruby_needs_a_tracked_rakefile(tmp_path):
-    files = dict.fromkeys(["Gemfile", "a/Gemfile", "a/Rakefile", "b/Gemfile", "b/rakefile.rb", "c/Gemfile", "c/RAKEFILE"], "")
+    files = dict.fromkeys(
+        ["Gemfile", "a/Gemfile", "a/Rakefile", "b/Gemfile", "b/rakefile.rb", "c/Gemfile", "c/RAKEFILE"], ""
+    )
     comps, skipped = detect.detect(str(make_repo(tmp_path / "r", files)))
     assert [c.job_id for c in comps] == ["ruby-a", "ruby-b"]
     assert skipped == [("Gemfile", detect.REASON_RAKEFILE), ("c/Gemfile", detect.REASON_RAKEFILE)]
@@ -809,7 +832,9 @@ def test_render_repeats_the_job_block_per_component():
 
 
 def test_render_gathers_the_job_lines_where_the_first_stood():
-    assert seed.render("jobs:\n@@job@@ - @@job_id@@\nmiddle\n@@job@@   end\n", [GO], "p") == "jobs:\n- go\n  end\nmiddle\n"
+    assert (
+        seed.render("jobs:\n@@job@@ - @@job_id@@\nmiddle\n@@job@@   end\n", [GO], "p") == "jobs:\n- go\n  end\nmiddle\n"
+    )
 
 
 def test_render_keeps_tagged_lines_for_present_languages():
@@ -845,7 +870,9 @@ def test_render_strips_crs():
     assert seed.render("a\r\n@@go@@ b\r\n@@js@@ c\r\n", [GO], "p") == "a\nb\n"
 
 
-@pytest.mark.parametrize("tpl", ["@@unknown@@\n", "@@job_id@@ outside the block\n", "@@java@@ - Java\n", "a @@languages\n"])
+@pytest.mark.parametrize(
+    "tpl", ["@@unknown@@\n", "@@job_id@@ outside the block\n", "@@java@@ - Java\n", "a @@languages\n"]
+)
 def test_render_raises_when_a_placeholder_is_left(tpl):
     with pytest.raises(cli.BwError):
         seed.render(tpl, [GO], "p")
@@ -983,7 +1010,9 @@ def test_project_name(tmp_path, monkeypatch):
     assert git.project_name(str(repo)) == "we&ird\\name"
     # The parent of the common git dir names the project, wherever ROOT is.
     (tmp_path / "proj").mkdir()
-    run_git(tmp_path, "init", "-q", "--separate-git-dir", str(tmp_path / "proj" / "store.git"), str(tmp_path / "checkout"))
+    run_git(
+        tmp_path, "init", "-q", "--separate-git-dir", str(tmp_path / "proj" / "store.git"), str(tmp_path / "checkout")
+    )
     assert git.project_name(str(tmp_path / "checkout")) == "proj"
     (tmp_path / "plain").mkdir()
     assert git.project_name(str(tmp_path / "plain")) == "plain"
@@ -1090,7 +1119,9 @@ def test_skip_fix_lines():
     assert detect.skip_fix(path, detect.reason_taken("go-a-b", "a.b")) == "rename the directory" + mark
     assert detect.skip_fix(path, detect.REASON_RAKEFILE) == "add a Rakefile whose default task runs the tests" + mark
     assert detect.skip_fix(path, detect.REASON_PYPROJECT) == "add a pyproject.toml with a [project] table" + mark
-    assert detect.skip_fix(path, detect.REASON_VALUE) == "set bytewyrd-ci or -bytewyrd-ci for this path in .gitattributes"
+    assert (
+        detect.skip_fix(path, detect.REASON_VALUE) == "set bytewyrd-ci or -bytewyrd-ci for this path in .gitattributes"
+    )
     assert detect.skip_fix(path, detect.REASON_OPTED_OUT) is None
 
 
@@ -1392,7 +1423,9 @@ def test_jq_dumps_matches_jq_itself(tmp_path):
     s = "".join(map(chr, range(0, 0xD800))) + "\ue000\ufffd\U0001f600\U0010ffff"
     (tmp_path / "s.txt").write_bytes(s.encode("utf-8"))
     program = "{s: $s, n: 12, t: true, f: false, l: [], o: {}, a: [{k: $s}, 1]}"
-    want = subprocess.run([jq, "-n", "--rawfile", "s", str(tmp_path / "s.txt"), program], capture_output=True, check=True)
+    want = subprocess.run(
+        [jq, "-n", "--rawfile", "s", str(tmp_path / "s.txt"), program], capture_output=True, check=True
+    )
     value = {"s": s, "n": 12, "t": True, "f": False, "l": [], "o": {}, "a": [{"k": s}, 1]}
     assert jsonout.jq_dumps(value).encode("utf-8") == want.stdout
 
@@ -1429,7 +1462,10 @@ def test_jq_string_returns_valid_text_as_it_is():
 
 def test_jq_dumps_cleans_keys_and_nested_strings():
     value = {escaped(b"k\xe9"): [escaped(b"v\xe9"), {"x": "\ud800"}], "n": None}
-    assert jsonout.jq_dumps(value) == '{\n  "k\ufffd": [\n    "v\ufffd",\n    {\n      "x": "\ufffd"\n    }\n  ],\n  "n": null\n}\n'
+    assert (
+        jsonout.jq_dumps(value)
+        == '{\n  "k\ufffd": [\n    "v\ufffd",\n    {\n      "x": "\ufffd"\n    }\n  ],\n  "n": null\n}\n'
+    )
 
 
 def test_emit_prints_on_stdout(capsysbinary):
@@ -1542,7 +1578,9 @@ def test_pwd_is_pwd_when_it_names_the_current_directory(tmp_path, monkeypatch):
     assert fs.pwd() == str(link) != os.getcwd()
 
 
-@pytest.mark.parametrize("value", [None, "", "link", "{link}/", "{link}/.", "{tmp}/link/../link", "{tmp}//link", "{other}", "{tmp}/gone"])
+@pytest.mark.parametrize(
+    "value", [None, "", "link", "{link}/", "{link}/.", "{tmp}/link/../link", "{tmp}//link", "{other}", "{tmp}/gone"]
+)
 def test_pwd_is_getcwd_otherwise(tmp_path, monkeypatch, value):
     (tmp_path / "link").symlink_to(tmp_path)
     (tmp_path / "other").mkdir()
@@ -2116,7 +2154,9 @@ def test_drift_lists_every_0_2_artifact(tmp_path, monkeypatch, capsys):
 @pytest.mark.parametrize("marker", drift.SETTINGS_MARKERS)
 def test_drift_settings_hooks_markers(tmp_path, monkeypatch, capsys, marker):
     repo = seeded(tmp_path / "r", monkeypatch, capsys, {".claude/settings.json": json.dumps({"x": "a " + marker})})
-    assert codes(run_drift(repo, monkeypatch, capsys)[1]) == [("drift", ".claude/settings.json", "legacy-settings-hooks")]
+    assert codes(run_drift(repo, monkeypatch, capsys)[1]) == [
+        ("drift", ".claude/settings.json", "legacy-settings-hooks")
+    ]
 
 
 def test_drift_ignores_a_settings_json_without_0_2_hooks(tmp_path, monkeypatch, capsys):
@@ -2212,8 +2252,9 @@ def test_drift_pin_changed_one_finding_per_distinct_value_in_file_order(tmp_path
     good = ci.read_text()
     evil = "evil/x/.github/workflows/lang-ci-go.yml@main"
     ci.write_text(
-        good.replace("lang-ci-go.yml@" + pin, "lang-ci-go.yml@main  # tag")
-        .replace("lang-ci-ruby.yml@" + pin, "lang-ci-ruby.yml@main")
+        good.replace("lang-ci-go.yml@" + pin, "lang-ci-go.yml@main  # tag").replace(
+            "lang-ci-ruby.yml@" + pin, "lang-ci-ruby.yml@main"
+        )
         + "  extra:\n    uses: '%s'\n  more:\n    uses: %s\n" % (evil, evil)
         + "  mine:\n    uses: ./.github/workflows/mine.yml\n"
     )

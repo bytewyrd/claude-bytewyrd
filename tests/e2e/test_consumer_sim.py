@@ -147,9 +147,7 @@ class Sim:
 
     def bw(self, cwd, *args, plugin=None, env=None):
         launcher = os.path.join(plugin or self.plugin, "scripts", "bw")
-        proc = subprocess.run(
-            ["sh", launcher, *args], cwd=cwd, env=env or self.env, capture_output=True, timeout=120
-        )
+        proc = subprocess.run(["sh", launcher, *args], cwd=cwd, env=env or self.env, capture_output=True, timeout=120)
         decode = lambda b: b.decode("utf-8", "surrogateescape")  # noqa: E731
         return Result(proc.returncode, decode(proc.stdout), decode(proc.stderr), proc.stdout, proc.stderr)
 
@@ -172,7 +170,18 @@ class Sim:
 
     def commit(self, repo):
         self.git(repo, "add", "-A")
-        self.git(repo, "-c", "user.name=ci", "-c", "user.email=ci@example.invalid", "commit", "-q", "--allow-empty", "-m", "x")
+        self.git(
+            repo,
+            "-c",
+            "user.name=ci",
+            "-c",
+            "user.email=ci@example.invalid",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "x",
+        )
 
     def repo(self, name, files=None, commit=True):
         """A new repository at TMP/NAME holding FILES ({path: text or bytes}),
@@ -387,7 +396,10 @@ def test_s13_existing_targets_are_skipped_and_never_followed(sim):
             {"docs/pull_request_template.md": "x\n"},
             "skip  .github/PULL_REQUEST_TEMPLATE.md  (pull request template found: docs/pull_request_template.md)",
         ),
-        "workflow": ({".github/workflows/other.yml": "x\n"}, "skip  .github/workflows/ci.yml  (another workflow exists)"),
+        "workflow": (
+            {".github/workflows/other.yml": "x\n"},
+            "skip  .github/workflows/ci.yml  (another workflow exists)",
+        ),
     }
     for name, (files, skip) in cases.items():
         repo = sim.repo(name, files, commit=False)

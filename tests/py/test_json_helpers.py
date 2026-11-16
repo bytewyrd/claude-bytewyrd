@@ -275,7 +275,14 @@ def test_feedback_list_finds(call, line, text):
 
 @pytest.mark.parametrize(
     "line",
-    [b"> - FEEDBACK: no", b"* *FEEDBACK: no", b"xFEEDBACK: no", b"NOTE: FEEDBACK: no", b"feedback: no", b"\xc2\xa0FEEDBACK: no"],
+    [
+        b"> - FEEDBACK: no",
+        b"* *FEEDBACK: no",
+        b"xFEEDBACK: no",
+        b"NOTE: FEEDBACK: no",
+        b"feedback: no",
+        b"\xc2\xa0FEEDBACK: no",
+    ],
 )
 def test_feedback_list_ignores(call, line):
     Path("f.md").write_bytes(line + b"\n")
@@ -323,7 +330,9 @@ def test_feedback_list_names_a_path_that_isn_t_utf_8_with_u_fffd():
 
 
 def test_frontmatter_prints_the_six_fields_as_jq_did(call):
-    Path("x.md").write_text('---\nrfc: "a"\ntitle: "T \\"q\\""\nauthor: A\nstatus: Draft\ncreated: 2026-01-01\ndrop_reason: ~\n---\n')
+    Path("x.md").write_text(
+        '---\nrfc: "a"\ntitle: "T \\"q\\""\nauthor: A\nstatus: Draft\ncreated: 2026-01-01\ndrop_reason: ~\n---\n'
+    )
     want = (
         b'{\n  "rfc": "a",\n  "title": "T \\"q\\"",\n  "author": "A",\n  "status": "Draft",\n'
         b'  "created": "2026-01-01",\n  "drop_reason": ""\n}\n'
@@ -524,7 +533,9 @@ def test_set_status_rewrites_lines_as_the_bash_script_s_awk_did(call):
     # Kept from the bash script: every "status:" line in the block is
     # rewritten, indented or not, the reason goes before the closing "---",
     # later "---" lines are left alone, and every line ends with a newline.
-    Path(RFC).write_bytes(b'---\nrfc: x\nstatus: "Draft" # c\nmeta:\n  status: indented\n---\nbody\n---\nstatus: body\n---')
+    Path(RFC).write_bytes(
+        b'---\nrfc: x\nstatus: "Draft" # c\nmeta:\n  status: indented\n---\nbody\n---\nstatus: body\n---'
+    )
     assert call(rfc_set_status, RFC, "Dropped", 'say "hi" C:\\temp\\') == (0, status_set("Draft", "Dropped"), b"")
     assert Path(RFC).read_bytes() == (
         b'---\nrfc: x\nstatus: "Dropped"\nmeta:\nstatus: "Dropped"\ndrop_reason: "say \\"hi\\" C:\\\\temp\\\\"\n'
@@ -535,8 +546,8 @@ def test_set_status_rewrites_lines_as_the_bash_script_s_awk_did(call):
 @pytest.mark.parametrize(
     "lines, status, want",
     [
-        ("status: Dropped\ndrop_reason: \"old\"\n", "Draft", 'status: "Draft"\ndrop_reason: ~\n'),
-        ("status: Dropped\ndrop_reason: \"old\"\n", "Dropped", 'status: "Dropped"\ndrop_reason: "new"\n'),
+        ('status: Dropped\ndrop_reason: "old"\n', "Draft", 'status: "Draft"\ndrop_reason: ~\n'),
+        ('status: Dropped\ndrop_reason: "old"\n', "Dropped", 'status: "Dropped"\ndrop_reason: "new"\n'),
         ("status: Draft\ndrop_reason:\n", "Done", 'status: "Done"\ndrop_reason: ~\n'),
     ],
 )
@@ -547,7 +558,9 @@ def test_set_status_rewrites_drop_reason_lines(call, lines, status, want):
     assert Path(RFC).read_text() == "---\n%s---\n" % want
 
 
-@pytest.mark.parametrize("line, old", [('status: "Draft" # still a draft', "Draft"), ("status: 'Approved'", "Approved")])
+@pytest.mark.parametrize(
+    "line, old", [('status: "Draft" # still a draft', "Draft"), ("status: 'Approved'", "Approved")]
+)
 def test_set_status_reads_the_old_status_with_load_frontmatter(call, line, old):
     # The bash script's awk dropped only the double quotes: "Draft # still a
     # draft" and "'Approved'".
@@ -558,7 +571,13 @@ def test_set_status_reads_the_old_status_with_load_frontmatter(call, line, old):
 
 @pytest.mark.parametrize(
     "text",
-    ["---\nstatus: ~\n---\n", "---\nrfc: a\n---\n", '---\n"status": Draft\n---\n', "---\nstatus : Draft\n---\n", "---\n{status: Draft}\n---\n"],
+    [
+        "---\nstatus: ~\n---\n",
+        "---\nrfc: a\n---\n",
+        '---\n"status": Draft\n---\n',
+        "---\nstatus : Draft\n---\n",
+        "---\n{status: Draft}\n---\n",
+    ],
 )
 def test_set_status_without_a_status_or_a_line_to_rewrite_leaves_the_file_alone(call, text):
     Path(RFC).write_text(text)
@@ -584,7 +603,10 @@ def test_set_status_prints_load_frontmatter_s_error(call):
         (["missing.md", "Dropped", ""], "rfc-set-status: drop_reason is required when status=Dropped"),
         (["missing.md", "Done", "why"], "rfc-set-status: drop_reason is only allowed when status=Dropped"),
         (["missing.md", "Dropped", "a\nb"], "rfc-set-status: file not found: missing.md"),
-        (["docs/rfcs/none.md", "Dropped", "a\nb"], "rfc-set-status: docs/rfcs/none.md has no 'status:' line in its frontmatter"),
+        (
+            ["docs/rfcs/none.md", "Dropped", "a\nb"],
+            "rfc-set-status: docs/rfcs/none.md has no 'status:' line in its frontmatter",
+        ),
         ([RFC, "Dropped", "a\nb"], "rfc-set-status: drop_reason must not contain newlines"),
     ],
 )
@@ -646,7 +668,12 @@ def test_summary_of_no_rfcs_is_empty(call):
 
 
 def test_summary_sorts_by_created_then_rfc_and_keeps_file_order_for_ties(call):
-    for name, rfc, created in (("a.md", "same", "2026-01-01"), ("b.md", "same", "2026-01-01"), ("c.md", "B", "2026-01-01"), ("d.md", "a", "2025-12-31")):
+    for name, rfc, created in (
+        ("a.md", "same", "2026-01-01"),
+        ("b.md", "same", "2026-01-01"),
+        ("c.md", "B", "2026-01-01"),
+        ("d.md", "a", "2025-12-31"),
+    ):
         write_rfc(name, "rfc: %s\nstatus: Draft\ncreated: %s\ntitle: %s\n" % (rfc, created, name))
     rows = json.loads(call(rfc_summary)[1])["rfcs"]
     assert [r["title"] for r in rows] == ["d.md", "c.md", "a.md", "b.md"]
@@ -654,7 +681,9 @@ def test_summary_sorts_by_created_then_rfc_and_keeps_file_order_for_ties(call):
 
 def test_summary_takes_each_field_as_jq_r_gave_it(call):
     # Kept: $(jq -r ...) dropped NUL bytes and trailing newlines.
-    write_rfc("a.md", 'rfc: "a\\n\\n"\nstatus: "Done\\n"\ntitle: |\n  Block\ncreated: "2026\\x00-01"\nauthor: "x\\ny"\n')
+    write_rfc(
+        "a.md", 'rfc: "a\\n\\n"\nstatus: "Done\\n"\ntitle: |\n  Block\ncreated: "2026\\x00-01"\nauthor: "x\\ny"\n'
+    )
     rows = json.loads(call(rfc_summary)[1])["rfcs"]
     assert rows == [{"status": "Done", "created": "2026-01", "rfc": "a", "title": "Block", "author": "x\ny"}]
 

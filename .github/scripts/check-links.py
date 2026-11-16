@@ -58,7 +58,12 @@ def strip_non_prose(text):
             out.append("")
             continue
         if fence is not None:
-            if match and match.group(1)[0] == fence[0] and len(match.group(1)) >= len(fence) and not line.strip()[len(match.group(1)):].strip():
+            if (
+                match
+                and match.group(1)[0] == fence[0]
+                and len(match.group(1)) >= len(fence)
+                and not line.strip()[len(match.group(1)) :].strip()
+            ):
                 fence = None
             out.append("")
             continue

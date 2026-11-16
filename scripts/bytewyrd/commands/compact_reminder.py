@@ -34,7 +34,9 @@ def due():
 
 def main(argv):
     try:
-        cli.Parser(prog="bw compact-reminder", description="Print the /docs-review reminder when it is due.").parse_args(argv)
+        cli.Parser(
+            prog="bw compact-reminder", description="Print the /docs-review reminder when it is due."
+        ).parse_args(argv)
         if due():
             sys.stdout.write(TEXT + "\n")
     except BaseException:

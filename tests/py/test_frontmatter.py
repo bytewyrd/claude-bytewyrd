@@ -64,7 +64,14 @@ def test_the_six_fields_in_rfc_frontmatter_s_order():
     block = 'rfc: "a"\ntitle: "T"\nauthor: "A"\nstatus: "Draft"\ncreated: "2026-01-01"\ndrop_reason: ~\n'
     got = load(block)
     assert list(got) == list(FIELDS) == list(frontmatter.FRONTMATTER_FIELDS)
-    assert got == {"rfc": "a", "title": "T", "author": "A", "status": "Draft", "created": "2026-01-01", "drop_reason": ""}
+    assert got == {
+        "rfc": "a",
+        "title": "T",
+        "author": "A",
+        "status": "Draft",
+        "created": "2026-01-01",
+        "drop_reason": "",
+    }
 
 
 def test_a_missing_field_is_empty_and_other_keys_may_hold_anything():
@@ -144,7 +151,10 @@ def test_a_list_or_mapping_is_an_error(block, kind):
 
 
 def test_invalid_yaml_such_as_an_unquoted_colon_is_an_error():
-    assert error('rfc: "a"\ntitle: RFC: x\n') == "x.md:3: frontmatter is not valid YAML (mapping values are not allowed here)"
+    assert (
+        error('rfc: "a"\ntitle: RFC: x\n')
+        == "x.md:3: frontmatter is not valid YAML (mapping values are not allowed here)"
+    )
 
 
 def test_an_alias_is_an_error_and_an_anchor_alone_is_not():

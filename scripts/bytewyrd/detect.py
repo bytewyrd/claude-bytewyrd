@@ -192,9 +192,7 @@ def _in_default_scope(directory):
     if directory == ".":
         return True
     segments = directory.split("/")
-    return len(segments) <= 2 and not any(
-        s.startswith((".", "_")) or s.lower() in _OUT_OF_SCOPE for s in segments
-    )
+    return len(segments) <= 2 and not any(s.startswith((".", "_")) or s.lower() in _OUT_OF_SCOPE for s in segments)
 
 
 def _attributes(root, paths):
@@ -254,7 +252,8 @@ def _covered(root, language, manifest, nested, by_path):
     return {
         d
         for d in nested
-        if not any(_under(d, e) for e in exclude) and _cargo_workspace(root, by_path.get(_join(d, "Cargo.toml"))) is None
+        if not any(_under(d, e) for e in exclude)
+        and _cargo_workspace(root, by_path.get(_join(d, "Cargo.toml"))) is None
     }
 
 
