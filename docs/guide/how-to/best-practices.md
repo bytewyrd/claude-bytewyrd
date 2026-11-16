@@ -74,21 +74,23 @@ After you approve candidates for the project file, a single checkbox prompt appe
 
 Checked entries are written to both `docs/BEST_PRACTICES.md` and `~/.claude/BEST_PRACTICES.md`. Project-specific entries are written only to `docs/BEST_PRACTICES.md`.
 
-### The compaction gate
+### Older installs: the compaction gate
 
-The plugin's `PreCompact` hook blocks context compaction until `/best-practices-extract` has run in the current session. When the first compaction trigger fires, you will see a reminder to run the skill. After the skill runs (and writes its sentinel file at `.bytewyrd/precompact-extraction-done`), subsequent compactions proceed normally.
+The plugin ships no compaction gate, so nothing blocks context compaction until extraction has run. A repository set up with 0.2.x may still have a `PreCompact` hook in its `.claude/settings.json` that blocks the first compaction of a session until `/best-practices-extract` has run. For such a repository, the skill writes `.bytewyrd/precompact-extraction-done` when it finishes, and that releases the hook.
 
-To bypass the gate without extracting (for sessions with nothing worth capturing):
+To compact without extracting (for sessions with nothing worth capturing), create the file yourself:
 
 ```bash
 touch .bytewyrd/precompact-extraction-done
 ```
 
+`/bytewyrd:drift` lists the hook as `legacy-settings-hooks`. Its fix is to delete the 0.2.x hook entries from `.claude/settings.json`, which ends the gate.
+
 ---
 
 ## How learnings propagate to future projects
 
-Entries in `~/.claude/BEST_PRACTICES.md` are the source for the plugin's sync content. When a plugin maintainer runs `/best-practices-sync` (a plugin-local maintenance skill), vetted global entries are promoted into `skills/sync/SKILL.md`. The next time any project runs `/sync`, that project's `docs/BEST_PRACTICES.md` is seeded with those entries.
+Entries in `~/.claude/BEST_PRACTICES.md` are the source for the plugin's `best-practices` skill. When a plugin maintainer runs `/best-practices-sync` (a plugin-local maintenance skill), vetted global entries are promoted into `skills/best-practices/references/<stack>.md`. Claude reads that skill from the plugin at runtime, so every project gets the promoted entries when the plugin updates. Nothing is copied into your project.
 
 The flow:
 
@@ -97,9 +99,8 @@ Session learning
   → /best-practices-extract (or /best-practices-record)
   → ~/.claude/BEST_PRACTICES.md (global pool)
   → /best-practices-sync (plugin maintenance)
-  → skills/sync/SKILL.md (sync content)
-  → /sync in future projects
-  → docs/BEST_PRACTICES.md in those projects
+  → skills/best-practices/references/<stack>.md (the best-practices skill)
+  → read by Claude at runtime in every project
 ```
 
 ---
