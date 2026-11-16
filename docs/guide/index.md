@@ -19,6 +19,7 @@ Step-by-step lessons that take you from zero to a working result. Start here if 
 Task-oriented guides for things you already know you want to do.
 
 - [Install the plugin](installation.md) — install at user or project scope.
+- [Seed and check a repository](how-to/scaffold-and-drift.md) — dry-run and apply `/bytewyrd:scaffold`, read the `/bytewyrd:drift` report, and move a repository off 0.2.x.
 - [Use the RFC process](how-to/rfc-process.md) — when to write an RFC, what makes a good one, and how the review cycle works.
 - [RFC workflow command reference](how-to/rfc-workflow.md) — syntax and behavior for every `/rfc-*` skill.
 - [Capture and propagate best practices](how-to/best-practices.md) — `/best-practices-record` vs `/best-practices-extract`, the two-destination flow, and how learnings reach every project.

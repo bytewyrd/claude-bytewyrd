@@ -71,7 +71,7 @@ When the list looks right, write the files:
 - `.github/PULL_REQUEST_TEMPLATE.md` — a pull request template.
 - `.github/workflows/ci.yml` — one job per language it found, each calling the plugin's reusable workflow at a pinned commit, or a no-op job when it found none.
 
-Each file starts with a stamp line that names its template and the plugin commit. Review and commit them: from then on they belong to your project, and the plugin never edits them. After a plugin update, `/bytewyrd:drift` shows which of them differ from the new templates. It only reports; you decide what to change.
+Each file starts with a stamp line that names its template and the plugin commit. Review and commit them: from then on they belong to your project, and the plugin never edits them. After a plugin update, `/bytewyrd:drift` shows which of them differ from the new templates. It only reports; you decide what to change. See [Seed and check a repository with scaffold and drift](../how-to/scaffold-and-drift.md) for the details.
 
 Nothing else is seeded. The RFC process and the best-practices library stay in the plugin as the `rfc-process` and `best-practices` skills, which Claude reads at runtime, so your project keeps no copy of them.
 
