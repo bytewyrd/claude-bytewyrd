@@ -84,10 +84,6 @@ Use the my-agent subagent to <task>.
 
 Watch the spawn: the main agent should describe handing off to `my-agent` with the expected prompt and model. The agent's response should match its system prompt's tone and scope.
 
-## Update the agent delegation table
-
-In `CLAUDE.md`, add a row to the **Agent delegation** table mapping the agent's role to its name. This is what future sessions read to know the agent exists.
-
 ## Update the README agents table
 
 Add a row in the **Agents** table in `README.md`. The table is the consumer's entry point for discovering the catalog. If your addition pushes the count past the rounded marketing number, update the count in the surrounding prose too.
