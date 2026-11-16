@@ -40,7 +40,7 @@ Two skills hold reference content in a `references/` directory, read at runtime 
 
 **Purpose:** Skills that are only meaningful inside this plugin's own checkout — maintenance and meta-operations that consumers would never need.
 **Location:** `.claude/skills/`
-**Key interfaces:** Same `SKILL.md` discovery as `skills/`, but these are not exported in `plugin.json` and are therefore invisible to consumers.
+**Key interfaces:** The same `SKILL.md` format as `skills/`. The plugin system loads skills only from the plugin's `skills/` directory, so consumers never see these; Claude Code loads them as project skills when it runs in this repository.
 
 Current plugin-local skills:
 - `best-practices-sync` — promotes entries from the global `~/.claude/BEST_PRACTICES.md` into `skills/best-practices/references/<stack>.md`
@@ -139,7 +139,7 @@ Agents → spawned as subtask processes. Receive a goal and a tool allow-list fr
 |----------|--------|-----------|
 | Agent source | Permanently local copies in `agents/`, originally from awesome-claude-code-subagents (MIT) | Consumers get agents without a network call at install time; local ownership prevents silent upstream clobber of customizations; upstream improvements pulled manually when desired |
 | Skill naming | Noun-first (`rfc-new`, `best-practices-extract`) | Groups related skills alphabetically; matches `rfc-*` family already established |
-| Plugin-local vs exported skills | Plugin-local in `.claude/skills/`, exported in `skills/` | Keeps maintenance tools out of consumer installs; plugin.json is the explicit export declaration |
+| Plugin-local vs exported skills | Plugin-local in `.claude/skills/`, exported in `skills/` | Keeps maintenance tools out of consumer installs: the plugin system loads skills only from `skills/` |
 | Best-practices flow | Record → global file → manual sync into the `best-practices` skill's references | Puts human review between personal capture and distribution; prevents one user's project-specific notes from polluting the practices that every project reads |
 | RFC process distribution | The `rfc-process` skill, read from the plugin at runtime; a `docs/rfcs/` directory opts a repository in | No install or update step: repositories keep no copy, since per-repository copies drift from the plugin's (RFC `2026-11-09-scaffold-and-drift`, Options) |
 | Script language | Python 3.11 or newer with the standard library and a vendored pure-Python PyYAML 6.0.3, behind the POSIX-sh launcher `scripts/bw`; nothing installs at run time | The 0.2.x sync scripts already needed Python 3.11 for `tomllib`, while the bash scripts needed bash 4, jq and GNU/BSD workarounds, and Claude Code installs only npm and Bun packages for a plugin (RFC `2026-11-09-scaffold-and-drift`, Language policy) |
