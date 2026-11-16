@@ -8,7 +8,9 @@
 # it reports 3.11 or newer, else the first of python3.15 ... python3.11 on PATH
 # (trusted by name), else python3 when it reports 3.11 or newer. With none of
 # them, class A exits 1 and class B exits 2 with a JSON error, both on stderr,
-# except that the PreCompact sentinel is still written in plain sh.
+# except that the PreCompact sentinel is still written in plain sh. Otherwise
+# it runs the bootstrap, scripts/bytewyrd/__main__.py, which dispatches NAME
+# to scripts/bytewyrd/commands/<name>.py.
 #
 # Contract: docs/rfcs/2026-11-09-scaffold-and-drift.md, Appendix B2.
 
@@ -79,4 +81,4 @@ fi
 
 # -I ignores PYTHON* variables and the user site directory, -S skips site, so
 # a venv's .pth files never run, and -B writes no bytecode into the plugin.
-exec "$py" -I -S -B "$dir/_lib/bw_main.py" "$name" "$@"
+exec "$py" -I -S -B "$dir/bytewyrd/__main__.py" "$name" "$@"

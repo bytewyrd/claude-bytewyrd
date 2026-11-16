@@ -17,7 +17,7 @@ import re
 import stat
 import sys
 
-from bw import Parser, quote
+from bytewyrd import cli
 
 STATE_DIR = ".bytewyrd"
 NAME_RE = re.compile(r"[a-z0-9][a-z0-9.-]*")
@@ -99,12 +99,12 @@ def _remove(name, dir_fd):
 
 
 def run(argv):
-    parser = Parser(prog="bw state-touch", description="Touch, or with --rm remove, .bytewyrd/NAME.")
+    parser = cli.Parser(prog="bw state-touch", description="Touch, or with --rm remove, .bytewyrd/NAME.")
     parser.add_argument("--rm", action="store_true", help="remove NAME instead of touching it")
     parser.add_argument("name", nargs="?", help="a name matching [a-z0-9][a-z0-9.-]*")
     args = parser.parse_args(argv)
     if args.name is not None and not NAME_RE.fullmatch(args.name):
-        _warn("invalid name %s: use lowercase letters, digits, '.' and '-'" % quote(args.name))
+        _warn("invalid name %s: use lowercase letters, digits, '.' and '-'" % cli.quote(args.name))
         return
     dir_fd = open_state_dir()
     if dir_fd is None:

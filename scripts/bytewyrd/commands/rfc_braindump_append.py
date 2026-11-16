@@ -16,7 +16,7 @@ Contract: docs/rfcs/2026-11-09-scaffold-and-drift.md, Appendix B2 ("Ports").
 
 import os
 
-import bw
+from bytewyrd import jsonout
 
 FILE = "docs/rfc-braindump.md"
 HEADER = b"# RFC Braindump\n\nPotential RFC ideas. Add with `/rfc-braindump`, promote to full RFC with `/rfc-new`.\n\n"
@@ -27,15 +27,15 @@ USAGE = "usage: bw rfc-braindump-append <full-bullet-body-without-leading-star-s
 def run(argv):
     body = argv[0] if argv else ""
     if not body:
-        bw.emit_error(USAGE)
+        jsonout.emit_error(USAGE)
         return 2
     bullet = b"* " + os.fsencode(body) + b"\n"
     created = not os.path.isfile(FILE)
     with open(FILE, "wb" if created else "ab") as f:
         f.write(HEADER + bullet if created else bullet)
-    bw.emit({"appended": True, "file": FILE, "created_file": created})
+    jsonout.emit({"appended": True, "file": FILE, "created_file": created})
     return 0
 
 
 def main(argv):
-    return bw.json_main("rfc-braindump-append", run, argv)
+    return jsonout.json_main("rfc-braindump-append", run, argv)

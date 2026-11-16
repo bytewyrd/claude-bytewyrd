@@ -23,3 +23,9 @@ dev = [
 
 [tool.uv]
 package = false
+
+# The tests import the bytewyrd package, and the vendored PyYAML, from where
+# the bootstrap puts them on sys.path. The lang-ci python fixture has no pytest
+# table of its own, so its pytest run reads this one too: keep it to this.
+[tool.pytest]
+pythonpath = ["scripts", "scripts/_vendor"]

@@ -22,7 +22,7 @@ import sys
 import tomllib
 from typing import NamedTuple
 
-import bw
+from bytewyrd import cli, detect, fs, git, seed
 
 NOTE_IMPORT = "note: CLAUDE.md has no '@AGENTS.md' line; Claude Code will not read AGENTS.md until you add one"
 NOTE_DIRTY = "note: working tree is dirty; --apply will refuse without --allow-dirty"
@@ -71,7 +71,7 @@ class Step(NamedTuple):
     """What scaffold does for one target: create it from TEMPLATE, or skip it
     for the reason SKIP (exactly one of the two is set)."""
 
-    target: bw.Target
+    target: seed.Target
     template: object
     skip: object
 
@@ -91,27 +91,27 @@ class Run:
 def plan(root, comps):
     """One Step per target, in the target table's order."""
     steps = []
-    for target in bw.TARGETS:
+    for target in seed.TARGETS:
         parent, base = os.path.split(target.path)
-        if bw.exists(os.path.join(root, parent), base):
+        if fs.exists(os.path.join(root, parent), base):
             steps.append(Step(target, None, SKIP_EXISTS))
             continue
-        if target is bw.PR_TEMPLATE:
-            found = bw.pr_template(root)
+        if target is seed.PR_TEMPLATE:
+            found = seed.pr_template(root)
             if found is not None:
-                steps.append(Step(target, None, SKIP_PR_TEMPLATE % bw.quote(found)))
+                steps.append(Step(target, None, SKIP_PR_TEMPLATE % cli.quote(found)))
                 continue
-        if target is bw.CI_YML and bw.workflow_exists(root):
+        if target is seed.CI_YML and seed.workflow_exists(root):
             steps.append(Step(target, None, SKIP_WORKFLOW))
             continue
-        steps.append(Step(target, bw.template_for(target, comps), None))
+        steps.append(Step(target, seed.template_for(target, comps), None))
     return steps
 
 
 def seed_text(target, template, comps, name, sha):
     """The text scaffold writes for TARGET: the stamp, then the rendered template."""
-    text, digest = bw.read_template(template)
-    return bw.stamp(target.kind, template, digest, sha) + "\n" + bw.render(text, comps, name)
+    text, digest = seed.read_template(template)
+    return seed.stamp(target.kind, template, digest, sha) + "\n" + seed.render(text, comps, name)
 
 
 # --- the CI notes ------------------------------------------------------------
@@ -123,7 +123,7 @@ def _join(directory, name):
 
 def _index_text(root, entry):
     """An index entry's text, or None when it declares nothing (B2, Reading)."""
-    data = bw.blob(root, entry) if entry is not None else None
+    data = git.blob(root, entry) if entry is not None else None
     if data is None:
         return None
     try:
@@ -183,28 +183,28 @@ def lists_pytest(text):
 def ci_notes(root, comps, skipped):
     """The notes printed with a new ci.yml: why each SKIPPED manifest gets no
     job, then what each Ruby or Python component's lang-ci job will miss."""
-    notes = [NOTE_SKIPPED % (bw.quote(s.path), s.reason) for s in skipped]
+    notes = [NOTE_SKIPPED % (cli.quote(s.path), s.reason) for s in skipped]
     if not any(c.language in ("python", "ruby") for c in comps):
         return notes
     by_path = {}
-    for entry in bw.tracked(root):
+    for entry in git.tracked(root):
         by_path.setdefault(entry.path, entry)
     for c in comps:
         if c.language == "python":
             pyproject = _join(c.directory, "pyproject.toml")
             text = _index_text(root, by_path.get(pyproject))
             if text is None or not lists_pytest(text):
-                notes.append(NOTE_PYTEST % bw.quote(pyproject))
+                notes.append(NOTE_PYTEST % cli.quote(pyproject))
         elif c.language == "ruby":
             if not gives_ruby_version(root, by_path, c.directory):
-                notes.append(NOTE_RUBY_VERSION % bw.quote(c.directory))
+                notes.append(NOTE_RUBY_VERSION % cli.quote(c.directory))
             lockfile = _join(c.directory, "Gemfile.lock")
             text = _index_text(root, by_path.get(lockfile))
             platforms = lockfile_platforms(text) if text is not None else None
             if platforms is not None and not _RUNNER_PLATFORMS.intersection(platforms):
-                notes.append(NOTE_PLATFORM % bw.quote(lockfile))
+                notes.append(NOTE_PLATFORM % cli.quote(lockfile))
             if _join(c.directory, "pnpm-lock.yaml") in by_path:
-                notes.append(NOTE_PNPM % bw.quote(c.directory))
+                notes.append(NOTE_PNPM % cli.quote(c.directory))
     return notes
 
 
@@ -225,9 +225,9 @@ def write(root, rel, text, run):
             os.makedirs(parent, exist_ok=True)
         finally:
             run.dirs.extend(made for made in reversed(absent) if os.path.isdir(made))
-        bw.create(path, text)
+        fs.create(path, text)
     except OSError as e:
-        raise bw.BwError("cannot create %s: %s" % (bw.quote(rel), e.strerror or bw.describe(e))) from e
+        raise cli.BwError("cannot create %s: %s" % (cli.quote(rel), e.strerror or cli.describe(e))) from e
     run.files.append(rel)
 
 
@@ -254,7 +254,7 @@ def clean_up(root, run):
 
 
 def scaffold(argv, run):
-    parser = bw.Parser(
+    parser = cli.Parser(
         prog="bw scaffold",
         description="Seed AGENTS.md, CLAUDE.md, a pull request template and a CI workflow, each only if missing.",
     )
@@ -262,36 +262,36 @@ def scaffold(argv, run):
     parser.add_argument("--allow-dirty", action="store_true", help="with --apply, write even when the tree is dirty")
     args = parser.parse_args(argv)
 
-    root = bw.root()
+    root = git.root()
     run.root = root
-    comps, skipped = bw.detect(root)
+    comps, skipped = detect.detect(root)
     steps = plan(root, comps)
     creating = [s for s in steps if s.template is not None]
 
     # Preflight, which writes nothing: symlinks, the texts to write, a dirty tree.
     for step in creating:
-        hit = bw.symlinked_dir(root, step.target.path)
+        hit = fs.symlinked_dir(root, step.target.path)
         if hit is not None:
-            raise Refusal(REFUSE_SYMLINK % bw.quote(hit), 1)
-    name, sha = bw.project_name(root), bw.plugin_sha(bw.PLUGIN_DIR)
+            raise Refusal(REFUSE_SYMLINK % cli.quote(hit), 1)
+    name, sha = git.project_name(root), seed.plugin_sha(seed.PLUGIN_DIR)
     texts = {s.target.path: seed_text(s.target, s.template, comps, name, sha) for s in creating}
     dirty = False
     if not args.apply:
-        dirty = bw.dirty(root)
-    elif not args.allow_dirty and bw.dirty(root):
+        dirty = git.dirty(root)
+    elif not args.allow_dirty and git.dirty(root):
         raise Refusal(REFUSE_DIRTY, 3)
 
     notes = []
-    if any(s.target is bw.CLAUDE_MD and s.skip is not None for s in steps) and bw.lacks_import(root):
+    if any(s.target is seed.CLAUDE_MD and s.skip is not None for s in steps) and seed.lacks_import(root):
         notes.append(NOTE_IMPORT)
-    if any(s.target is bw.CI_YML for s in creating):
+    if any(s.target is seed.CI_YML for s in creating):
         notes.extend(ci_notes(root, comps, skipped))
     if dirty:
         notes.append(NOTE_DIRTY)
 
-    out = ["bytewyrd scaffold: " + bw.quote(root)]
+    out = ["bytewyrd scaffold: " + cli.quote(root)]
     for step in steps:
-        path = bw.quote(step.target.path)
+        path = cli.quote(step.target.path)
         if step.skip is not None:
             out.append("skip  %s  (%s)" % (path, step.skip))
         elif args.apply:
@@ -330,9 +330,9 @@ def main(argv):
         return e.code
     except BaseException as e:
         left = clean_up(run.root, run) if run.files else []
-        _err("scaffold: " + bw.describe(e))
+        _err("scaffold: " + cli.describe(e))
         if left:
-            _err("scaffold: failed; remove these, then re-run: rm -- " + " ".join(map(bw.quote, left)))
+            _err("scaffold: failed; remove these, then re-run: rm -- " + " ".join(map(cli.quote, left)))
         elif run.files:
-            _err("scaffold: failed; removed: " + " ".join(map(bw.quote, run.files)))
+            _err("scaffold: failed; removed: " + " ".join(map(cli.quote, run.files)))
         return 1

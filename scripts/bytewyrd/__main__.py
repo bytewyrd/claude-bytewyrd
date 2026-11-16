@@ -1,8 +1,8 @@
 """Check the interpreter, then dispatch one bw command to its module.
 
-scripts/bw runs this file as `python -I -S -B bw_main.py NAME [ARGS...]`.
-NAME selects scripts/_lib/bw_<name>.py (hyphens as underscores), whose
-main(argv) returns the exit code.
+scripts/bw runs this file as `python -I -S -B bytewyrd/__main__.py NAME
+[ARGS...]`. NAME selects scripts/bytewyrd/commands/<name>.py (hyphens as
+underscores), whose main(argv) returns the exit code.
 
 This file must stay parseable by old Python 3 interpreters, so that one which
 runs it directly still reaches the version check below: no f-strings, walrus,
@@ -60,10 +60,10 @@ def main(argv):
 
     import importlib
 
-    lib = os.path.dirname(os.path.abspath(__file__))
-    vendor = os.path.join(os.path.dirname(lib), "_vendor")
-    sys.path[0:0] = [lib, vendor]
-    module_name = "bw_" + name.replace("-", "_")
+    scripts = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    vendor = os.path.join(scripts, "_vendor")
+    sys.path[0:0] = [scripts, vendor]
+    module_name = "bytewyrd.commands." + name.replace("-", "_")
     try:
         module = importlib.import_module(module_name)
     except ModuleNotFoundError as e:

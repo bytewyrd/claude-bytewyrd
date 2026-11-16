@@ -18,7 +18,7 @@ Contract: docs/rfcs/2026-11-09-scaffold-and-drift.md, Appendix B2 ("Ports").
 
 import os
 
-import bw
+from bytewyrd import fs, jsonout
 
 FILE = "docs/rfc-braindump.md"
 # The bash script's wording, with the command named as scripts/bw runs it.
@@ -28,23 +28,23 @@ USAGE = "usage: bw rfc-braindump-remove <full-bullet-body-without-leading-star-s
 def run(argv):
     body = argv[0] if argv else ""
     if not body:
-        bw.emit_error(USAGE)
+        jsonout.emit_error(USAGE)
         return 2
     if not os.path.isfile(FILE):
-        bw.emit_error("rfc-braindump-remove: %s not found" % FILE)
+        jsonout.emit_error("rfc-braindump-remove: %s not found" % FILE)
         return 2
     with open(FILE, "rb") as f:
-        lines = bw.split_lines(f.read())
+        lines = fs.split_lines(f.read())
     target = b"* " + os.fsencode(body)
     if target not in lines:
-        bw.emit({"removed": False, "file": FILE})
+        jsonout.emit({"removed": False, "file": FILE})
         return 1
     lines.remove(target)  # the first match only
     with open(FILE, "wb") as f:
         f.write(b"".join(line + b"\n" for line in lines))
-    bw.emit({"removed": True, "file": FILE})
+    jsonout.emit({"removed": True, "file": FILE})
     return 0
 
 
 def main(argv):
-    return bw.json_main("rfc-braindump-remove", run, argv)
+    return jsonout.json_main("rfc-braindump-remove", run, argv)

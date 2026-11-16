@@ -435,7 +435,7 @@ def test_s15_a_failed_apply_removes_the_files_it_created(sim):
 def test_s16_a_broken_drift_module_exits_1(own_sim):
     sim = own_sim
     repo = sim.repo("r")
-    module = sim.plugin / "scripts" / "_lib" / "bw_drift.py"
+    module = sim.plugin / "scripts" / "bytewyrd" / "commands" / "drift.py"
     original = module.read_bytes()
     module.write_bytes(original + b")\n")
     try:
@@ -630,7 +630,7 @@ def test_s23_drift_runs_the_bytewyrd_python_it_is_given(sim):
     wrapper.chmod(0o755)
     r = sim.drift(repo, env=dict(sim.env, BYTEWYRD_PYTHON=str(wrapper)))
     assert r.code == 0
-    assert any("bw_main.py drift" in line for line in log.read_text().splitlines())
+    assert any("/scripts/bytewyrd/__main__.py drift" in line for line in log.read_text().splitlines())
 
 
 # --- S25 to S39: detection, end to end ---------------------------------------

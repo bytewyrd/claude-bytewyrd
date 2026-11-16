@@ -1,12 +1,13 @@
-"""Tests for bw.load_frontmatter() (RFC 2026-11-09-scaffold-and-drift, B2
+"""Tests for frontmatter.load_frontmatter() (RFC 2026-11-09-scaffold-and-drift, B2
 "Frontmatter parsing"): one fixture per row of B2's conversion table, the
 errors that rfc-frontmatter reports with exit 2, and every RFC under
 docs/rfcs/, which must parse, and which rfc-frontmatter must print as
 load_frontmatter() reads it.
 
-The cases run in this process, with scripts/_lib and scripts/_vendor at the
-front of sys.path as bw_main.py puts them, so load_frontmatter() imports the
-vendored PyYAML; test_vendor.py checks that import under the launcher's flags.
+The cases run in this process, with scripts and scripts/_vendor at the front
+of sys.path, where pyproject.toml's pytest pythonpath puts them as the
+bootstrap does, so load_frontmatter() imports the vendored PyYAML;
+test_vendor.py checks that import under the launcher's flags.
 """
 
 import os
@@ -16,12 +17,11 @@ from pathlib import Path
 
 import pytest
 
-REPO = Path(__file__).resolve().parents[2]
-LIB = REPO / "scripts" / "_lib"
-VENDOR = REPO / "scripts" / "_vendor"
-sys.path[0:0] = [str(LIB), str(VENDOR)]
+from bytewyrd import cli, frontmatter, jsonout
 
-import bw  # noqa: E402
+REPO = Path(__file__).resolve().parents[2]
+MAIN = REPO / "scripts" / "bytewyrd" / "__main__.py"
+VENDOR = REPO / "scripts" / "_vendor"
 
 IS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
 FIELDS = ("rfc", "title", "author", "status", "created", "drop_reason")
@@ -42,12 +42,12 @@ def write(name, text):
 
 def load(block, name="x.md"):
     """load_frontmatter() of a file holding BLOCK between "---" lines, then a body."""
-    return bw.load_frontmatter(write(name, "---\n" + block + "---\n\n## Summary\n"))
+    return frontmatter.load_frontmatter(write(name, "---\n" + block + "---\n\n## Summary\n"))
 
 
 def error(block, name="x.md"):
     """The BwError message load_frontmatter() raises for BLOCK."""
-    with pytest.raises(bw.BwError) as e:
+    with pytest.raises(cli.BwError) as e:
         load(block, name)
     return str(e.value)
 
@@ -63,7 +63,7 @@ def every_field(value):
 def test_the_six_fields_in_rfc_frontmatter_s_order():
     block = 'rfc: "a"\ntitle: "T"\nauthor: "A"\nstatus: "Draft"\ncreated: "2026-01-01"\ndrop_reason: ~\n'
     got = load(block)
-    assert list(got) == list(FIELDS) == list(bw.FRONTMATTER_FIELDS)
+    assert list(got) == list(FIELDS) == list(frontmatter.FRONTMATTER_FIELDS)
     assert got == {"rfc": "a", "title": "T", "author": "A", "status": "Draft", "created": "2026-01-01", "drop_reason": ""}
 
 
@@ -79,11 +79,11 @@ def test_an_empty_block_gives_six_empty_fields(block):
 
 def test_only_the_lines_between_the_first_two_delimiters_count():
     text = "---\nrfc: a\n---\nstatus: Done\n---\ntitle: [unparsed\n"
-    assert bw.load_frontmatter(write("x.md", text)) == dict(EMPTY, rfc="a")
+    assert frontmatter.load_frontmatter(write("x.md", text)) == dict(EMPTY, rfc="a")
 
 
 def test_the_closing_delimiter_may_end_the_file():
-    assert bw.load_frontmatter(write("x.md", "---\nrfc: a\n---")) == dict(EMPTY, rfc="a")
+    assert frontmatter.load_frontmatter(write("x.md", "---\nrfc: a\n---")) == dict(EMPTY, rfc="a")
 
 
 def test_a_later_key_wins_as_it_did_in_bash():
@@ -92,7 +92,7 @@ def test_a_later_key_wins_as_it_did_in_bash():
 
 def test_path_may_be_a_path_object():
     write("x.md", "---\nrfc: a\n---\n")
-    assert bw.load_frontmatter(Path("x.md"))["rfc"] == "a"
+    assert frontmatter.load_frontmatter(Path("x.md"))["rfc"] == "a"
 
 
 # --- B2's conversion table, row by row -----------------------------------------
@@ -163,15 +163,15 @@ def test_aliases_that_would_expand_are_refused_before_they_grow():
 
 def test_a_block_of_64_kib_parses_and_one_byte_more_is_an_error():
     head = 'rfc: "a"\n'
-    pad = bw.MAX_FRONTMATTER - len(head) - len("#\n")
+    pad = frontmatter.MAX_FRONTMATTER - len(head) - len("#\n")
     block = head + "#" + "x" * pad + "\n"
-    assert len(block.encode()) == bw.MAX_FRONTMATTER == 64 * 1024
+    assert len(block.encode()) == frontmatter.MAX_FRONTMATTER == 64 * 1024
     assert load(block)["rfc"] == "a"
     assert error(head + "#" + "x" * (pad + 1) + "\n") == "x.md: frontmatter is over 64 KiB"
 
 
 def test_one_line_over_64_kib_is_an_error():
-    assert error("title: " + "x" * bw.MAX_FRONTMATTER + "\n") == "x.md: frontmatter is over 64 KiB"
+    assert error("title: " + "x" * frontmatter.MAX_FRONTMATTER + "\n") == "x.md: frontmatter is over 64 KiB"
 
 
 # --- other errors -----------------------------------------------------------------
@@ -243,14 +243,14 @@ def test_a_block_that_is_not_a_mapping_is_an_error(block):
 def test_a_block_that_is_not_utf_8_is_an_error():
     with open("x.md", "wb") as f:
         f.write(b"---\ntitle: caf\xe9\n---\n")
-    with pytest.raises(bw.BwError, match=r"^x\.md: frontmatter is not valid UTF-8$"):
-        bw.load_frontmatter("x.md")
+    with pytest.raises(cli.BwError, match=r"^x\.md: frontmatter is not valid UTF-8$"):
+        frontmatter.load_frontmatter("x.md")
 
 
 def test_a_body_that_is_not_utf_8_is_never_read():
     with open("x.md", "wb") as f:
         f.write(b"---\nrfc: a\n---\n\xff\xfe\n")
-    assert bw.load_frontmatter("x.md")["rfc"] == "a"
+    assert frontmatter.load_frontmatter("x.md")["rfc"] == "a"
 
 
 @pytest.mark.parametrize(
@@ -267,15 +267,15 @@ def test_a_body_that_is_not_utf_8_is_never_read():
     ],
 )
 def test_line_1_must_be_the_delimiter(text):
-    with pytest.raises(bw.BwError) as e:
-        bw.load_frontmatter(write("x.md", text))
+    with pytest.raises(cli.BwError) as e:
+        frontmatter.load_frontmatter(write("x.md", text))
     assert str(e.value) == "x.md does not begin with a YAML frontmatter delimiter"
 
 
 @pytest.mark.parametrize("text", ["---\nrfc: a\n", "---\n", "---"])
 def test_a_block_with_no_closing_delimiter_is_an_error(text):
-    with pytest.raises(bw.BwError) as e:
-        bw.load_frontmatter(write("x.md", text))
+    with pytest.raises(cli.BwError) as e:
+        frontmatter.load_frontmatter(write("x.md", text))
     assert str(e.value) == "x.md has no closing frontmatter delimiter"
 
 
@@ -286,30 +286,30 @@ def test_what_is_not_a_regular_file_is_not_found_and_never_read():
     os.symlink("missing", "dangling")
     write("file", "x")
     for name in ("dir", "fifo", "zero", "dangling", "absent", "file/below"):
-        with pytest.raises(bw.BwError) as e:
-            bw.load_frontmatter(name)
+        with pytest.raises(cli.BwError) as e:
+            frontmatter.load_frontmatter(name)
         assert str(e.value) == "file not found: %s" % name
 
 
 def test_a_symlink_to_an_rfc_is_followed():
     write("real.md", "---\nrfc: a\n---\n")
     os.symlink("real.md", "link.md")
-    assert bw.load_frontmatter("link.md")["rfc"] == "a"
+    assert frontmatter.load_frontmatter("link.md")["rfc"] == "a"
 
 
 @pytest.mark.skipif(IS_ROOT, reason="root reads any file")
 def test_an_unreadable_file_is_an_error():
     write("x.md", "---\nrfc: a\n---\n")
     os.chmod("x.md", 0)
-    with pytest.raises(bw.BwError, match=r"^cannot read x\.md: Permission denied$"):
-        bw.load_frontmatter("x.md")
+    with pytest.raises(cli.BwError, match=r"^cannot read x\.md: Permission denied$"):
+        frontmatter.load_frontmatter("x.md")
 
 
 # --- the loader ----------------------------------------------------------------
 
 
 def test_frontmatter_loader_is_a_safe_loader_with_no_implicit_resolvers():
-    loader = bw.FrontmatterLoader  # built, and yaml imported, on first access
+    loader = frontmatter.FrontmatterLoader  # built, and yaml imported, on first access
     yaml = sys.modules["yaml"]
     assert issubclass(loader, yaml.SafeLoader)
     assert loader.yaml_implicit_resolvers == {}
@@ -332,10 +332,10 @@ def test_docs_rfcs_holds_the_rfcs():
 
 @pytest.mark.parametrize("rfc", RFCS, ids=lambda p: p.name)
 def test_each_rfc_parses_and_rfc_frontmatter_prints_what_load_frontmatter_reads(rfc):
-    fields = bw.load_frontmatter(rfc)
+    fields = frontmatter.load_frontmatter(rfc)
     assert list(fields) == list(FIELDS)
     proc = subprocess.run(
-        [sys.executable, "-I", "-S", "-B", str(LIB / "bw_main.py"), "rfc-frontmatter", str(rfc)],
+        [sys.executable, "-I", "-S", "-B", str(MAIN), "rfc-frontmatter", str(rfc)],
         capture_output=True,
     )
-    assert (proc.returncode, proc.stdout, proc.stderr) == (0, bw.jq_dumps(fields).encode("utf-8"), b"")
+    assert (proc.returncode, proc.stdout, proc.stderr) == (0, jsonout.jq_dumps(fields).encode("utf-8"), b"")

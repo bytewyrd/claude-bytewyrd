@@ -14,7 +14,7 @@ Contract: docs/rfcs/2026-11-09-scaffold-and-drift.md, Appendix B2 ("Ports").
 import shutil
 import subprocess
 
-import bw
+from bytewyrd import jsonout
 
 # Each probe's hint when its tool is missing.
 MISSING = {
@@ -39,21 +39,21 @@ def logged_in(gh):
 def run(argv):
     name = argv[0] if argv else ""
     if not name:
-        bw.emit_error(USAGE)
+        jsonout.emit_error(USAGE)
         return 2
     if name not in MISSING:
-        bw.emit_error("unrecognized probe name '%s'" % name)
+        jsonout.emit_error("unrecognized probe name '%s'" % name)
         return 2
     path = shutil.which(name)
     if path is None:
-        bw.emit_missing(name, MISSING[name])
+        jsonout.emit_missing(name, MISSING[name])
         return 1
     if name == "gh" and not logged_in(path):
-        bw.emit_unauth(name, UNAUTHENTICATED)
+        jsonout.emit_unauth(name, UNAUTHENTICATED)
         return 1
-    bw.emit_available(name)
+    jsonout.emit_available(name)
     return 0
 
 
 def main(argv):
-    return bw.json_main("tool-probe", run, argv)
+    return jsonout.json_main("tool-probe", run, argv)

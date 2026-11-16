@@ -1,6 +1,6 @@
-"""Tests for scripts/_lib (RFC 2026-11-09-scaffold-and-drift, B2, B4 and B5):
-bw.py's shared functions and detection, bw_main.py's checks and dispatch, and
-the scaffold, drift, state-touch and compact-reminder commands.
+"""Tests for scripts/bytewyrd (RFC 2026-11-09-scaffold-and-drift, B2, B4 and
+B5): the shared modules and detection, the bootstrap's checks and dispatch,
+and the scaffold, drift, state-touch and compact-reminder commands.
 
 Detection cases build real throwaway git repositories, with the developer's
 git configuration kept out (see hermetic_git). tests/e2e/test_consumer_sim.py
@@ -23,16 +23,14 @@ from pathlib import Path
 
 import pytest
 
-REPO = Path(__file__).resolve().parents[2]
-LIB = REPO / "scripts" / "_lib"
-sys.path.insert(0, str(LIB))
+from bytewyrd import __main__ as bootstrap
+from bytewyrd import cli, detect, fs, git, jsonout, seed
+from bytewyrd.commands import compact_reminder, drift, scaffold, state_touch
 
-import bw  # noqa: E402
-import bw_compact_reminder  # noqa: E402
-import bw_drift  # noqa: E402
-import bw_main  # noqa: E402
-import bw_scaffold  # noqa: E402
-import bw_state_touch  # noqa: E402
+REPO = Path(__file__).resolve().parents[2]
+SCRIPTS = REPO / "scripts"
+PACKAGE = SCRIPTS / "bytewyrd"
+MAIN = PACKAGE / "__main__.py"
 
 # --- helpers -----------------------------------------------------------------
 
@@ -40,14 +38,14 @@ import bw_state_touch  # noqa: E402
 @pytest.fixture(autouse=True)
 def hermetic_git(monkeypatch):
     """Keep the developer's git configuration and repository out of every git
-    call, both the fixtures' and bw.py's."""
+    call, both the fixtures' and the package's."""
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
     for var in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY"):
         monkeypatch.delenv(var, raising=False)
 
 
-def git(cwd, *args, input=None):
+def run_git(cwd, *args, input=None):
     """Run git in CWD and return its stdout; fail the test if git fails."""
     proc = subprocess.run(["git", "-C", os.fspath(cwd), *args], input=input, capture_output=True)
     if proc.returncode != 0:
@@ -65,14 +63,14 @@ def write(repo, rel, content=""):
 
 def commit(repo, add_all=True):
     if add_all:
-        git(repo, "add", "-A")
-    git(repo, "-c", "user.name=ci", "-c", "user.email=ci@example.invalid", "commit", "-q", "--allow-empty", "-m", "x")
+        run_git(repo, "add", "-A")
+    run_git(repo, "-c", "user.name=ci", "-c", "user.email=ci@example.invalid", "commit", "-q", "--allow-empty", "-m", "x")
 
 
 def make_repo(path, files, attributes=None):
     """A git repository at PATH with FILES ({path: content}) committed."""
     path.mkdir(parents=True)
-    git(path, "init", "-q")
+    run_git(path, "init", "-q")
     for rel, content in files.items():
         write(path, rel, content)
     if attributes is not None:
@@ -83,12 +81,12 @@ def make_repo(path, files, attributes=None):
 
 def add_gitlink(repo, path):
     """Add a gitlink (mode 160000) at PATH to REPO's index and commit it."""
-    git(repo, "update-index", "--add", "--cacheinfo", "160000,%s,%s" % ("1" * 40, path))
+    run_git(repo, "update-index", "--add", "--cacheinfo", "160000,%s,%s" % ("1" * 40, path))
     commit(repo, add_all=False)
 
 
 def jobs(repo):
-    return [c.job_id for c in bw.detect(str(repo))[0]]
+    return [c.job_id for c in detect.detect(str(repo))[0]]
 
 
 def creatable(tmp_path, name):
@@ -115,23 +113,23 @@ def test_language_ids_equal_the_lang_ci_workflow_files():
         m = re.fullmatch(r"lang-ci-([a-z0-9]+)\.yml", name)
         assert m, "%s is not named lang-ci-<id>.yml" % name
         ids.append(m.group(1))
-    assert ids == sorted(bw.LANGUAGES)
+    assert ids == sorted(detect.LANGUAGES)
 
 
 def test_language_ids_equal_the_lang_ci_fixture_jobs():
     lines = (REPO / ".github" / "workflows" / "ci.yml").read_text().splitlines()
     ids = [m.group(1) for m in (re.fullmatch(r"  lang-ci-fixture-([a-z0-9]+):", line) for line in lines) if m]
-    assert sorted(ids) == sorted(bw.LANGUAGES)
+    assert sorted(ids) == sorted(detect.LANGUAGES)
 
 
 def test_manifest_languages_are_language_ids():
-    assert set(bw.MANIFESTS.values()) == set(bw.LANGUAGES)
+    assert set(detect.MANIFESTS.values()) == set(detect.LANGUAGES)
 
 
 def test_language_ids_equal_the_agents_template_tags():
     lines = (REPO / "templates" / "scaffold" / "AGENTS.md.tpl").read_text().splitlines()
     tags = [m.group(1) for m in (re.match(r"@@([a-z0-9_]+)@@ ", line) for line in lines) if m]
-    assert sorted(t for t in tags if t not in ("none", "job")) == sorted(bw.LANGUAGES)
+    assert sorted(t for t in tags if t not in ("none", "job")) == sorted(detect.LANGUAGES)
 
 
 def test_dir_fd_and_no_follow_calls_are_supported_here():
@@ -142,10 +140,10 @@ def test_dir_fd_and_no_follow_calls_are_supported_here():
 
 
 def test_plugin_dir_is_the_parent_of_scripts():
-    assert Path(bw.PLUGIN_DIR) == REPO
+    assert Path(seed.PLUGIN_DIR) == REPO
 
 
-# --- bw_main.py --------------------------------------------------------------
+# --- the bootstrap, __main__.py ----------------------------------------------
 
 
 def run_main(argv, monkeypatch, version=None):
@@ -153,72 +151,75 @@ def run_main(argv, monkeypatch, version=None):
         m.setattr(sys, "path", list(sys.path))
         if version is not None:
             m.setattr(sys, "version_info", version)
-        return bw_main.main(argv)
+        return bootstrap.main(argv)
 
 
 PY310 = (3, 10, 14, "final", 0)
 
 
-@pytest.mark.parametrize("name", bw_main.CLASS_A)
-def test_bw_main_on_python_3_10_exits_1_for_class_a(name, monkeypatch, capsys):
-    assert run_main(["bw_main.py", name, "arg"], monkeypatch, PY310) == 1
+@pytest.mark.parametrize("name", bootstrap.CLASS_A)
+def test_bootstrap_on_python_3_10_exits_1_for_class_a(name, monkeypatch, capsys):
+    assert run_main(["__main__.py", name, "arg"], monkeypatch, PY310) == 1
     out, err = capsys.readouterr()
-    assert (out, err) == ("", bw_main.NEEDS_PYTHON + "\n")
+    assert (out, err) == ("", bootstrap.NEEDS_PYTHON + "\n")
 
 
-@pytest.mark.parametrize("name", bw_main.CLASS_B)
-def test_bw_main_on_python_3_10_exits_2_with_json_for_class_b(name, monkeypatch, capsys):
-    assert run_main(["bw_main.py", name, "arg"], monkeypatch, PY310) == 2
+@pytest.mark.parametrize("name", bootstrap.CLASS_B)
+def test_bootstrap_on_python_3_10_exits_2_with_json_for_class_b(name, monkeypatch, capsys):
+    assert run_main(["__main__.py", name, "arg"], monkeypatch, PY310) == 2
     out, err = capsys.readouterr()
     assert out == ""
-    assert err == '{"error":"%s"}\n' % bw_main.NEEDS_PYTHON
-    assert json.loads(err) == {"error": bw_main.NEEDS_PYTHON}
+    assert err == '{"error":"%s"}\n' % bootstrap.NEEDS_PYTHON
+    assert json.loads(err) == {"error": bootstrap.NEEDS_PYTHON}
 
 
 @pytest.mark.parametrize(
     "argv, message",
     [
-        (["bw_main.py"], "bw: usage: bw NAME [ARGS...]\n"),
-        (["bw_main.py", "nope"], "bw: unknown command: nope\n"),
-        (["bw_main.py", "../x"], "bw: unknown command: ../x\n"),
-        (["bw_main.py", "main"], "bw: unknown command: main\n"),
+        (["__main__.py"], "bw: usage: bw NAME [ARGS...]\n"),
+        (["__main__.py", "nope"], "bw: unknown command: nope\n"),
+        (["__main__.py", "../x"], "bw: unknown command: ../x\n"),
+        (["__main__.py", "main"], "bw: unknown command: main\n"),
     ],
 )
-def test_bw_main_rejects_unknown_names_on_any_version(argv, message, monkeypatch, capsys):
+def test_bootstrap_rejects_unknown_names_on_any_version(argv, message, monkeypatch, capsys):
     for version in (None, PY310):
         assert run_main(argv, monkeypatch, version) == 1
         assert capsys.readouterr() == ("", message)
 
 
-def test_bw_main_reports_a_missing_module_by_class(monkeypatch, capsys):
-    monkeypatch.setattr(bw_main, "CLASS_A", bw_main.CLASS_A + ("zz-absent-a",))
-    monkeypatch.setattr(bw_main, "CLASS_B", bw_main.CLASS_B + ("zz-absent-b",))
-    assert run_main(["bw_main.py", "zz-absent-a"], monkeypatch) == 1
+def test_bootstrap_reports_a_missing_module_by_class(monkeypatch, capsys):
+    monkeypatch.setattr(bootstrap, "CLASS_A", bootstrap.CLASS_A + ("zz-absent-a",))
+    monkeypatch.setattr(bootstrap, "CLASS_B", bootstrap.CLASS_B + ("zz-absent-b",))
+    assert run_main(["__main__.py", "zz-absent-a"], monkeypatch) == 1
     assert capsys.readouterr().err == "bytewyrd: zz-absent-a is not available in this copy of the plugin\n"
-    assert run_main(["bw_main.py", "zz-absent-b"], monkeypatch) == 2
+    assert run_main(["__main__.py", "zz-absent-b"], monkeypatch) == 2
     assert json.loads(capsys.readouterr().err) == {"error": "bytewyrd: zz-absent-b is not available in this copy of the plugin"}
 
 
-def test_bw_main_puts_lib_and_vendor_first_and_returns_the_command_exit(tmp_path, monkeypatch):
+def test_bootstrap_puts_scripts_and_vendor_first_and_returns_the_command_exit(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     with monkeypatch.context() as m:
         m.setattr(sys, "path", ["elsewhere"])
-        assert bw_main.main(["bw_main.py", "compact-reminder"]) == 0
-        assert sys.path == [str(LIB), str(REPO / "scripts" / "_vendor"), "elsewhere"]
+        assert bootstrap.main(["__main__.py", "compact-reminder"]) == 0
+        assert sys.path == [str(SCRIPTS), str(SCRIPTS / "_vendor"), "elsewhere"]
 
 
-def test_bw_main_dispatches_under_the_launcher_flags(tmp_path):
-    cmd = [sys.executable, "-I", "-S", "-B", str(LIB / "bw_main.py"), "compact-reminder"]
+def test_bootstrap_dispatches_under_the_launcher_flags(tmp_path):
+    cmd = [sys.executable, "-I", "-S", "-B", str(MAIN), "compact-reminder"]
     proc = subprocess.run(cmd, cwd=tmp_path, capture_output=True, text=True)
     assert (proc.returncode, proc.stdout, proc.stderr) == (0, "", "")
     (tmp_path / ".bytewyrd").mkdir()
     (tmp_path / ".bytewyrd" / "last-feature-engineer-stop").touch()
     proc = subprocess.run(cmd, cwd=tmp_path, capture_output=True, text=True)
-    assert (proc.returncode, proc.stdout, proc.stderr) == (0, bw_compact_reminder.TEXT + "\n", "")
+    assert (proc.returncode, proc.stdout, proc.stderr) == (0, compact_reminder.TEXT + "\n", "")
 
 
-def test_bw_main_parses_as_old_python_3():
-    source = (LIB / "bw_main.py").read_text()
+# The package's __init__.py runs before the bootstrap's version check when
+# Python runs the package (python -m bytewyrd), so it stays old-syntax-safe too.
+@pytest.mark.parametrize("name", ["__main__.py", "__init__.py"])
+def test_the_bootstrap_and_the_package_init_parse_as_old_python_3(name):
+    source = (PACKAGE / name).read_text()
     tree = ast.parse(source, feature_version=(3, 7))  # rejects walrus and match
     for node in ast.walk(tree):
         assert not isinstance(node, (ast.JoinedStr, ast.AnnAssign)), "f-string or annotation at line %d" % node.lineno
@@ -229,19 +230,19 @@ def test_bw_main_parses_as_old_python_3():
                 assert arg is None or arg.annotation is None, node.name
 
 
-def test_launcher_and_bw_main_agree_on_classes_and_message():
+def test_launcher_and_bootstrap_agree_on_classes_and_message():
     text = (REPO / "scripts" / "bw").read_text()
     # shfmt indents case items (switch_case_indent in .editorconfig).
     class_a = re.search(r"^[ \t]*(scaffold \| .*)\) class=A ;;$", text, re.M).group(1)
     class_b = re.search(r"^[ \t]*(rfc-.*)\) class=B ;;$", text, re.M).group(1)
-    assert tuple(class_a.split(" | ")) == bw_main.CLASS_A
-    assert tuple(class_b.split(" | ")) == bw_main.CLASS_B
-    assert "msg='%s'" % bw_main.NEEDS_PYTHON in text
+    assert tuple(class_a.split(" | ")) == bootstrap.CLASS_A
+    assert tuple(class_b.split(" | ")) == bootstrap.CLASS_B
+    assert "msg='%s'" % bootstrap.NEEDS_PYTHON in text
 
 
 def test_each_class_b_name_has_its_python_port():
-    for name in bw_main.CLASS_B:
-        assert (LIB / ("bw_" + name.replace("-", "_") + ".py")).is_file(), name
+    for name in bootstrap.CLASS_B:
+        assert (PACKAGE / "commands" / (name.replace("-", "_") + ".py")).is_file(), name
 
 
 # --- quote() and attr_line() -------------------------------------------------
@@ -267,12 +268,12 @@ def test_each_class_b_name_has_its_python_port():
     ],
 )
 def test_quote(s, want):
-    assert bw.quote(s) == want
+    assert cli.quote(s) == want
 
 
 def test_quote_output_is_ascii_without_control_characters():
     for s in ("\ud800", "é\udce9\x1b", " x", "".join(map(chr, range(0, 300)))):
-        q = bw.quote(s)
+        q = cli.quote(s)
         assert q.isascii() and all(0x20 <= ord(c) <= 0x7E for c in q), repr(q)
 
 
@@ -282,7 +283,7 @@ def test_quote_escapes_like_git(tmp_path, name):
         pytest.skip("this filesystem refuses %r" % name)
     repo = make_repo(tmp_path / "r", {name: "x"})
     # core.quotePath, on by default, makes git C-quote these names the same way.
-    assert git(repo, "ls-files").decode("ascii") == bw.quote(name) + "\n"
+    assert run_git(repo, "ls-files").decode("ascii") == cli.quote(name) + "\n"
 
 
 @pytest.mark.parametrize(
@@ -298,7 +299,7 @@ def test_quote_escapes_like_git(tmp_path, name):
     ],
 )
 def test_attr_line(path, want):
-    assert bw.attr_line(path) == want
+    assert detect.attr_line(path) == want
 
 
 ATTR_NAMES = [
@@ -323,10 +324,10 @@ def test_each_attr_line_opts_out_exactly_its_manifest(tmp_path):
     names = [n for n in ATTR_NAMES if creatable(tmp_path, n)]
     assert {"bad dir", "#x", "a[1]", "st*r", "back\\slash"} <= set(names)
     paths = [n + "/go.mod" for n in names]
-    lines = "".join(bw.attr_line(p) + "\n" for p in paths)
+    lines = "".join(detect.attr_line(p) + "\n" for p in paths)
     repo = make_repo(tmp_path / "r", {p: "module x\n" for p in paths + ATTR_DECOYS}, attributes=lines.encode("ascii"))
     stdin = b"".join(os.fsencode(p) + b"\0" for p in paths + ATTR_DECOYS)
-    out = git(repo, "check-attr", "--cached", "--stdin", "-z", "bytewyrd-ci", input=stdin)
+    out = run_git(repo, "check-attr", "--cached", "--stdin", "-z", "bytewyrd-ci", input=stdin)
     fields = out.split(b"\0")
     got = {os.fsdecode(fields[i]): fields[i + 2].decode() for i in range(0, len(fields) - 2, 3)}
     assert got == {**{p: "unset" for p in paths}, **{p: "unspecified" for p in ATTR_DECOYS}}
@@ -336,11 +337,11 @@ def test_a_root_go_mod_attr_line_keeps_go_svc(tmp_path):
     # [R79]: an unanchored "go.mod -bytewyrd-ci" would unset svc/go.mod too.
     repo = make_repo(tmp_path / "r", {"go.mod": "module x\n", "svc/go.mod": "module y\n"})
     assert jobs(repo) == ["go", "go-svc"]
-    write(repo, ".gitattributes", bw.attr_line("go.mod") + "\n")
+    write(repo, ".gitattributes", detect.attr_line("go.mod") + "\n")
     commit(repo)
-    comps, skipped = bw.detect(str(repo))
-    assert comps == [bw.Component("go", "svc", "go-svc", ("svc/go.mod",))]
-    assert skipped == [("go.mod", bw.REASON_OPTED_OUT)]
+    comps, skipped = detect.detect(str(repo))
+    assert comps == [detect.Component("go", "svc", "go-svc", ("svc/go.mod",))]
+    assert skipped == [("go.mod", detect.REASON_OPTED_OUT)]
     write(repo, ".gitattributes", "go.mod -bytewyrd-ci\n")
     commit(repo)
     assert jobs(repo) == []
@@ -376,12 +377,12 @@ def test_a_root_go_mod_attr_line_keeps_go_svc(tmp_path):
     ],
 )
 def test_dir_matches(pattern, directory, want):
-    assert bw.dir_matches(pattern, directory) is want
+    assert detect.dir_matches(pattern, directory) is want
 
 
 def test_dir_matches_is_quick_on_many_double_stars():
     start = time.monotonic()
-    assert not bw.dir_matches("/".join(["**"] * 400 + ["z"]), "/".join(["a"] * 60))
+    assert not detect.dir_matches("/".join(["**"] * 400 + ["z"]), "/".join(["a"] * 60))
     assert time.monotonic() - start < 5
 
 
@@ -419,9 +420,9 @@ def test_detection_scope_and_overrides(tmp_path):
         ]
     }
     repo = make_repo(tmp_path / "r", files, attributes="web/package.json -bytewyrd-ci\ndeep/** bytewyrd-ci\n")
-    comps, skipped = bw.detect(str(repo))
+    comps, skipped = detect.detect(str(repo))
     assert [c.job_id for c in comps] == ["go-apps-api", "go-deep-one-two", "js-docs"]
-    assert skipped == [("web/package.json", bw.REASON_OPTED_OUT)]
+    assert skipped == [("web/package.json", detect.REASON_OPTED_OUT)]
 
 
 def test_detection_validates_directories_and_job_ids(tmp_path):
@@ -439,19 +440,19 @@ def test_detection_validates_directories_and_job_ids(tmp_path):
     odd = [n for n in ("w\n::warning::x/go.mod", "\x1b[2J/go.mod", "web\n/package.json") if creatable(tmp_path, n.split("/")[0])]
     files.update({n: "{}" if n.endswith(".json") else "" for n in odd})
     repo = make_repo(tmp_path / "r", files)
-    comps, skipped = bw.detect(str(repo))
+    comps, skipped = detect.detect(str(repo))
     assert comps == [
-        bw.Component("go", "a.b", "go-a-b", ("a.b/go.mod",)),
-        bw.Component("go", long_ok, "go-" + long_ok, (long_ok + "/go.mod",)),
-        bw.Component("js", "x-y", "js-x-y", ("x-y/package.json",)),
+        detect.Component("go", "a.b", "go-a-b", ("a.b/go.mod",)),
+        detect.Component("go", long_ok, "go-" + long_ok, (long_ok + "/go.mod",)),
+        detect.Component("js", "x-y", "js-x-y", ("x-y/package.json",)),
     ]
     want = {
-        "bad dir/go.mod": bw.REASON_NAME,
-        "-x/go.mod": bw.REASON_NAME,
-        long_bad + "/go.mod": bw.REASON_NAME,
+        "bad dir/go.mod": detect.REASON_NAME,
+        "-x/go.mod": detect.REASON_NAME,
+        long_bad + "/go.mod": detect.REASON_NAME,
         "a/b/go.mod": "job id go-a-b is taken by a.b",
         "x.y/package.json": "job id js-x-y is taken by x-y",
-        **{n: bw.REASON_NAME for n in odd},
+        **{n: detect.REASON_NAME for n in odd},
     }
     assert dict(skipped) == want
     assert [s.path for s in skipped] == sorted(want)
@@ -467,12 +468,12 @@ def test_detection_reads_attribute_values_macros_and_only_the_index(tmp_path):
         "/u/go.mod -bytewyrd-ci\n"
     )
     repo = make_repo(tmp_path / "r", files, attributes=attributes)
-    comps, skipped = bw.detect(str(repo))
+    comps, skipped = detect.detect(str(repo))
     assert [c.job_id for c in comps] == ["go-plain", "go-s"]
-    assert skipped == [("q/go.mod", bw.REASON_OPTED_OUT), ("u/go.mod", bw.REASON_OPTED_OUT), ("v/go.mod", bw.REASON_VALUE)]
+    assert skipped == [("q/go.mod", detect.REASON_OPTED_OUT), ("u/go.mod", detect.REASON_OPTED_OUT), ("v/go.mod", detect.REASON_VALUE)]
     # An unstaged .gitattributes edit changes nothing: check-attr reads the index.
     write(repo, ".gitattributes", "/plain/go.mod -bytewyrd-ci\n")
-    assert bw.detect(str(repo)) == (comps, skipped)
+    assert detect.detect(str(repo)) == (comps, skipped)
 
 
 def test_detection_python_needs_a_counted_pyproject(tmp_path):
@@ -485,28 +486,28 @@ def test_detection_python_needs_a_counted_pyproject(tmp_path):
         "nopy/pyproject.toml": PROJECT,
         "virtual/pyproject.toml": "[tool.uv.workspace]\nmembers = []\n",
     }
-    comps, skipped = bw.detect(str(make_repo(tmp_path / "r", files)))
+    comps, skipped = detect.detect(str(make_repo(tmp_path / "r", files)))
     assert comps == [
-        bw.Component("python", "both", "python-both", ("both/pyproject.toml", "both/setup.py")),
-        bw.Component("python", "nopy", "python-nopy", ("nopy/pyproject.toml",)),
-        bw.Component("python", "virtual", "python-virtual", ("virtual/pyproject.toml",)),
+        detect.Component("python", "both", "python-both", ("both/pyproject.toml", "both/setup.py")),
+        detect.Component("python", "nopy", "python-nopy", ("nopy/pyproject.toml",)),
+        detect.Component("python", "virtual", "python-virtual", ("virtual/pyproject.toml",)),
     ]
-    assert skipped == [("legacy/setup.py", bw.REASON_PYPROJECT)]
+    assert skipped == [("legacy/setup.py", detect.REASON_PYPROJECT)]
 
 
 def test_detection_ruby_needs_a_tracked_rakefile(tmp_path):
     files = dict.fromkeys(["Gemfile", "a/Gemfile", "a/Rakefile", "b/Gemfile", "b/rakefile.rb", "c/Gemfile", "c/RAKEFILE"], "")
-    comps, skipped = bw.detect(str(make_repo(tmp_path / "r", files)))
+    comps, skipped = detect.detect(str(make_repo(tmp_path / "r", files)))
     assert [c.job_id for c in comps] == ["ruby-a", "ruby-b"]
-    assert skipped == [("Gemfile", bw.REASON_RAKEFILE), ("c/Gemfile", bw.REASON_RAKEFILE)]
+    assert skipped == [("Gemfile", detect.REASON_RAKEFILE), ("c/Gemfile", detect.REASON_RAKEFILE)]
 
 
 def test_detection_counts_an_unmerged_manifest_once(tmp_path):
     repo = make_repo(tmp_path / "r", {"go.mod": "module x\n"})
-    oid = git(repo, "rev-parse", ":go.mod").decode().strip()
+    oid = run_git(repo, "rev-parse", ":go.mod").decode().strip()
     info = "0 %s\tgo.mod\n" % ("0" * 40) + "".join("100644 %s %d\tgo.mod\n" % (oid, s) for s in (1, 2, 3))
-    git(repo, "update-index", "--index-info", input=info.encode())
-    assert [e.stage for e in bw.tracked(str(repo))] == [1, 2, 3]
+    run_git(repo, "update-index", "--index-info", input=info.encode())
+    assert [e.stage for e in git.tracked(str(repo))] == [1, 2, 3]
     assert jobs(repo) == ["go"]
 
 
@@ -518,10 +519,10 @@ def test_detection_never_counts_a_submodule_s_files(tmp_path):
 
 def test_detection_result_shapes_and_order(tmp_path):
     files = {"z/go.mod": "", "go.mod": "", "web/package.json": "{}", "Cargo.toml": CRATE, "Gemfile": ""}
-    comps, skipped = bw.detect(str(make_repo(tmp_path / "r", files)))
+    comps, skipped = detect.detect(str(make_repo(tmp_path / "r", files)))
     assert [(c.language, c.directory) for c in comps] == [("go", "."), ("go", "z"), ("js", "web"), ("rust", ".")]
     assert all(isinstance(c, tuple) and len(c) == 4 for c in comps)
-    assert skipped == [bw.Skip("Gemfile", bw.REASON_RAKEFILE)] and len(skipped[0]) == 2
+    assert skipped == [detect.Skip("Gemfile", detect.REASON_RAKEFILE)] and len(skipped[0]) == 2
 
 
 # --- detection: root workspaces ----------------------------------------------
@@ -560,9 +561,9 @@ def test_js_an_opted_out_root_or_a_set_member_keeps_the_member(tmp_path):
         "packages/a/package.json": "{}",
         "packages/b/package.json": "{}",
     }
-    comps, skipped = bw.detect(str(make_repo(tmp_path / "out", files, attributes="/package.json -bytewyrd-ci\n")))
+    comps, skipped = detect.detect(str(make_repo(tmp_path / "out", files, attributes="/package.json -bytewyrd-ci\n")))
     assert [c.job_id for c in comps] == ["js-packages-a", "js-packages-b"]
-    assert skipped == [("package.json", bw.REASON_OPTED_OUT)]
+    assert skipped == [("package.json", detect.REASON_OPTED_OUT)]
     repo = make_repo(tmp_path / "set", files, attributes="/packages/b/package.json bytewyrd-ci\n")
     assert jobs(repo) == ["js", "js-packages-b"]
 
@@ -590,9 +591,9 @@ def test_python_a_wrong_shaped_workspace_makes_the_file_declare_nothing(tmp_path
 
 def test_python_a_root_with_only_setup_py_yields_no_workspace(tmp_path):
     files = {"setup.py": "", "libs/m/pyproject.toml": PROJECT}
-    comps, skipped = bw.detect(str(make_repo(tmp_path / "r", files)))
+    comps, skipped = detect.detect(str(make_repo(tmp_path / "r", files)))
     assert [c.job_id for c in comps] == ["python-libs-m"]
-    assert skipped == [("setup.py", bw.REASON_PYPROJECT)]
+    assert skipped == [("setup.py", detect.REASON_PYPROJECT)]
 
 
 def test_rust_root_workspace_drops_nested_crates_unless_excluded_or_self_rooted(tmp_path):
@@ -695,7 +696,7 @@ def test_a_symlinked_root_manifest_counts_but_is_never_read(tmp_path):
     # As consumer-sim's S31: a committed package.json symlink to /dev/zero.
     repo = tmp_path / "r"
     repo.mkdir()
-    git(repo, "init", "-q")
+    run_git(repo, "init", "-q")
     os.symlink("/dev/zero", repo / "package.json")
     write(repo, "packages/a/package.json", "{}")
     commit(repo)
@@ -720,7 +721,7 @@ def test_tracked_lists_each_index_entry(tmp_path):
     os.chmod(repo / "run.sh", 0o755)
     commit(repo)
     add_gitlink(repo, "sub")
-    entries = {e.path: e for e in bw.tracked(str(repo))}
+    entries = {e.path: e for e in git.tracked(str(repo))}
     modes = {"a.txt": "100644", "link": "120000", "run.sh": "100755", "sub": "160000"}
     assert {p: e.mode for p, e in entries.items()} == {**modes, **dict.fromkeys(names, "100644")}
     assert all(e.stage == 0 and re.fullmatch(r"[0-9a-f]{40,64}", e.oid) for e in entries.values())
@@ -731,14 +732,14 @@ def test_tracked_decodes_paths_with_fsdecode(tmp_path):
     if not creatable(tmp_path, name):
         pytest.skip("this filesystem refuses non-UTF-8 names")
     repo = make_repo(tmp_path / "r", {name: "x"})
-    assert [e.path for e in bw.tracked(str(repo))] == [name]
+    assert [e.path for e in git.tracked(str(repo))] == [name]
 
 
 def test_tracked_outside_a_repo_raises(tmp_path, monkeypatch):
     monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
     (tmp_path / "plain").mkdir()
-    with pytest.raises(bw.BwError):
-        bw.tracked(str(tmp_path / "plain"))
+    with pytest.raises(cli.BwError):
+        git.tracked(str(tmp_path / "plain"))
 
 
 def test_blob_returns_regular_stage_0_entries_up_to_1_mib(tmp_path):
@@ -749,16 +750,16 @@ def test_blob_returns_regular_stage_0_entries_up_to_1_mib(tmp_path):
     commit(repo)
     add_gitlink(repo, "sub")
     root = str(repo)
-    entries = {e.path: e for e in bw.tracked(root)}
-    assert bw.blob(root, entries["small"]) == b"abc"
-    assert bw.blob(root, entries["exact"]) == b"y" * (1 << 20)
-    assert bw.blob(root, entries["run.sh"]) == b"#!/bin/sh\n"
-    assert bw.blob(root, entries["big"]) is None
-    assert bw.blob(root, entries["link"]) is None
-    assert bw.blob(root, entries["sub"]) is None
-    assert bw.blob(root, entries["small"]._replace(stage=2)) is None
-    assert bw.blob(root, bw.Entry("100644", "0" * 40, 0, "missing")) is None
-    assert bw.blob(str(tmp_path / "nowhere"), entries["small"]) is None
+    entries = {e.path: e for e in git.tracked(root)}
+    assert git.blob(root, entries["small"]) == b"abc"
+    assert git.blob(root, entries["exact"]) == b"y" * (1 << 20)
+    assert git.blob(root, entries["run.sh"]) == b"#!/bin/sh\n"
+    assert git.blob(root, entries["big"]) is None
+    assert git.blob(root, entries["link"]) is None
+    assert git.blob(root, entries["sub"]) is None
+    assert git.blob(root, entries["small"]._replace(stage=2)) is None
+    assert git.blob(root, git.Entry("100644", "0" * 40, 0, "missing")) is None
+    assert git.blob(str(tmp_path / "nowhere"), entries["small"]) is None
 
 
 # --- render() ----------------------------------------------------------------
@@ -786,12 +787,12 @@ AGENTS = (
     "@@none@@ - No language markers found.\n"
     "end\n"
 )
-GO = bw.Component("go", ".", "go", ("go.mod",))
-WEB = bw.Component("js", "web", "js-web", ("web/package.json",))
+GO = detect.Component("go", ".", "go", ("go.mod",))
+WEB = detect.Component("js", "web", "js-web", ("web/package.json",))
 
 
 def test_render_repeats_the_job_block_per_component():
-    assert bw.render(CALLER, [GO, WEB], "p") == (
+    assert seed.render(CALLER, [GO, WEB], "p") == (
         "name: CI\n"
         "permissions:\n"
         "  contents: read\n"
@@ -808,17 +809,17 @@ def test_render_repeats_the_job_block_per_component():
 
 
 def test_render_gathers_the_job_lines_where_the_first_stood():
-    assert bw.render("jobs:\n@@job@@ - @@job_id@@\nmiddle\n@@job@@   end\n", [GO], "p") == "jobs:\n- go\n  end\nmiddle\n"
+    assert seed.render("jobs:\n@@job@@ - @@job_id@@\nmiddle\n@@job@@   end\n", [GO], "p") == "jobs:\n- go\n  end\nmiddle\n"
 
 
 def test_render_keeps_tagged_lines_for_present_languages():
-    assert bw.render(AGENTS, [GO, WEB], "proj") == (
+    assert seed.render(AGENTS, [GO, WEB], "proj") == (
         "# proj\n\n- Languages: go, js in web/\n- Go: go test ./...\n- JS: bun test\nend\n"
     )
 
 
 def test_render_keeps_the_none_line_only_without_components():
-    assert bw.render(AGENTS, [], "proj") == "# proj\n\n- Languages: none\n- No language markers found.\nend\n"
+    assert seed.render(AGENTS, [], "proj") == "# proj\n\n- Languages: none\n- No language markers found.\nend\n"
 
 
 @pytest.mark.parametrize(
@@ -830,38 +831,38 @@ def test_render_keeps_the_none_line_only_without_components():
     ],
 )
 def test_render_caps_the_languages_line_at_ten_components(count, suffix):
-    comps = [bw.Component("go", "d%02d" % i, "go-d%02d" % i, ("d%02d/go.mod" % i,)) for i in range(count)]
+    comps = [detect.Component("go", "d%02d" % i, "go-d%02d" % i, ("d%02d/go.mod" % i,)) for i in range(count)]
     first_ten = ", ".join("go in d%02d/" % i for i in range(min(count, 10)))
-    assert bw.render("@@languages@@", comps, "p") == first_ten + suffix
+    assert seed.render("@@languages@@", comps, "p") == first_ten + suffix
 
 
 def test_render_values_are_literal():
     name = r"we&ird\name \1 \g<0> {0} %s @@languages@@ @@job_id@@ @@"
-    assert bw.render("# @@project_name@@\n@@languages@@\n", [GO], name) == "# " + name + "\ngo\n"
+    assert seed.render("# @@project_name@@\n@@languages@@\n", [GO], name) == "# " + name + "\ngo\n"
 
 
 def test_render_strips_crs():
-    assert bw.render("a\r\n@@go@@ b\r\n@@js@@ c\r\n", [GO], "p") == "a\nb\n"
+    assert seed.render("a\r\n@@go@@ b\r\n@@js@@ c\r\n", [GO], "p") == "a\nb\n"
 
 
 @pytest.mark.parametrize("tpl", ["@@unknown@@\n", "@@job_id@@ outside the block\n", "@@java@@ - Java\n", "a @@languages\n"])
 def test_render_raises_when_a_placeholder_is_left(tpl):
-    with pytest.raises(bw.BwError):
-        bw.render(tpl, [GO], "p")
+    with pytest.raises(cli.BwError):
+        seed.render(tpl, [GO], "p")
 
 
 def test_render_never_renders_a_zero_job_caller():
-    with pytest.raises(bw.BwError):
-        bw.render(CALLER, [], "p")
+    with pytest.raises(cli.BwError):
+        seed.render(CALLER, [], "p")
 
 
 # --- stamps and hashes -------------------------------------------------------
 
 
 def test_stamp_forms():
-    md = bw.stamp("md", "AGENTS.md", "0123456789ab", "unknown")
+    md = seed.stamp("md", "AGENTS.md", "0123456789ab", "unknown")
     assert md == "<!-- bytewyrd:scaffold v1 tpl=AGENTS.md:0123456789ab plugin=unknown -->"
-    yml = bw.stamp("yml", "ci-caller.yml", "0123456789ab", "abcdef012345")
+    yml = seed.stamp("yml", "ci-caller.yml", "0123456789ab", "abcdef012345")
     assert yml == "# bytewyrd:scaffold v1 tpl=ci-caller.yml:0123456789ab plugin=abcdef012345"
 
 
@@ -876,16 +877,16 @@ def test_stamp_forms():
 )
 def test_stamp_refuses_what_read_stamp_could_not_parse(args):
     with pytest.raises(ValueError):
-        bw.stamp(*args)
+        seed.stamp(*args)
 
 
 @pytest.mark.parametrize("kind", ["md", "yml"])
 @pytest.mark.parametrize("newline", ["\n", "\r\n"])
 def test_read_stamp_round_trips(tmp_path, kind, newline):
     path = tmp_path / "f"
-    line = bw.stamp(kind, "PULL_REQUEST_TEMPLATE.md", "abcdef012345", "unknown")
+    line = seed.stamp(kind, "PULL_REQUEST_TEMPLATE.md", "abcdef012345", "unknown")
     path.write_bytes((line + newline + "body" + newline).encode())
-    assert bw.read_stamp(str(path)) == ("PULL_REQUEST_TEMPLATE.md", "abcdef012345", "unknown")
+    assert seed.read_stamp(str(path)) == ("PULL_REQUEST_TEMPLATE.md", "abcdef012345", "unknown")
 
 
 @pytest.mark.parametrize(
@@ -894,30 +895,30 @@ def test_read_stamp_round_trips(tmp_path, kind, newline):
         ("", None),
         ("# bootstrap-content-version: bytewyrd/CLAUDE.md@0:0", None),
         ("# just a heading", None),
-        ("<!-- bytewyrd:scaffold v2 tpl=AGENTS.md:0123456789ab plugin=unknown -->", bw.BAD),
-        ("<!-- bytewyrd:scaffold v1 tpl=AGENTS.md:0123456789a plugin=unknown -->", bw.BAD),
-        ("<!-- bytewyrd:scaffold v1 tpl=AGENTS.md:0123456789ab plugin=unknown --> x", bw.BAD),
-        ("# bytewyrd:scaffold v1 tpl=ci.yml:0123456789ab", bw.BAD),
-        ("x bytewyrd:scaffold", bw.BAD),
+        ("<!-- bytewyrd:scaffold v2 tpl=AGENTS.md:0123456789ab plugin=unknown -->", seed.BAD),
+        ("<!-- bytewyrd:scaffold v1 tpl=AGENTS.md:0123456789a plugin=unknown -->", seed.BAD),
+        ("<!-- bytewyrd:scaffold v1 tpl=AGENTS.md:0123456789ab plugin=unknown --> x", seed.BAD),
+        ("# bytewyrd:scaffold v1 tpl=ci.yml:0123456789ab", seed.BAD),
+        ("x bytewyrd:scaffold", seed.BAD),
     ],
 )
 def test_read_stamp_none_and_bad(tmp_path, first, want):
     path = tmp_path / "f"
     path.write_text(first + "\nsecond line # bytewyrd:scaffold v1 tpl=a:0123456789ab plugin=unknown\n")
-    assert bw.read_stamp(str(path)) is want
+    assert seed.read_stamp(str(path)) is want
 
 
 def test_bad_is_a_named_singleton():
-    assert repr(bw.BAD) == "BAD" and bw.BAD is not None
+    assert repr(seed.BAD) == "BAD" and seed.BAD is not None
 
 
 def test_file_hash_ignores_crs(tmp_path):
     (tmp_path / "lf").write_bytes(b"line1\nline2\n")
     (tmp_path / "crlf").write_bytes(b"line1\r\nline2\r\n")
     want = hashlib.sha256(b"line1\nline2\n").hexdigest()[:12]
-    assert bw.file_hash(str(tmp_path / "lf")) == bw.file_hash(str(tmp_path / "crlf")) == want
+    assert seed.file_hash(str(tmp_path / "lf")) == seed.file_hash(str(tmp_path / "crlf")) == want
     (tmp_path / "abc").write_bytes(b"abc")
-    assert bw.file_hash(str(tmp_path / "abc")) == "ba7816bf8f01"  # sha256("abc")
+    assert seed.file_hash(str(tmp_path / "abc")) == "ba7816bf8f01"  # sha256("abc")
 
 
 def test_plugin_sha_from_a_cache_directory_name(tmp_path, monkeypatch):
@@ -935,18 +936,18 @@ def test_plugin_sha_from_a_cache_directory_name(tmp_path, monkeypatch):
     for i, (name, want) in enumerate(cases):
         path = tmp_path / str(i) / name
         path.mkdir(parents=True)
-        assert bw.plugin_sha(str(path)) == want, name
+        assert seed.plugin_sha(str(path)) == want, name
 
 
 def test_plugin_sha_from_a_git_checkout(tmp_path, monkeypatch):
     monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
     repo = make_repo(tmp_path / "plugin", {"sub/x": "1"})
-    head = git(repo, "rev-parse", "HEAD").decode().strip()
-    assert bw.plugin_sha(str(repo)) == head[:12]
-    assert bw.plugin_sha(str(repo / "sub")) == "unknown"  # not the checkout's top level
+    head = run_git(repo, "rev-parse", "HEAD").decode().strip()
+    assert seed.plugin_sha(str(repo)) == head[:12]
+    assert seed.plugin_sha(str(repo / "sub")) == "unknown"  # not the checkout's top level
     (tmp_path / "fresh").mkdir()
-    git(tmp_path / "fresh", "init", "-q")
-    assert bw.plugin_sha(str(tmp_path / "fresh")) == "unknown"  # no commit yet
+    run_git(tmp_path / "fresh", "init", "-q")
+    assert seed.plugin_sha(str(tmp_path / "fresh")) == "unknown"  # no commit yet
 
 
 # --- root() and project_name() -----------------------------------------------
@@ -955,37 +956,37 @@ def test_plugin_sha_from_a_git_checkout(tmp_path, monkeypatch):
 def test_root_from_a_subdirectory(tmp_path, monkeypatch):
     repo = make_repo(tmp_path / "r", {"a/b/x": ""})
     monkeypatch.chdir(repo / "a" / "b")
-    assert os.path.realpath(bw.root()) == os.path.realpath(repo)
+    assert os.path.realpath(git.root()) == os.path.realpath(repo)
 
 
 def test_root_outside_a_work_tree_raises(tmp_path, monkeypatch):
     monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
     (tmp_path / "plain").mkdir()
     monkeypatch.chdir(tmp_path / "plain")
-    with pytest.raises(bw.BwError, match="not inside a git work tree"):
-        bw.root()
+    with pytest.raises(cli.BwError, match="not inside a git work tree"):
+        git.root()
     repo = make_repo(tmp_path / "r", {})
     monkeypatch.chdir(repo / ".git")
-    with pytest.raises(bw.BwError, match="not inside a git work tree"):
-        bw.root()
+    with pytest.raises(cli.BwError, match="not inside a git work tree"):
+        git.root()
 
 
 def test_root_without_git_raises(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", str(tmp_path / "empty"))
-    with pytest.raises(bw.BwError, match="cannot run git"):
-        bw.root()
+    with pytest.raises(cli.BwError, match="cannot run git"):
+        git.root()
 
 
 def test_project_name(tmp_path, monkeypatch):
     monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
     repo = make_repo(tmp_path / "we&ird\\name", {})
-    assert bw.project_name(str(repo)) == "we&ird\\name"
+    assert git.project_name(str(repo)) == "we&ird\\name"
     # The parent of the common git dir names the project, wherever ROOT is.
     (tmp_path / "proj").mkdir()
-    git(tmp_path, "init", "-q", "--separate-git-dir", str(tmp_path / "proj" / "store.git"), str(tmp_path / "checkout"))
-    assert bw.project_name(str(tmp_path / "checkout")) == "proj"
+    run_git(tmp_path, "init", "-q", "--separate-git-dir", str(tmp_path / "proj" / "store.git"), str(tmp_path / "checkout"))
+    assert git.project_name(str(tmp_path / "checkout")) == "proj"
     (tmp_path / "plain").mkdir()
-    assert bw.project_name(str(tmp_path / "plain")) == "plain"
+    assert git.project_name(str(tmp_path / "plain")) == "plain"
 
 
 # --- files -------------------------------------------------------------------
@@ -996,11 +997,11 @@ def test_exists(tmp_path):
     (tmp_path / "agents.md").write_text("x")
     os.symlink("nowhere", tmp_path / "CLAUDE.md")
     (tmp_path / "README.md").mkdir()
-    assert bw.exists(d, "AGENTS.md")  # a case variant
-    assert bw.exists(d, "CLAUDE.md")  # a dangling symlink
-    assert bw.exists(d, "README.md")  # a directory
-    assert not bw.exists(d, "OTHER.md")
-    assert not bw.exists(str(tmp_path / "missing"), "AGENTS.md")
+    assert fs.exists(d, "AGENTS.md")  # a case variant
+    assert fs.exists(d, "CLAUDE.md")  # a dangling symlink
+    assert fs.exists(d, "README.md")  # a directory
+    assert not fs.exists(d, "OTHER.md")
+    assert not fs.exists(str(tmp_path / "missing"), "AGENTS.md")
 
 
 @pytest.mark.parametrize(
@@ -1014,7 +1015,7 @@ def test_exists(tmp_path):
 )
 def test_pr_template_finds(tmp_path, rel, found):
     write(tmp_path, rel, "x")
-    assert bw.pr_template(str(tmp_path)) == found
+    assert seed.pr_template(str(tmp_path)) == found
 
 
 def test_pr_template_ignores_other_names_and_places(tmp_path):
@@ -1025,33 +1026,33 @@ def test_pr_template_ignores_other_names_and_places(tmp_path):
         "docs/pull_request_templates.md",
     ):
         write(tmp_path, rel, "x")
-    assert bw.pr_template(str(tmp_path)) is None
+    assert seed.pr_template(str(tmp_path)) is None
 
 
 def test_pr_template_looks_in_root_then_docs_then_github(tmp_path):
     write(tmp_path, ".github/pull_request_template.md", "x")
     write(tmp_path, "docs/pull_request_template.md", "x")
-    assert bw.pr_template(str(tmp_path)) == "docs/pull_request_template.md"
+    assert seed.pr_template(str(tmp_path)) == "docs/pull_request_template.md"
     write(tmp_path, "PULL_REQUEST_TEMPLATE.md", "x")
-    assert bw.pr_template(str(tmp_path)) == "PULL_REQUEST_TEMPLATE.md"
+    assert seed.pr_template(str(tmp_path)) == "PULL_REQUEST_TEMPLATE.md"
 
 
 def test_symlinked_dir(tmp_path):
     root = str(tmp_path)
-    assert bw.symlinked_dir(root, ".github/workflows/ci.yml") is None
-    assert bw.symlinked_dir(root, "AGENTS.md") is None
+    assert fs.symlinked_dir(root, ".github/workflows/ci.yml") is None
+    assert fs.symlinked_dir(root, "AGENTS.md") is None
     (tmp_path / "outside").mkdir()
     os.symlink(tmp_path / "outside", tmp_path / ".github")
-    assert bw.symlinked_dir(root, ".github/workflows/ci.yml") == ".github"
+    assert fs.symlinked_dir(root, ".github/workflows/ci.yml") == ".github"
     os.unlink(tmp_path / ".github")
     (tmp_path / ".github").mkdir()
     os.symlink(tmp_path / "outside", tmp_path / ".github" / "workflows")
-    assert bw.symlinked_dir(root, ".github/workflows/ci.yml") == ".github/workflows"
-    assert bw.symlinked_dir(root, ".github/PULL_REQUEST_TEMPLATE.md") is None
+    assert fs.symlinked_dir(root, ".github/workflows/ci.yml") == ".github/workflows"
+    assert fs.symlinked_dir(root, ".github/PULL_REQUEST_TEMPLATE.md") is None
 
 
 def test_create_writes_lf_text(tmp_path):
-    bw.create(str(tmp_path / "f"), "a\nb\n")
+    fs.create(str(tmp_path / "f"), "a\nb\n")
     assert (tmp_path / "f").read_bytes() == b"a\nb\n"
 
 
@@ -1061,19 +1062,19 @@ def test_create_never_writes_over_or_through_anything(tmp_path):
     (tmp_path / "dir").mkdir()
     for name in ("file", "dangling", "dir"):
         with pytest.raises(FileExistsError):
-            bw.create(str(tmp_path / name), "new")
+            fs.create(str(tmp_path / name), "new")
     assert (tmp_path / "file").read_text() == "keep"
     assert not os.path.lexists(tmp_path / "target")
 
 
 def test_create_leaves_nothing_when_the_write_fails(tmp_path):
     with pytest.raises(UnicodeEncodeError):
-        bw.create(str(tmp_path / "f"), "x\ud800")
+        fs.create(str(tmp_path / "f"), "x\ud800")
     assert not os.path.lexists(tmp_path / "f")
 
 
 def test_parser_usage_errors_exit_1(capsys):
-    parser = bw.Parser(prog="bw x")
+    parser = cli.Parser(prog="bw x")
     parser.add_argument("--flag", action="store_true")
     with pytest.raises(SystemExit) as e:
         parser.parse_args(["--nope"])
@@ -1084,17 +1085,17 @@ def test_parser_usage_errors_exit_1(capsys):
 
 def test_skip_fix_lines():
     path = "a b/go.mod"
-    mark = ", or mark the manifest: " + bw.attr_line(path)
-    assert bw.skip_fix(path, bw.REASON_NAME) == "rename the directory" + mark
-    assert bw.skip_fix(path, bw.reason_taken("go-a-b", "a.b")) == "rename the directory" + mark
-    assert bw.skip_fix(path, bw.REASON_RAKEFILE) == "add a Rakefile whose default task runs the tests" + mark
-    assert bw.skip_fix(path, bw.REASON_PYPROJECT) == "add a pyproject.toml with a [project] table" + mark
-    assert bw.skip_fix(path, bw.REASON_VALUE) == "set bytewyrd-ci or -bytewyrd-ci for this path in .gitattributes"
-    assert bw.skip_fix(path, bw.REASON_OPTED_OUT) is None
+    mark = ", or mark the manifest: " + detect.attr_line(path)
+    assert detect.skip_fix(path, detect.REASON_NAME) == "rename the directory" + mark
+    assert detect.skip_fix(path, detect.reason_taken("go-a-b", "a.b")) == "rename the directory" + mark
+    assert detect.skip_fix(path, detect.REASON_RAKEFILE) == "add a Rakefile whose default task runs the tests" + mark
+    assert detect.skip_fix(path, detect.REASON_PYPROJECT) == "add a pyproject.toml with a [project] table" + mark
+    assert detect.skip_fix(path, detect.REASON_VALUE) == "set bytewyrd-ci or -bytewyrd-ci for this path in .gitattributes"
+    assert detect.skip_fix(path, detect.REASON_OPTED_OUT) is None
 
 
 def test_reason_taken_quotes_its_values():
-    assert bw.reason_taken("go-a-b", "a.b") == "job id go-a-b is taken by a.b"
+    assert detect.reason_taken("go-a-b", "a.b") == "job id go-a-b is taken by a.b"
 
 
 # --- state-touch -------------------------------------------------------------
@@ -1105,7 +1106,7 @@ def test_state_touch_writes_where_it_opened_even_after_a_swap(tmp_path, monkeypa
     repo.mkdir()
     outside.mkdir()
     monkeypatch.chdir(repo)
-    opened = bw_state_touch.open_state_dir
+    opened = state_touch.open_state_dir
 
     def open_then_swap():
         fd = opened()
@@ -1113,8 +1114,8 @@ def test_state_touch_writes_where_it_opened_even_after_a_swap(tmp_path, monkeypa
         os.symlink(outside, ".bytewyrd")
         return fd
 
-    monkeypatch.setattr(bw_state_touch, "open_state_dir", open_then_swap)
-    assert bw_state_touch.main(["last-feature-engineer-stop"]) == 0
+    monkeypatch.setattr(state_touch, "open_state_dir", open_then_swap)
+    assert state_touch.main(["last-feature-engineer-stop"]) == 0
     assert list(outside.iterdir()) == []
     assert sorted(p.name for p in (repo / "moved").iterdir()) == [".gitignore", "last-feature-engineer-stop"]
 
@@ -1122,7 +1123,7 @@ def test_state_touch_writes_where_it_opened_even_after_a_swap(tmp_path, monkeypa
     os.unlink(repo / ".bytewyrd")
     os.rename(repo / "moved", repo / ".bytewyrd")
     (outside / "last-feature-engineer-stop").write_text("keep")
-    assert bw_state_touch.main(["--rm", "last-feature-engineer-stop"]) == 0
+    assert state_touch.main(["--rm", "last-feature-engineer-stop"]) == 0
     assert (outside / "last-feature-engineer-stop").read_text() == "keep"
     assert sorted(p.name for p in (repo / "moved").iterdir()) == [".gitignore"]
 
@@ -1132,8 +1133,8 @@ def test_state_touch_always_exits_0(error, monkeypatch, capsys):
     def fail(argv):
         raise error
 
-    monkeypatch.setattr(bw_state_touch, "run", fail)
-    assert bw_state_touch.main(["x"]) == 0
+    monkeypatch.setattr(state_touch, "run", fail)
+    assert state_touch.main(["x"]) == 0
     assert capsys.readouterr().err.count("\n") == 1
 
 
@@ -1143,7 +1144,7 @@ def test_state_touch_always_exits_0(error, monkeypatch, capsys):
 def test_compact_reminder_text():
     # hooks/hooks.json's compact reminder at ae97f77, asking the user to run
     # /docs-review instead of "Consider running /docs-review" [R77].
-    assert bw_compact_reminder.TEXT == (
+    assert compact_reminder.TEXT == (
         "Post-compact reminder: a feature-engineer agent finished in the last 24 hours and "
         "/docs-review may not yet have run. Ask the user to run /docs-review against the implemented files."
     )
@@ -1151,8 +1152,8 @@ def test_compact_reminder_text():
 
 def test_compact_reminder_prints_only_while_the_sentinel_is_under_a_day_old(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
-    remind = bw_compact_reminder.TEXT + "\n"
-    assert bw_compact_reminder.main([]) == 0
+    remind = compact_reminder.TEXT + "\n"
+    assert compact_reminder.main([]) == 0
     assert capsys.readouterr() == ("", "")
     (tmp_path / ".bytewyrd").mkdir()
     sentinel = tmp_path / ".bytewyrd" / "last-feature-engineer-stop"
@@ -1160,23 +1161,23 @@ def test_compact_reminder_prints_only_while_the_sentinel_is_under_a_day_old(tmp_
     for age, want in [(0, remind), (86000, remind), (86401, ""), (-60, remind)]:
         mtime = time.time() - age
         os.utime(sentinel, (mtime, mtime))
-        assert bw_compact_reminder.main([]) == 0
+        assert compact_reminder.main([]) == 0
         assert capsys.readouterr() == (want, ""), age
     sentinel.unlink()
     (tmp_path / "fresh").touch()
     os.symlink(tmp_path / "fresh", sentinel)  # never a sentinel state-touch wrote
-    assert bw_compact_reminder.main([]) == 0
+    assert compact_reminder.main([]) == 0
     assert capsys.readouterr() == ("", "")
     sentinel.unlink()
     sentinel.mkdir()
-    assert bw_compact_reminder.main([]) == 0
+    assert compact_reminder.main([]) == 0
     assert capsys.readouterr() == ("", "")
 
 
 def test_compact_reminder_always_exits_0(monkeypatch, capsys):
-    monkeypatch.setattr(bw_compact_reminder, "due", lambda: 1 / 0)
-    assert bw_compact_reminder.main([]) == 0
-    assert bw_compact_reminder.main(["--bogus"]) == 0
+    monkeypatch.setattr(compact_reminder, "due", lambda: 1 / 0)
+    assert compact_reminder.main([]) == 0
+    assert compact_reminder.main(["--bogus"]) == 0
     assert "usage: bw compact-reminder" in capsys.readouterr().err
 
 
@@ -1187,35 +1188,35 @@ IS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
 
 
 def test_targets_and_their_templates():
-    assert [t.path for t in bw.TARGETS] == [
+    assert [t.path for t in seed.TARGETS] == [
         "AGENTS.md",
         "CLAUDE.md",
         ".github/PULL_REQUEST_TEMPLATE.md",
         ".github/workflows/ci.yml",
     ]
-    assert [bw.template_for(t, []) for t in bw.TARGETS] == list(bw.TEMPLATES[:3]) + ["ci-noop.yml"]
-    assert bw.template_for(bw.CI_YML, [GO]) == "ci-caller.yml"
-    for name in bw.TEMPLATES:
-        text, digest = bw.read_template(name)
-        assert digest == bw.file_hash(str(ROOT_TEMPLATES / (name + ".tpl")))
+    assert [seed.template_for(t, []) for t in seed.TARGETS] == list(seed.TEMPLATES[:3]) + ["ci-noop.yml"]
+    assert seed.template_for(seed.CI_YML, [GO]) == "ci-caller.yml"
+    for name in seed.TEMPLATES:
+        text, digest = seed.read_template(name)
+        assert digest == seed.file_hash(str(ROOT_TEMPLATES / (name + ".tpl")))
         assert "\r" not in text and "CLAUDE_PLUGIN_ROOT" not in text
 
 
 def test_fits_takes_only_templates_of_the_target_s_kind():
-    assert bw.fits(bw.CLAUDE_MD, "AGENTS.md")  # a CLAUDE.md that is a symlink to AGENTS.md
-    assert bw.fits(bw.CI_YML, "ci-noop.yml") and bw.fits(bw.CI_YML, "ci-caller.yml")
-    assert not bw.fits(bw.CI_YML, "AGENTS.md")
-    assert not bw.fits(bw.AGENTS_MD, "ci-caller.yml")
-    assert not bw.fits(bw.AGENTS_MD, "README.md")
+    assert seed.fits(seed.CLAUDE_MD, "AGENTS.md")  # a CLAUDE.md that is a symlink to AGENTS.md
+    assert seed.fits(seed.CI_YML, "ci-noop.yml") and seed.fits(seed.CI_YML, "ci-caller.yml")
+    assert not seed.fits(seed.CI_YML, "AGENTS.md")
+    assert not seed.fits(seed.AGENTS_MD, "ci-caller.yml")
+    assert not seed.fits(seed.AGENTS_MD, "README.md")
 
 
 def test_read_template_raises_bw_error(tmp_path, monkeypatch):
-    monkeypatch.setattr(bw, "TEMPLATE_DIR", str(tmp_path))
-    with pytest.raises(bw.BwError, match=r"^cannot read template AGENTS\.md: No such file"):
-        bw.read_template("AGENTS.md")
+    monkeypatch.setattr(seed, "TEMPLATE_DIR", str(tmp_path))
+    with pytest.raises(cli.BwError, match=r"^cannot read template AGENTS\.md: No such file"):
+        seed.read_template("AGENTS.md")
     (tmp_path / "AGENTS.md.tpl").write_bytes(b"\xff")
-    with pytest.raises(bw.BwError, match=r"^cannot read template AGENTS\.md: UnicodeDecodeError"):
-        bw.read_template("AGENTS.md")
+    with pytest.raises(cli.BwError, match=r"^cannot read template AGENTS\.md: UnicodeDecodeError"):
+        seed.read_template("AGENTS.md")
 
 
 CALLER_PIN_LINE = (
@@ -1233,28 +1234,28 @@ def test_the_caller_template_has_one_uses_line_of_the_pinned_shape():
 def test_the_noop_fixture_workflow_is_the_noop_render_from_line_2():
     # AC-8; consumer-sim's S22 checks the same through scaffold itself.
     fixture = (REPO / ".github" / "workflows" / "scaffold-noop-fixture.yml").read_text()
-    text, _ = bw.read_template("ci-noop.yml")
-    assert fixture.split("\n", 1)[1] == bw.render(text, [], "any")
+    text, _ = seed.read_template("ci-noop.yml")
+    assert fixture.split("\n", 1)[1] == seed.render(text, [], "any")
 
 
 def test_find_entry(tmp_path):
     d = str(tmp_path)
     (tmp_path / "b.md").write_text("x")
     os.symlink("nowhere", tmp_path / "CLAUDE.md")
-    assert bw.find_entry(d, "b.md") == "b.md"
-    assert bw.find_entry(d, "B.MD") in ("b.md", "B.MD")  # B.MD on a case-insensitive filesystem
-    assert bw.find_entry(d, "CLAUDE.md") == "CLAUDE.md"  # a dangling symlink
-    assert bw.find_entry(d, "other.md") is None
-    assert bw.find_entry(str(tmp_path / "missing"), "b.md") is None
+    assert fs.find_entry(d, "b.md") == "b.md"
+    assert fs.find_entry(d, "B.MD") in ("b.md", "B.MD")  # B.MD on a case-insensitive filesystem
+    assert fs.find_entry(d, "CLAUDE.md") == "CLAUDE.md"  # a dangling symlink
+    assert fs.find_entry(d, "other.md") is None
+    assert fs.find_entry(str(tmp_path / "missing"), "b.md") is None
 
 
 def test_read_text_strips_crs_and_keeps_undecodable_bytes(tmp_path):
     (tmp_path / "f").write_bytes(b"a\r\nb\xff\r\n")
     os.symlink("f", tmp_path / "link")
     for name in ("f", "link"):
-        assert bw.read_text(str(tmp_path / name)) == "a\nb\udcff\n"
-    (tmp_path / "exact").write_bytes(b"y" * bw.MAX_TEXT)
-    assert len(bw.read_text(str(tmp_path / "exact"))) == bw.MAX_TEXT
+        assert fs.read_text(str(tmp_path / name)) == "a\nb\udcff\n"
+    (tmp_path / "exact").write_bytes(b"y" * fs.MAX_TEXT)
+    assert len(fs.read_text(str(tmp_path / "exact"))) == fs.MAX_TEXT
 
 
 def test_read_text_never_reads_what_is_not_a_regular_file(tmp_path):
@@ -1263,10 +1264,10 @@ def test_read_text_never_reads_what_is_not_a_regular_file(tmp_path):
     os.symlink("/dev/zero", tmp_path / "zero")
     os.symlink("missing", tmp_path / "dangling")
     os.symlink("loop", tmp_path / "loop")
-    (tmp_path / "big").write_bytes(b"x" * (bw.MAX_TEXT + 1))
+    (tmp_path / "big").write_bytes(b"x" * (fs.MAX_TEXT + 1))
     (tmp_path / "file").write_text("x")
     for name in ("dir", "fifo", "zero", "dangling", "loop", "big", "absent", "file/below"):
-        assert bw.read_text(str(tmp_path / name)) is None, name
+        assert fs.read_text(str(tmp_path / name)) is None, name
 
 
 @pytest.mark.skipif(IS_ROOT, reason="root reads any file")
@@ -1276,79 +1277,79 @@ def test_read_text_raises_for_other_errors(tmp_path):
     path.chmod(0)
     try:
         with pytest.raises(PermissionError):
-            bw.read_text(str(path))
+            fs.read_text(str(path))
     finally:
         path.chmod(0o644)
 
 
 def test_workflow_exists(tmp_path):
     root = str(tmp_path)
-    assert not bw.workflow_exists(root)
+    assert not seed.workflow_exists(root)
     workflows = tmp_path / ".github" / "workflows"
     workflows.mkdir(parents=True)
     (workflows / "notes.txt").write_text("x")
     (workflows / "build.YML").write_text("x")  # *.yml and *.yaml as written
-    assert not bw.workflow_exists(root)
+    assert not seed.workflow_exists(root)
     (workflows / "release.yaml").write_text("x")
-    assert bw.workflow_exists(root)
+    assert seed.workflow_exists(root)
 
 
 def test_lacks_import(tmp_path):
     root = str(tmp_path)
     claude, agents = tmp_path / "CLAUDE.md", tmp_path / "AGENTS.md"
-    assert not bw.lacks_import(root)  # no CLAUDE.md
+    assert not seed.lacks_import(root)  # no CLAUDE.md
     claude.write_bytes(b"<!-- stamp -->\r\n@AGENTS.md\r\n")
-    assert not bw.lacks_import(root)
+    assert not seed.lacks_import(root)
     claude.write_text("see @AGENTS.md\n  @AGENTS.md\n")
-    assert bw.lacks_import(root)
+    assert seed.lacks_import(root)
     claude.unlink()
     agents.write_text("# x\n")
     os.symlink("AGENTS.md", claude)  # CLAUDE.md is AGENTS.md
-    assert not bw.lacks_import(root)
+    assert not seed.lacks_import(root)
     claude.unlink()
     agents.unlink()
     claude.write_text("# x\n")
     os.symlink("CLAUDE.md", agents)  # and the other way round
-    assert not bw.lacks_import(root)
+    assert not seed.lacks_import(root)
     agents.unlink()
     claude.unlink()
     claude.mkdir()
-    assert not bw.lacks_import(root)
+    assert not seed.lacks_import(root)
 
 
 def test_dirty_leaves_the_index_alone(tmp_path):
     repo = make_repo(tmp_path / "r", {"a": "1"})
     root, index = str(repo), repo / ".git" / "index"
-    assert not bw.dirty(root)
+    assert not git.dirty(root)
     os.utime(repo / "a", (0, 0))  # a stat change that a refreshing git status would write back
     before = index.stat().st_mtime_ns, index.read_bytes()
-    assert not bw.dirty(root)
+    assert not git.dirty(root)
     assert (index.stat().st_mtime_ns, index.read_bytes()) == before
     write(repo, "b", "x")
-    assert bw.dirty(root)
-    git(repo, "add", "b")
-    assert bw.dirty(root)
+    assert git.dirty(root)
+    run_git(repo, "add", "b")
+    assert git.dirty(root)
 
 
 def test_dirty_raises_outside_a_repo(tmp_path, monkeypatch):
     monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
-    with pytest.raises(bw.BwError, match="git status failed"):
-        bw.dirty(str(tmp_path))
+    with pytest.raises(cli.BwError, match="git status failed"):
+        git.dirty(str(tmp_path))
 
 
 @pytest.mark.parametrize(
     "error, want",
     [
-        (bw.BwError("not inside a git work tree"), "not inside a git work tree"),
+        (cli.BwError("not inside a git work tree"), "not inside a git work tree"),
         (PermissionError(13, "Permission denied", "/x/y"), "Permission denied: /x/y"),
         (OSError(5, "Input/output error"), "Input/output error"),
         (KeyError("k"), "KeyError: 'k'"),
         (KeyboardInterrupt(), "KeyboardInterrupt"),
-        (bw.BwError("bad\nname"), '"bad\\nname"'),
+        (cli.BwError("bad\nname"), '"bad\\nname"'),
     ],
 )
 def test_describe(error, want):
-    assert bw.describe(error) == want
+    assert cli.describe(error) == want
 
 
 # --- JSON output (the class-B helpers) ---------------------------------------
@@ -1372,14 +1373,14 @@ def test_describe(error, want):
     ],
 )
 def test_jq_dumps_prints_what_jq_printed(value, want):
-    assert bw.jq_dumps(value) == want
+    assert jsonout.jq_dumps(value) == want
 
 
 def test_jq_dumps_escapes_as_jq_does():
     # json's escapes, raw UTF-8, and \u007f for DEL, which json leaves raw.
     s = '"\\/\b\f\n\r\t\x00\x01\x1f\x7f é — 😀 \u2028'
     want = '"\\"\\\\/\\b\\f\\n\\r\\t\\u0000\\u0001\\u001f\\u007f é — 😀 \u2028"'
-    assert bw.jq_dumps({"s": s}) == '{\n  "s": %s\n}\n' % want
+    assert jsonout.jq_dumps({"s": s}) == '{\n  "s": %s\n}\n' % want
 
 
 def test_jq_dumps_matches_jq_itself(tmp_path):
@@ -1393,7 +1394,7 @@ def test_jq_dumps_matches_jq_itself(tmp_path):
     program = "{s: $s, n: 12, t: true, f: false, l: [], o: {}, a: [{k: $s}, 1]}"
     want = subprocess.run([jq, "-n", "--rawfile", "s", str(tmp_path / "s.txt"), program], capture_output=True, check=True)
     value = {"s": s, "n": 12, "t": True, "f": False, "l": [], "o": {}, "a": [{"k": s}, 1]}
-    assert bw.jq_dumps(value).encode("utf-8") == want.stdout
+    assert jsonout.jq_dumps(value).encode("utf-8") == want.stdout
 
 
 def escaped(raw):
@@ -1413,44 +1414,44 @@ def escaped(raw):
     ],
 )
 def test_jq_string_decodes_escaped_bytes_with_u_fffd_as_jq_did(raw, want):
-    assert bw.jq_string(escaped(raw)) == want
+    assert jsonout.jq_string(escaped(raw)) == want
 
 
 def test_jq_string_replaces_any_other_lone_surrogate():
     # As a YAML "\ud800" escape makes; os.fsdecode() never does.
-    assert bw.jq_string("a\ud800b\udbff\udc00\udd00\udfff") == "a\ufffdb\ufffd\ufffd\ufffd\ufffd"
+    assert jsonout.jq_string("a\ud800b\udbff\udc00\udd00\udfff") == "a\ufffdb\ufffd\ufffd\ufffd\ufffd"
 
 
 def test_jq_string_returns_valid_text_as_it_is():
     s = "plain é — 😀 \x00\x7f"
-    assert bw.jq_string(s) is s
+    assert jsonout.jq_string(s) is s
 
 
 def test_jq_dumps_cleans_keys_and_nested_strings():
     value = {escaped(b"k\xe9"): [escaped(b"v\xe9"), {"x": "\ud800"}], "n": None}
-    assert bw.jq_dumps(value) == '{\n  "k\ufffd": [\n    "v\ufffd",\n    {\n      "x": "\ufffd"\n    }\n  ],\n  "n": null\n}\n'
+    assert jsonout.jq_dumps(value) == '{\n  "k\ufffd": [\n    "v\ufffd",\n    {\n      "x": "\ufffd"\n    }\n  ],\n  "n": null\n}\n'
 
 
 def test_emit_prints_on_stdout(capsysbinary):
-    bw.emit({"a": "é\x7f", "b": escaped(b"caf\xe9")})
+    jsonout.emit({"a": "é\x7f", "b": escaped(b"caf\xe9")})
     assert capsysbinary.readouterr() == ('{\n  "a": "é\\u007f",\n  "b": "caf\ufffd"\n}\n'.encode(), b"")
 
 
 def test_emit_writes_utf_8_to_a_stdout_of_another_encoding(monkeypatch):
     buffer = io.BytesIO()
     monkeypatch.setattr(sys, "stdout", io.TextIOWrapper(buffer, encoding="latin-1"))
-    bw.emit({"a": "é — 😀"})
+    jsonout.emit({"a": "é — 😀"})
     assert buffer.getvalue() == '{\n  "a": "é — 😀"\n}\n'.encode("utf-8")
 
 
 def test_emit_error(capsysbinary):
     # common.bats: .error is the argument, and there is no other key.
-    bw.emit_error("something went wrong")
+    jsonout.emit_error("something went wrong")
     assert capsysbinary.readouterr() == (b'{\n  "error": "something went wrong"\n}\n', b"")
 
 
 def test_json_main_returns_the_command_s_exit_code(capsys):
-    assert bw.json_main("x", lambda argv: len(argv), ["a", "b", "c"]) == 3
+    assert jsonout.json_main("x", lambda argv: len(argv), ["a", "b", "c"]) == 3
     assert capsys.readouterr() == ("", "")
 
 
@@ -1459,14 +1460,14 @@ def test_json_main_returns_the_command_s_exit_code(capsys):
     [
         (PermissionError(13, "Permission denied", "docs/x.md"), "rfc-x: Permission denied: docs/x.md"),
         (ValueError("bad value"), "rfc-x: ValueError: bad value"),
-        (bw.BwError("one line"), "rfc-x: one line"),
+        (cli.BwError("one line"), "rfc-x: one line"),
     ],
 )
 def test_json_main_prints_an_exception_as_a_json_error_with_exit_2(error, message, capsys):
     def run(argv):
         raise error
 
-    assert bw.json_main("rfc-x", run, []) == 2
+    assert jsonout.json_main("rfc-x", run, []) == 2
     out, err = capsys.readouterr()
     assert (json.loads(out), err) == ({"error": message}, "")
 
@@ -1476,7 +1477,7 @@ def test_json_main_lets_keyboard_interrupt_through():
         raise KeyboardInterrupt
 
     with pytest.raises(KeyboardInterrupt):
-        bw.json_main("x", run, [])
+        jsonout.json_main("x", run, [])
 
 
 def test_json_main_sends_a_failing_stdout_to_dev_null(tmp_path, monkeypatch):
@@ -1496,14 +1497,14 @@ def test_json_main_sends_a_failing_stdout_to_dev_null(tmp_path, monkeypatch):
 
     monkeypatch.setattr(sys, "stdout", Broken())
     try:
-        assert bw.json_main("x", lambda argv: bw.emit({}), []) == 2
+        assert jsonout.json_main("x", lambda argv: jsonout.emit({}), []) == 2
         assert os.path.samestat(os.fstat(fd), os.stat(os.devnull))
     finally:
         os.close(fd)
 
 
 def test_a_helper_with_stdout_closed_exits_2_without_a_traceback(tmp_path):
-    cmd = [sys.executable, "-I", "-S", "-B", str(LIB / "bw_main.py"), "rfc-braindump-append"]
+    cmd = [sys.executable, "-I", "-S", "-B", str(MAIN), "rfc-braindump-append"]
     proc = subprocess.run(cmd, cwd=tmp_path, stderr=subprocess.PIPE, preexec_fn=lambda: os.close(1))
     assert (proc.returncode, proc.stderr) == (2, b"")
 
@@ -1521,10 +1522,10 @@ def test_a_helper_with_stdout_closed_exits_2_without_a_traceback(tmp_path):
     ],
 )
 def test_split_lines_splits_as_awk_and_grep_read_lines(data, want):
-    assert bw.split_lines(data) == want
+    assert fs.split_lines(data) == want
 
 
-@pytest.mark.parametrize("path", sorted(LIB.glob("*.py")), ids=lambda p: p.name)
+@pytest.mark.parametrize("path", sorted(PACKAGE.rglob("*.py")), ids=lambda p: str(p.relative_to(PACKAGE)))
 def test_each_module_compiles_without_a_warning(path):
     # Under the launcher's -B, every run compiles each module it imports, so
     # a warning, such as one for an invalid escape, would reach stderr.
@@ -1538,7 +1539,7 @@ def test_pwd_is_pwd_when_it_names_the_current_directory(tmp_path, monkeypatch):
     link.symlink_to(tmp_path)
     monkeypatch.chdir(link)
     monkeypatch.setenv("PWD", str(link))
-    assert bw.pwd() == str(link) != os.getcwd()
+    assert fs.pwd() == str(link) != os.getcwd()
 
 
 @pytest.mark.parametrize("value", [None, "", "link", "{link}/", "{link}/.", "{tmp}/link/../link", "{tmp}//link", "{other}", "{tmp}/gone"])
@@ -1551,22 +1552,22 @@ def test_pwd_is_getcwd_otherwise(tmp_path, monkeypatch, value):
     else:
         link = str(tmp_path / "link")
         monkeypatch.setenv("PWD", value.format(tmp=tmp_path, link=link, other=tmp_path / "other"))
-    assert bw.pwd() == os.getcwd()
+    assert fs.pwd() == os.getcwd()
 
 
 def test_emit_available(capsysbinary):
-    bw.emit_available("gh")
+    jsonout.emit_available("gh")
     assert capsysbinary.readouterr() == (b'{\n  "result": "available",\n  "name": "gh"\n}\n', b"")
 
 
 def test_emit_missing(capsysbinary):
-    bw.emit_missing("gh", "install gh first")
+    jsonout.emit_missing("gh", "install gh first")
     want = b'{\n  "result": "missing",\n  "name": "gh",\n  "hint": "install gh first"\n}\n'
     assert capsysbinary.readouterr() == (want, b"")
 
 
 def test_emit_unauth(capsysbinary):
-    bw.emit_unauth("gh", "run gh auth login")
+    jsonout.emit_unauth("gh", "run gh auth login")
     want = b'{\n  "result": "unauthenticated",\n  "name": "gh",\n  "hint": "run gh auth login"\n}\n'
     assert capsysbinary.readouterr() == (want, b"")
 
@@ -1584,17 +1585,17 @@ def call(module, cwd, argv, monkeypatch, capsys):
 
 def fresh_repo(path):
     path.mkdir(parents=True)
-    git(path, "init", "-q")
+    run_git(path, "init", "-q")
     return path
 
 
 def header(repo):
-    return "bytewyrd scaffold: " + bw.quote(os.path.realpath(repo))
+    return "bytewyrd scaffold: " + cli.quote(os.path.realpath(repo))
 
 
 def test_scaffold_dry_run_lists_the_targets_and_writes_nothing(tmp_path, monkeypatch, capsys):
     repo = fresh_repo(tmp_path / "r")
-    assert call(bw_scaffold, repo, [], monkeypatch, capsys) == (
+    assert call(scaffold, repo, [], monkeypatch, capsys) == (
         0,
         header(repo) + "\n"
         "would create  AGENTS.md\n"
@@ -1609,14 +1610,14 @@ def test_scaffold_dry_run_lists_the_targets_and_writes_nothing(tmp_path, monkeyp
 
 def test_scaffold_apply_writes_the_stamp_and_the_render(tmp_path, monkeypatch, capsys):
     repo = fresh_repo(tmp_path / "proj")
-    code, out, err = call(bw_scaffold, repo, ["--apply"], monkeypatch, capsys)
+    code, out, err = call(scaffold, repo, ["--apply"], monkeypatch, capsys)
     assert (code, err) == (0, "")
-    assert out.splitlines()[1:] == ["created  " + t.path for t in bw.TARGETS] + ["applied: 4 created, 0 skipped"]
-    sha = bw.plugin_sha(bw.PLUGIN_DIR)
-    for target in bw.TARGETS:
-        name = bw.template_for(target, [])
-        text, digest = bw.read_template(name)
-        assert (repo / target.path).read_text() == bw.stamp(target.kind, name, digest, sha) + "\n" + bw.render(
+    assert out.splitlines()[1:] == ["created  " + t.path for t in seed.TARGETS] + ["applied: 4 created, 0 skipped"]
+    sha = seed.plugin_sha(seed.PLUGIN_DIR)
+    for target in seed.TARGETS:
+        name = seed.template_for(target, [])
+        text, digest = seed.read_template(name)
+        assert (repo / target.path).read_text() == seed.stamp(target.kind, name, digest, sha) + "\n" + seed.render(
             text, [], "proj"
         )
     assert (repo / "AGENTS.md").read_text().split("\n")[1] == "# proj"
@@ -1630,7 +1631,7 @@ def test_scaffold_skips_existing_targets_and_their_stand_ins(tmp_path, monkeypat
         ".github/workflows/build.yaml": "x\n",
     }
     repo = make_repo(tmp_path / "r", files)
-    assert call(bw_scaffold, repo, ["--apply"], monkeypatch, capsys) == (
+    assert call(scaffold, repo, ["--apply"], monkeypatch, capsys) == (
         0,
         header(repo) + "\n"
         "skip  AGENTS.md  (exists; scaffold never overwrites)\n"
@@ -1645,9 +1646,9 @@ def test_scaffold_skips_existing_targets_and_their_stand_ins(tmp_path, monkeypat
 
 def test_scaffold_notes_a_claude_md_without_the_import(tmp_path, monkeypatch, capsys):
     repo = make_repo(tmp_path / "r", {"CLAUDE.md": "# mine\n"})
-    code, out, err = call(bw_scaffold, repo, ["--apply"], monkeypatch, capsys)
+    code, out, err = call(scaffold, repo, ["--apply"], monkeypatch, capsys)
     assert (code, err) == (0, "")
-    assert bw_scaffold.NOTE_IMPORT in out.splitlines()
+    assert scaffold.NOTE_IMPORT in out.splitlines()
     assert (repo / "CLAUDE.md").read_text() == "# mine\n"
 
 
@@ -1658,23 +1659,23 @@ def test_scaffold_refuses_a_symlinked_directory_on_a_target_s_path(tmp_path, mon
     (repo / ".github").mkdir()
     os.symlink(outside, repo / ".github" / "workflows")
     message = "scaffold: .github/workflows is a symlink; refusing to write through it\n"
-    assert call(bw_scaffold, repo, argv, monkeypatch, capsys) == (1, "", message)
+    assert call(scaffold, repo, argv, monkeypatch, capsys) == (1, "", message)
     assert sorted(os.listdir(repo)) == [".git", ".github"] and os.listdir(outside) == []
 
 
 def test_scaffold_apply_refuses_a_dirty_tree_unless_allowed(tmp_path, monkeypatch, capsys):
     repo = fresh_repo(tmp_path / "r")
     write(repo, "untracked", "x")
-    assert call(bw_scaffold, repo, ["--apply"], monkeypatch, capsys) == (3, "", bw_scaffold.REFUSE_DIRTY + "\n")
+    assert call(scaffold, repo, ["--apply"], monkeypatch, capsys) == (3, "", scaffold.REFUSE_DIRTY + "\n")
     assert sorted(os.listdir(repo)) == [".git", "untracked"]
-    code, out, err = call(bw_scaffold, repo, [], monkeypatch, capsys)
-    assert (code, err) == (0, "") and out.splitlines()[-2] == bw_scaffold.NOTE_DIRTY
-    code, out, err = call(bw_scaffold, repo, ["--apply", "--allow-dirty"], monkeypatch, capsys)
+    code, out, err = call(scaffold, repo, [], monkeypatch, capsys)
+    assert (code, err) == (0, "") and out.splitlines()[-2] == scaffold.NOTE_DIRTY
+    code, out, err = call(scaffold, repo, ["--apply", "--allow-dirty"], monkeypatch, capsys)
     assert (code, err) == (0, "") and out.splitlines()[-1] == "applied: 4 created, 0 skipped"
 
 
 def failing_create(monkeypatch, fail_on):
-    real, calls = bw.create, []
+    real, calls = fs.create, []
 
     def create(path, text):
         calls.append(path)
@@ -1682,13 +1683,13 @@ def failing_create(monkeypatch, fail_on):
             raise PermissionError(13, "Permission denied", path)
         real(path, text)
 
-    monkeypatch.setattr(bw, "create", create)
+    monkeypatch.setattr(fs, "create", create)
 
 
 def test_scaffold_removes_what_it_created_when_a_write_fails(tmp_path, monkeypatch, capsys):
     repo = fresh_repo(tmp_path / "r")
     failing_create(monkeypatch, fail_on=4)
-    assert call(bw_scaffold, repo, ["--apply"], monkeypatch, capsys) == (
+    assert call(scaffold, repo, ["--apply"], monkeypatch, capsys) == (
         1,
         "",
         "scaffold: cannot create .github/workflows/ci.yml: Permission denied\n"
@@ -1705,8 +1706,8 @@ def test_scaffold_lists_the_files_it_could_not_remove(tmp_path, monkeypatch, cap
         raise PermissionError(13, "Permission denied", path)
 
     with monkeypatch.context() as m:
-        m.setattr(bw_scaffold.os, "unlink", unlink)
-        code, out, err = call(bw_scaffold, repo, ["--apply"], monkeypatch, capsys)
+        m.setattr(scaffold.os, "unlink", unlink)
+        code, out, err = call(scaffold, repo, ["--apply"], monkeypatch, capsys)
     assert (code, out) == (1, "")
     assert err == (
         "scaffold: cannot create CLAUDE.md: Permission denied\n"
@@ -1716,8 +1717,8 @@ def test_scaffold_lists_the_files_it_could_not_remove(tmp_path, monkeypatch, cap
 
 def test_scaffold_reports_an_unexpected_error_in_one_line(tmp_path, monkeypatch, capsys):
     repo = fresh_repo(tmp_path / "r")
-    monkeypatch.setattr(bw_scaffold, "ci_notes", lambda *args: {}["boom"])
-    assert call(bw_scaffold, repo, ["--apply"], monkeypatch, capsys) == (1, "", "scaffold: KeyError: 'boom'\n")
+    monkeypatch.setattr(scaffold, "ci_notes", lambda *args: {}["boom"])
+    assert call(scaffold, repo, ["--apply"], monkeypatch, capsys) == (1, "", "scaffold: KeyError: 'boom'\n")
     assert os.listdir(repo) == [".git"]
 
 
@@ -1733,7 +1734,7 @@ def check_usage_errors_and_outside_a_work_tree(module, prog, tmp_path, monkeypat
 
 
 def test_scaffold_usage_errors_and_outside_a_work_tree_exit_1(tmp_path, monkeypatch, capsys):
-    check_usage_errors_and_outside_a_work_tree(bw_scaffold, "scaffold", tmp_path, monkeypatch, capsys)
+    check_usage_errors_and_outside_a_work_tree(scaffold, "scaffold", tmp_path, monkeypatch, capsys)
 
 
 @pytest.mark.parametrize(
@@ -1755,8 +1756,8 @@ def test_scaffold_usage_errors_and_outside_a_work_tree_exit_1(tmp_path, monkeypa
 )
 def test_gives_ruby_version(tmp_path, files, gives):
     repo = make_repo(tmp_path / "r", {**{"app/" + k: v for k, v in files.items()}, "app/Gemfile": ""})
-    by_path = {e.path: e for e in bw.tracked(str(repo))}
-    assert bw_scaffold.gives_ruby_version(str(repo), by_path, "app") is gives
+    by_path = {e.path: e for e in git.tracked(str(repo))}
+    assert scaffold.gives_ruby_version(str(repo), by_path, "app") is gives
 
 
 def test_lockfile_platforms():
@@ -1764,9 +1765,9 @@ def test_lockfile_platforms():
         "GEM\n  remote: https://rubygems.org/\n  specs:\n    rake (13.2.1)\n\n"
         "PLATFORMS\n  arm64-darwin-24\n  x86_64-linux\n\nDEPENDENCIES\n  rake\n"
     )
-    assert bw_scaffold.lockfile_platforms(lock) == ["arm64-darwin-24", "x86_64-linux"]
-    assert bw_scaffold.lockfile_platforms("PLATFORMS\r\n  ruby\r\nDEPENDENCIES\n") == ["ruby"]
-    assert bw_scaffold.lockfile_platforms("GEM\n  specs:\n") is None
+    assert scaffold.lockfile_platforms(lock) == ["arm64-darwin-24", "x86_64-linux"]
+    assert scaffold.lockfile_platforms("PLATFORMS\r\n  ruby\r\nDEPENDENCIES\n") == ["ruby"]
+    assert scaffold.lockfile_platforms("GEM\n  specs:\n") is None
 
 
 @pytest.mark.parametrize(
@@ -1781,7 +1782,7 @@ def test_lockfile_platforms():
     ],
 )
 def test_lists_pytest(text, want):
-    assert bw_scaffold.lists_pytest(text) is want
+    assert scaffold.lists_pytest(text) is want
 
 
 def test_ci_notes(tmp_path):
@@ -1799,22 +1800,22 @@ def test_ci_notes(tmp_path):
         "ok/Gemfile.lock": "PLATFORMS\n  ruby\n",
     }
     repo = str(make_repo(tmp_path / "r", files))
-    comps, skipped = bw.detect(repo)
-    assert bw_scaffold.ci_notes(repo, comps, skipped) == [
-        'note: no CI job for "bad dir/go.mod": ' + bw.REASON_NAME,
-        bw_scaffold.NOTE_PYTEST % "py/pyproject.toml",
-        bw_scaffold.NOTE_RUBY_VERSION % "rb",
-        bw_scaffold.NOTE_PLATFORM % "rb/Gemfile.lock",
-        bw_scaffold.NOTE_PNPM % "rb",
+    comps, skipped = detect.detect(repo)
+    assert scaffold.ci_notes(repo, comps, skipped) == [
+        'note: no CI job for "bad dir/go.mod": ' + detect.REASON_NAME,
+        scaffold.NOTE_PYTEST % "py/pyproject.toml",
+        scaffold.NOTE_RUBY_VERSION % "rb",
+        scaffold.NOTE_PLATFORM % "rb/Gemfile.lock",
+        scaffold.NOTE_PNPM % "rb",
     ]
 
 
 # --- drift -------------------------------------------------------------------
 
 
-def drift(repo, monkeypatch, capsys, *argv):
+def run_drift(repo, monkeypatch, capsys, *argv):
     """drift's (exit code, stdout lines); stderr must be empty."""
-    code, out, err = call(bw_drift, repo, argv, monkeypatch, capsys)
+    code, out, err = call(drift, repo, argv, monkeypatch, capsys)
     assert err == ""
     return code, out.splitlines()
 
@@ -1822,7 +1823,7 @@ def drift(repo, monkeypatch, capsys, *argv):
 def seeded(path, monkeypatch, capsys, files=None):
     """A repo with FILES committed, then scaffold's files applied and committed."""
     repo = make_repo(path, files or {})
-    assert call(bw_scaffold, repo, ["--apply"], monkeypatch, capsys)[0] == 0
+    assert call(scaffold, repo, ["--apply"], monkeypatch, capsys)[0] == 0
     commit(repo)
     return repo
 
@@ -1849,22 +1850,22 @@ def check_drift_lines(lines):
 
 
 def test_drift_usage_errors_and_outside_a_work_tree_exit_1(tmp_path, monkeypatch, capsys):
-    check_usage_errors_and_outside_a_work_tree(bw_drift, "drift", tmp_path, monkeypatch, capsys)
+    check_usage_errors_and_outside_a_work_tree(drift, "drift", tmp_path, monkeypatch, capsys)
 
 
 def test_caller_pin_reads_the_template_s_one_pin():
     text = (ROOT_TEMPLATES / "ci-caller.yml.tpl").read_text()
-    assert bw_drift.caller_pin(text) == re.search(CALLER_PIN_LINE, text, re.M).group(1)
+    assert drift.caller_pin(text) == re.search(CALLER_PIN_LINE, text, re.M).group(1)
     line = next(x for x in text.split("\n") if "uses:" in x)
     shifted = text.replace(line, line.replace("@@job@@     ", "@@job@@ "))
     for bad in (text.replace(line + "\n", ""), text + line + "\n", shifted):
-        with pytest.raises(bw.BwError, match="no single pinned"):
-            bw_drift.caller_pin(bad)
+        with pytest.raises(cli.BwError, match="no single pinned"):
+            drift.caller_pin(bad)
 
 
 def test_drift_on_a_freshly_seeded_repo(tmp_path, monkeypatch, capsys):
     repo = seeded(tmp_path / "r", monkeypatch, capsys)
-    assert drift(repo, monkeypatch, capsys) == (
+    assert run_drift(repo, monkeypatch, capsys) == (
         0,
         [
             "ok  AGENTS.md",
@@ -1883,36 +1884,36 @@ def test_drift_exits_1_when_a_check_raises(tmp_path, monkeypatch, capsys):
     def boom(ctx):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(bw_drift, "check_legacy", boom)
-    assert call(bw_drift, repo, [], monkeypatch, capsys) == (1, "", "drift: RuntimeError: boom\n")
+    monkeypatch.setattr(drift, "check_legacy", boom)
+    assert call(drift, repo, [], monkeypatch, capsys) == (1, "", "drift: RuntimeError: boom\n")
 
 
 def test_drift_exits_1_for_an_unreadable_template(tmp_path, monkeypatch, capsys):
     repo = seeded(tmp_path / "r", monkeypatch, capsys)
-    monkeypatch.setattr(bw, "TEMPLATE_DIR", str(tmp_path / "nowhere"))
-    code, out, err = call(bw_drift, repo, [], monkeypatch, capsys)
+    monkeypatch.setattr(seed, "TEMPLATE_DIR", str(tmp_path / "nowhere"))
+    code, out, err = call(drift, repo, [], monkeypatch, capsys)
     assert (code, out) == (1, "") and err.startswith("drift: cannot read template AGENTS.md: No such file")
 
 
 def test_drift_reports_missing_targets(tmp_path, monkeypatch, capsys):
     repo = make_repo(tmp_path / "r", {})
-    code, lines = drift(repo, monkeypatch, capsys)
+    code, lines = run_drift(repo, monkeypatch, capsys)
     assert code == 0
     assert lines == [
-        "warn  AGENTS.md  missing: " + bw_drift.MISSING["AGENTS.md"],
+        "warn  AGENTS.md  missing: " + drift.MISSING["AGENTS.md"],
         "  fix: run scaffold --apply",
-        "warn  CLAUDE.md  missing: " + bw_drift.MISSING["CLAUDE.md"],
+        "warn  CLAUDE.md  missing: " + drift.MISSING["CLAUDE.md"],
         "  fix: run scaffold --apply",
-        "warn  .github/PULL_REQUEST_TEMPLATE.md  missing: " + bw_drift.MISSING[".github/PULL_REQUEST_TEMPLATE.md"],
+        "warn  .github/PULL_REQUEST_TEMPLATE.md  missing: " + drift.MISSING[".github/PULL_REQUEST_TEMPLATE.md"],
         "  fix: run scaffold --apply",
-        "warn  .github/workflows/ci.yml  missing: " + bw_drift.MISSING[".github/workflows/ci.yml"],
+        "warn  .github/workflows/ci.yml  missing: " + drift.MISSING[".github/workflows/ci.yml"],
         "  fix: run scaffold --apply",
         "result: 0 ok, 0 info, 4 warn, 0 drift (exit 0)",
     ]
-    assert drift(repo, monkeypatch, capsys, "--strict")[0] == 2
+    assert run_drift(repo, monkeypatch, capsys, "--strict")[0] == 2
     write(repo, "docs/PULL_REQUEST_TEMPLATE/a.md", "x")
     write(repo, ".github/workflows/x.yml", "x")
-    left = codes(drift(repo, monkeypatch, capsys)[1])
+    left = codes(run_drift(repo, monkeypatch, capsys)[1])
     assert left == [("warn", "AGENTS.md", "missing"), ("warn", "CLAUDE.md", "missing")]
 
 
@@ -1920,15 +1921,15 @@ def test_drift_template_changed_prints_the_diff_and_the_stamp_that_restores_0(tm
     repo = seeded(tmp_path / "r", monkeypatch, capsys)
     templates = tmp_path / "templates"
     templates.mkdir()
-    for name in bw.TEMPLATES:
+    for name in seed.TEMPLATES:
         (templates / (name + ".tpl")).write_bytes((ROOT_TEMPLATES / (name + ".tpl")).read_bytes())
     tpl = templates / "AGENTS.md.tpl"
     tpl.write_text(tpl.read_text().replace("## Workflow", "## Working here") + "- One more line.\n")
-    monkeypatch.setattr(bw, "TEMPLATE_DIR", str(templates))
-    code, lines = drift(repo, monkeypatch, capsys)
+    monkeypatch.setattr(seed, "TEMPLATE_DIR", str(templates))
+    code, lines = run_drift(repo, monkeypatch, capsys)
     assert code == 2
     i = lines.index(next(line for line in lines if line.startswith("drift  AGENTS.md  template-changed: ")))
-    new = bw.stamp("md", "AGENTS.md", bw.file_hash(str(tpl)), bw.plugin_sha(bw.PLUGIN_DIR))
+    new = seed.stamp("md", "AGENTS.md", seed.file_hash(str(tpl)), seed.plugin_sha(seed.PLUGIN_DIR))
     assert lines[i + 1] == "  fix: apply the diff, then replace line 1 with: " + new
     assert lines[i + 2 : i + 4] == ["  --- a/AGENTS.md", "  +++ b/AGENTS.md"]
     body = lines[i + 4 : lines.index("ok  CLAUDE.md")]
@@ -1936,7 +1937,7 @@ def test_drift_template_changed_prints_the_diff_and_the_stamp_that_restores_0(tm
     check_drift_lines(lines)
     agents = repo / "AGENTS.md"
     agents.write_text(new + "\n" + agents.read_text().split("\n", 1)[1])
-    assert drift(repo, monkeypatch, capsys)[0] == 0
+    assert run_drift(repo, monkeypatch, capsys)[0] == 0
 
 
 @pytest.mark.parametrize(
@@ -1951,11 +1952,11 @@ def test_drift_bad_stamp(tmp_path, monkeypatch, capsys, first, detail):
     repo = seeded(tmp_path / "r", monkeypatch, capsys)
     agents = repo / "AGENTS.md"
     agents.write_text(first + "\n" + agents.read_text().split("\n", 1)[1])
-    code, lines = drift(repo, monkeypatch, capsys)
+    code, lines = run_drift(repo, monkeypatch, capsys)
     assert code == 2 and codes(lines) == [("drift", "AGENTS.md", "bad-stamp")]
     assert detail in lines[0]
-    text, digest = bw.read_template("AGENTS.md")
-    current = bw.stamp("md", "AGENTS.md", digest, bw.plugin_sha(bw.PLUGIN_DIR))
+    text, digest = seed.read_template("AGENTS.md")
+    current = seed.stamp("md", "AGENTS.md", digest, seed.plugin_sha(seed.PLUGIN_DIR))
     assert lines[1] == "  fix: replace line 1 with: %s after reviewing the diff" % current
     assert lines[2] == "ok  CLAUDE.md"  # the body matches the render, so the diff is empty
 
@@ -1965,7 +1966,7 @@ def test_drift_bad_stamp_on_ci_yml_diffs_against_the_template_scaffold_picks(tmp
     ci = repo / ".github" / "workflows" / "ci.yml"
     first = "<!-- bytewyrd:scaffold v1 tpl=AGENTS.md:0123456789ab plugin=unknown -->"
     ci.write_text(first + "\n" + ci.read_text().split("\n", 1)[1])
-    code, lines = drift(repo, monkeypatch, capsys)
+    code, lines = run_drift(repo, monkeypatch, capsys)
     assert code == 2 and codes(lines) == [("drift", ".github/workflows/ci.yml", "bad-stamp")]
     assert "tpl=ci-caller.yml:" in lines[lines.index(next(x for x in lines if "bad-stamp" in x)) + 1]
 
@@ -1976,7 +1977,7 @@ def test_drift_unstamped_targets_are_info(tmp_path, monkeypatch, capsys):
     pr = repo / ".github" / "PULL_REQUEST_TEMPLATE.md"
     pr.unlink()
     pr.mkdir()
-    code, lines = drift(repo, monkeypatch, capsys)
+    code, lines = run_drift(repo, monkeypatch, capsys)
     assert code == 0
     assert lines[0] == "info  AGENTS.md  unstamped: line 1 has no scaffold stamp, so drift compares it with no template"
     assert "info  .github/PULL_REQUEST_TEMPLATE.md  unstamped: not a regular file that drift can read" in lines
@@ -1986,12 +1987,12 @@ def test_drift_no_import(tmp_path, monkeypatch, capsys):
     repo = seeded(tmp_path / "r", monkeypatch, capsys)
     claude = repo / "CLAUDE.md"
     claude.write_text(claude.read_text().replace("@AGENTS.md\n", ""))
-    code, lines = drift(repo, monkeypatch, capsys)
+    code, lines = run_drift(repo, monkeypatch, capsys)
     assert code == 2 and codes(lines) == [("drift", "CLAUDE.md", "no-import")]
     assert "  fix: add the line @AGENTS.md to CLAUDE.md" in lines
     claude.unlink()
     os.symlink("AGENTS.md", claude)  # CLAUDE.md is AGENTS.md: nothing to import, and its stamp is AGENTS.md's
-    assert drift(repo, monkeypatch, capsys) == (
+    assert run_drift(repo, monkeypatch, capsys) == (
         0,
         [
             "ok  AGENTS.md",
@@ -2009,14 +2010,14 @@ def test_drift_too_long_by_lines(tmp_path, monkeypatch, capsys, over):
     for name, limit in (("AGENTS.md", 100), ("CLAUDE.md", 200)):
         path = repo / name
         text = path.read_text()
-        path.write_text(text + "x\n" * (limit - bw_drift.line_count(text) + (name == over)))
-        assert bw_drift.line_count(path.read_text()) == limit + (name == over)
-    code, lines = drift(repo, monkeypatch, capsys)
+        path.write_text(text + "x\n" * (limit - drift.line_count(text) + (name == over)))
+        assert drift.line_count(path.read_text()) == limit + (name == over)
+    code, lines = run_drift(repo, monkeypatch, capsys)
     assert code == 0 and codes(lines) == ([] if over is None else [("warn", over, "too-long")])
 
 
 def test_line_count():
-    assert [bw_drift.line_count(t) for t in ("", "a", "a\n", "a\nb", "a\n\n")] == [0, 1, 1, 2, 2]
+    assert [drift.line_count(t) for t in ("", "a", "a\n", "a\nb", "a\n\n")] == [0, 1, 1, 2, 2]
 
 
 def test_drift_too_long_by_characters(tmp_path, monkeypatch, capsys):
@@ -2024,9 +2025,9 @@ def test_drift_too_long_by_characters(tmp_path, monkeypatch, capsys):
     agents = repo / "AGENTS.md"
     text = agents.read_text()
     agents.write_text(text + "x" * (8000 - len(text)))
-    assert codes(drift(repo, monkeypatch, capsys)[1]) == []
+    assert codes(run_drift(repo, monkeypatch, capsys)[1]) == []
     agents.write_text(text + "x" * (8001 - len(text)))
-    code, lines = drift(repo, monkeypatch, capsys)
+    code, lines = run_drift(repo, monkeypatch, capsys)
     assert codes(lines) == [("warn", "AGENTS.md", "too-long")] and "8001 characters" in lines[1]
 
 
@@ -2044,8 +2045,8 @@ def test_drift_too_long_by_characters(tmp_path, monkeypatch, capsys):
 )
 def test_legacy_lines_finds_the_0_2_headers_and_banners(line):
     for n in (1, 2, 3):
-        assert bw_drift.legacy_lines("\n" * (n - 1) + line + "\nbody\n") == [n]
-    assert bw_drift.legacy_lines("a\nb\nc\n" + line + "\n") == []  # line 4 is out of reach
+        assert drift.legacy_lines("\n" * (n - 1) + line + "\nbody\n") == [n]
+    assert drift.legacy_lines("a\nb\nc\n" + line + "\n") == []  # line 4 is out of reach
 
 
 @pytest.mark.parametrize(
@@ -2059,7 +2060,7 @@ def test_legacy_lines_finds_the_0_2_headers_and_banners(line):
     ],
 )
 def test_legacy_lines_ignores_other_lines(line):
-    assert bw_drift.legacy_lines(line + "\n") == []
+    assert drift.legacy_lines(line + "\n") == []
 
 
 def test_drift_lists_every_0_2_artifact(tmp_path, monkeypatch, capsys):
@@ -2083,7 +2084,7 @@ def test_drift_lists_every_0_2_artifact(tmp_path, monkeypatch, capsys):
     }
     repo = make_repo(tmp_path / "r", files)
     os.symlink("nowhere", repo / ".bytewyrd" / "docs-agent-version")  # a dangling one counts too
-    code, lines = drift(repo, monkeypatch, capsys)
+    code, lines = run_drift(repo, monkeypatch, capsys)
     assert code == 2
     assert codes(lines) == [
         ("warn", "AGENTS.md", "missing"),
@@ -2112,16 +2113,16 @@ def test_drift_lists_every_0_2_artifact(tmp_path, monkeypatch, capsys):
     assert "  fix: git mv CLAUDE.md CLAUDE.legacy.md; once every fix is committed, run scaffold --apply" in text
 
 
-@pytest.mark.parametrize("marker", bw_drift.SETTINGS_MARKERS)
+@pytest.mark.parametrize("marker", drift.SETTINGS_MARKERS)
 def test_drift_settings_hooks_markers(tmp_path, monkeypatch, capsys, marker):
     repo = seeded(tmp_path / "r", monkeypatch, capsys, {".claude/settings.json": json.dumps({"x": "a " + marker})})
-    assert codes(drift(repo, monkeypatch, capsys)[1]) == [("drift", ".claude/settings.json", "legacy-settings-hooks")]
+    assert codes(run_drift(repo, monkeypatch, capsys)[1]) == [("drift", ".claude/settings.json", "legacy-settings-hooks")]
 
 
 def test_drift_ignores_a_settings_json_without_0_2_hooks(tmp_path, monkeypatch, capsys):
     settings = {"enabledPlugins": {"github@claude-plugins-official": True}, "extraKnownMarketplaces": {}}
     repo = seeded(tmp_path / "r", monkeypatch, capsys, {".claude/settings.json": json.dumps(settings)})
-    assert drift(repo, monkeypatch, capsys)[0] == 0
+    assert run_drift(repo, monkeypatch, capsys)[0] == 0
 
 
 # --- drift: caller checks ----------------------------------------------------
@@ -2141,7 +2142,7 @@ def test_drift_ignores_a_settings_json_without_0_2_hooks(tmp_path, monkeypatch, 
     ],
 )
 def test_uses_value(rest, want):
-    assert bw_drift.uses_value(rest) == want
+    assert drift.uses_value(rest) == want
 
 
 @pytest.mark.parametrize(
@@ -2154,7 +2155,7 @@ def test_uses_value(rest, want):
     ],
 )
 def test_workflow_name(value, name):
-    assert bw_drift.workflow_name(value) == name
+    assert drift.workflow_name(value) == name
 
 
 def test_job_blocks():
@@ -2165,7 +2166,7 @@ def test_job_blocks():
         "  - not: a job\n"
         "env:\n  ignored:\n    uses: c\n"
     ).split("\n")
-    blocks = bw_drift.job_blocks(lines)
+    blocks = drift.job_blocks(lines)
     assert [(b.job_id, b.start, b.body) for b in blocks] == [("go", 5, (6, 7, 8, 9)), ("js-web", 10, (11, 12))]
 
 
@@ -2183,7 +2184,7 @@ def test_job_blocks():
 )
 def test_pin_fixes(value, language, want):
     pin = "f" * 40
-    fixes = bw_drift.pin_fixes(value, language, pin)
+    fixes = drift.pin_fixes(value, language, pin)
     named = language or re.search(r"lang-ci-(\w+)\.yml", value).group(1)
     assert fixes[-1] == "set this uses: to bytewyrd/claude-bytewyrd/.github/workflows/lang-ci-%s.yml@%s" % (named, pin)
     if want is None:
@@ -2193,7 +2194,7 @@ def test_pin_fixes(value, language, want):
 
 
 def test_pin_fixes_for_a_value_that_names_no_id():
-    assert bw_drift.pin_fixes("x/lang-ci.yml@v1", None, "f" * 40) == (
+    assert drift.pin_fixes("x/lang-ci.yml@v1", None, "f" * 40) == (
         "set this uses: to bytewyrd/claude-bytewyrd/.github/workflows/lang-ci-<id>.yml@" + "f" * 40,
     )
 
@@ -2202,12 +2203,12 @@ def caller_repo(path, monkeypatch, capsys):
     """A seeded, committed repo with root go and ruby components, and its ci.yml path and pin."""
     repo = seeded(path, monkeypatch, capsys, {"go.mod": "module x\n", "Gemfile": "", "Rakefile": ""})
     ci = repo / ".github" / "workflows" / "ci.yml"
-    return repo, ci, bw_drift.caller_pin(bw.read_template("ci-caller.yml")[0])
+    return repo, ci, drift.caller_pin(seed.read_template("ci-caller.yml")[0])
 
 
 def test_drift_pin_changed_one_finding_per_distinct_value_in_file_order(tmp_path, monkeypatch, capsys):
     repo, ci, pin = caller_repo(tmp_path / "r", monkeypatch, capsys)
-    assert drift(repo, monkeypatch, capsys)[0] == 0
+    assert run_drift(repo, monkeypatch, capsys)[0] == 0
     good = ci.read_text()
     evil = "evil/x/.github/workflows/lang-ci-go.yml@main"
     ci.write_text(
@@ -2216,7 +2217,7 @@ def test_drift_pin_changed_one_finding_per_distinct_value_in_file_order(tmp_path
         + "  extra:\n    uses: '%s'\n  more:\n    uses: %s\n" % (evil, evil)
         + "  mine:\n    uses: ./.github/workflows/mine.yml\n"
     )
-    code, lines = drift(repo, monkeypatch, capsys)
+    code, lines = run_drift(repo, monkeypatch, capsys)
     assert code == 2
     pinned = [line for line in lines if "pin-changed" in line]
     finding = 'drift  .github/workflows/ci.yml  pin-changed: line %d uses "%s"'
@@ -2239,7 +2240,7 @@ def test_drift_pin_changed_for_a_component_job_without_uses(tmp_path, monkeypatc
     repo, ci, pin = caller_repo(tmp_path / "r", monkeypatch, capsys)
     call_line = "    uses: bytewyrd/claude-bytewyrd/.github/workflows/lang-ci-ruby.yml@%s\n" % pin
     ci.write_text(ci.read_text().replace(call_line, ""))
-    code, lines = drift(repo, monkeypatch, capsys)
+    code, lines = run_drift(repo, monkeypatch, capsys)
     assert code == 2
     i = lines.index("drift  .github/workflows/ci.yml  pin-changed: job ruby has no uses: line")
     assert lines[i + 1] == "  fix: set this uses: to " + call_line.strip()[len("uses: ") :]
@@ -2250,9 +2251,9 @@ def test_drift_finds_a_component_s_block_by_id_and_directory(tmp_path, monkeypat
     good = ci.read_text()
     noted = good.replace("  ruby:\n", "  # the ruby job\n  ruby:  # ours\n")
     ci.write_text(noted.replace('directory: "."\n', 'directory: "." \n', 1))
-    assert drift(repo, monkeypatch, capsys)[0] == 0  # comments and trailing blanks don't hide a block
+    assert run_drift(repo, monkeypatch, capsys)[0] == 0  # comments and trailing blanks don't hide a block
     ci.write_text(good.replace('      directory: "."\n', '      directory: "./"\n', 1))
-    code, lines = drift(repo, monkeypatch, capsys)
+    code, lines = run_drift(repo, monkeypatch, capsys)
     assert code == 0 and codes(lines) == [("warn", ".github/workflows/ci.yml", "ci-variant")]
     i = lines.index("warn  .github/workflows/ci.yml  ci-variant: no job block for go (job id go)")
     assert lines[i + 1 :] == [
@@ -2268,31 +2269,31 @@ def test_drift_finds_a_component_s_block_by_id_and_directory(tmp_path, monkeypat
 
 def test_drift_ci_variant_when_the_components_change(tmp_path, monkeypatch, capsys):
     repo, ci, pin = caller_repo(tmp_path / "r", monkeypatch, capsys)
-    git(repo, "rm", "-q", "go.mod", "Gemfile", "Rakefile")
+    run_git(repo, "rm", "-q", "go.mod", "Gemfile", "Rakefile")
     commit(repo, add_all=False)
-    code, lines = drift(repo, monkeypatch, capsys)
+    code, lines = run_drift(repo, monkeypatch, capsys)
     assert code == 0
     assert lines[3:5] == [
         "warn  .github/workflows/ci.yml  ci-variant: the stamp names ci-caller.yml, and scaffold now picks ci-noop.yml"
         " for this repo's components",
-        "  fix: " + bw_drift.FIX_CI_VARIANT,
+        "  fix: " + drift.FIX_CI_VARIANT,
     ]
-    assert drift(repo, monkeypatch, capsys, "--strict")[0] == 2
+    assert run_drift(repo, monkeypatch, capsys, "--strict")[0] == 2
 
 
 def test_drift_ci_skipped_appears_only_with_the_caller(tmp_path, monkeypatch, capsys):
     files = {"go.mod": "module x\n", "bad dir/go.mod": "", "web/package.json": "{}"}
     repo = seeded(tmp_path / "r", monkeypatch, capsys, {**files, ".gitattributes": "/web/package.json -bytewyrd-ci\n"})
-    code, lines = drift(repo, monkeypatch, capsys)
+    code, lines = run_drift(repo, monkeypatch, capsys)
     assert code == 0
     assert lines[4:8] == [
-        'info  "bad dir/go.mod"  ci-skipped: ' + bw.REASON_NAME,
+        'info  "bad dir/go.mod"  ci-skipped: ' + detect.REASON_NAME,
         '  fix: rename the directory, or mark the manifest: "/bad dir/go.mod" -bytewyrd-ci',
         "info  web/package.json  ci-skipped: opted out by -bytewyrd-ci",
         "result: 4 ok, 2 info, 0 warn, 0 drift (exit 0)",
     ]
     noop = seeded(tmp_path / "n", monkeypatch, capsys, {"bad dir/go.mod": ""})
-    assert codes(drift(noop, monkeypatch, capsys)[1]) == []
+    assert codes(run_drift(noop, monkeypatch, capsys)[1]) == []
 
 
 def test_drift_quotes_diff_lines_with_control_characters(tmp_path, monkeypatch, capsys):
@@ -2301,7 +2302,7 @@ def test_drift_quotes_diff_lines_with_control_characters(tmp_path, monkeypatch, 
     body = agents.read_bytes().split(b"\n", 1)[1]
     odd = b"tab\there\nesc\x1b[2J\nlatin \xe9\nfine \xc3\xa9\n"
     agents.write_bytes(b"<!-- bytewyrd:scaffold v0 -->\n" + body + odd)
-    code, lines = drift(repo, monkeypatch, capsys)
+    code, lines = run_drift(repo, monkeypatch, capsys)
     assert code == 2
     assert '  -"tab\\there"' in lines
     assert '  -"esc\\033[2J"' in lines

@@ -17,7 +17,7 @@ Contract: docs/rfcs/2026-11-09-scaffold-and-drift.md, Appendix B2 ("Ports").
 import os
 import sys
 
-import bw
+from bytewyrd import cli, jsonout
 
 FILE = "docs/rfc-braindump.md"
 
@@ -36,11 +36,11 @@ def run(argv):
             with open(FILE, "rb") as f:
                 data = f.read()
         except OSError as e:
-            sys.stderr.write("rfc-braindump-list: %s\n" % bw.describe(e))
+            sys.stderr.write("rfc-braindump-list: %s\n" % cli.describe(e))
             sys.stderr.flush()
-    bw.emit({"entries": entries(data)})
+    jsonout.emit({"entries": entries(data)})
     return 0
 
 
 def main(argv):
-    return bw.json_main("rfc-braindump-list", run, argv)
+    return jsonout.json_main("rfc-braindump-list", run, argv)

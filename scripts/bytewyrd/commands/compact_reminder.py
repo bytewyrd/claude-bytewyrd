@@ -12,7 +12,7 @@ import stat
 import sys
 import time
 
-from bw import Parser
+from bytewyrd import cli
 
 SENTINEL = os.path.join(".bytewyrd", "last-feature-engineer-stop")
 MAX_AGE = 86400  # seconds
@@ -34,7 +34,7 @@ def due():
 
 def main(argv):
     try:
-        Parser(prog="bw compact-reminder", description="Print the /docs-review reminder when it is due.").parse_args(argv)
+        cli.Parser(prog="bw compact-reminder", description="Print the /docs-review reminder when it is due.").parse_args(argv)
         if due():
             sys.stdout.write(TEXT + "\n")
     except BaseException:

@@ -10,7 +10,7 @@ file docs/rfcs/*.md in code point order, which for YYYY-MM-DD- names is the
 most recently dated.
 
 It prints {"path": ..., "label": ...} and exits 0, where path is absolute,
-from the current directory as bash's pwd prints it (bw.pwd()), and label
+from the current directory as bash's pwd prints it (fs.pwd()), and label
 says how the RFC was found, such as "RFC 2026-05-14-foo (matched argument)".
 It prints {"error": "..."} and exits 1 when no RFC matches, and exits 2 with
 an error when docs/rfcs/ is missing or ID holds a "/".
@@ -22,7 +22,7 @@ import os
 import posixpath
 import subprocess
 
-import bw
+from bytewyrd import fs, jsonout
 
 RFCS = "docs/rfcs"
 
@@ -63,37 +63,37 @@ def latest():
 
 def found(path, how):
     stem = posixpath.basename(path.removesuffix(".md"))
-    bw.emit({"path": os.path.join(bw.pwd(), path), "label": "RFC %s (%s)" % (stem, how)})
+    jsonout.emit({"path": os.path.join(fs.pwd(), path), "label": "RFC %s (%s)" % (stem, how)})
     return 0
 
 
 def run(argv):
     if not os.path.isdir(RFCS):
-        bw.emit_error("rfc-resolve: no docs/rfcs/ directory in %s; run from project root" % bw.pwd())
+        jsonout.emit_error("rfc-resolve: no docs/rfcs/ directory in %s; run from project root" % fs.pwd())
         return 2
     arg = argv[0] if argv else ""
     if arg:
         stem = arg.removeprefix(RFCS + "/").removesuffix(".md")
         if "/" in stem:
-            bw.emit_error("rfc-resolve: identifier must not contain '/' (got: %s)" % arg)
+            jsonout.emit_error("rfc-resolve: identifier must not contain '/' (got: %s)" % arg)
             return 2
         path = "%s/%s.md" % (RFCS, stem)
         if not os.path.isfile(path):
-            bw.emit_error("rfc-resolve: no RFC found at %s" % path)
+            jsonout.emit_error("rfc-resolve: no RFC found at %s" % path)
             return 1
         return found(path, "matched argument")
     paths = modified()
     if len(paths) == 1:
         if not os.path.isfile(paths[0]):
-            bw.emit_error("rfc-resolve: modified file %s no longer exists" % paths[0])
+            jsonout.emit_error("rfc-resolve: modified file %s no longer exists" % paths[0])
             return 1
         return found(paths[0], "unique modified file")
     path = latest()
     if path is None:
-        bw.emit_error("rfc-resolve: no RFC files under docs/rfcs/")
+        jsonout.emit_error("rfc-resolve: no RFC files under docs/rfcs/")
         return 1
     return found(path, "most recently dated file")
 
 
 def main(argv):
-    return bw.json_main("rfc-resolve", run, argv)
+    return jsonout.json_main("rfc-resolve", run, argv)

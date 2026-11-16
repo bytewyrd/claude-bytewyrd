@@ -12,7 +12,7 @@ setup() {
   load "python-stubs"
   stub_setup
   BW="$SCRIPT_ROOT/scripts/bw"
-  MAIN="$SCRIPT_ROOT/scripts/_lib/bw_main.py"
+  MAIN="$SCRIPT_ROOT/scripts/bytewyrd/__main__.py"
   NEEDS='bytewyrd: needs Python 3.11 or newer (set BYTEWYRD_PYTHON or install python3.11+)'
 }
 
@@ -181,7 +181,7 @@ _asked() {
 @test "an unknown NAME exits 1 before any interpreter starts" {
   stub_python "$STUB_BIN" python3.15 new
   # ($stderr loses trailing blanks, so 'scaffold x' stands in for 'scaffold '.)
-  for name in nope ../x main bw_main 'scaffold x' Drift rfc-legacy-detect; do
+  for name in nope ../x main __main__ 'scaffold x' Drift rfc-legacy-detect; do
     run --separate-stderr env -u BYTEWYRD_PYTHON PATH="$STUB_BIN" "$SH" "$BW" "$name"
     assert_failure 1
     assert_equal "$output" ""
@@ -219,11 +219,12 @@ _asked() {
   "$venv_py" -c pass
   assert_file_exists "$marker"
   rm "$marker"
-  # Run a copy of the scripts, so bytecode that pytest wrote into the real
-  # scripts/_lib can't hide a new __pycache__/.
-  mkdir -p "$TEST_TMPDIR/plugin/scripts/_lib"
+  # Run a copy of the scripts, without __pycache__/, so bytecode that pytest
+  # wrote into the real scripts/bytewyrd can't hide a new one.
+  mkdir -p "$TEST_TMPDIR/plugin/scripts/bytewyrd/commands"
   cp "$BW" "$TEST_TMPDIR/plugin/scripts/bw"
-  cp "$SCRIPT_ROOT"/scripts/_lib/*.py "$TEST_TMPDIR/plugin/scripts/_lib/"
+  cp "$SCRIPT_ROOT"/scripts/bytewyrd/*.py "$TEST_TMPDIR/plugin/scripts/bytewyrd/"
+  cp "$SCRIPT_ROOT"/scripts/bytewyrd/commands/*.py "$TEST_TMPDIR/plugin/scripts/bytewyrd/commands/"
   run --separate-stderr env BYTEWYRD_PYTHON="$venv_py" "$SH" "$TEST_TMPDIR/plugin/scripts/bw" state-touch last-feature-engineer-stop
   assert_success
   assert_equal "$stderr" ""

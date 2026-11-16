@@ -117,13 +117,14 @@ jobs:
           diff -r -x __pycache__ "$RUNNER_TEMP/pyyaml-6.0.3/lib/yaml" scripts/_vendor/yaml
           cmp "$RUNNER_TEMP/pyyaml-6.0.3/LICENSE" scripts/_vendor/PyYAML-LICENSE
 
-      # load_frontmatter in scripts/_lib/bw.py parses YAML only through its
-      # alias-refusing, size-capped loader, and nothing else may parse it.
-      # git grep exits 1 when nothing matches, so a match or an error fails.
+      # load_frontmatter in scripts/bytewyrd/frontmatter.py parses YAML only
+      # through its alias-refusing, size-capped loader, and nothing else may
+      # parse it. git grep exits 1 when nothing matches, so a match or an
+      # error fails.
       - name: Only load_frontmatter loads YAML
         run: |
           rc=0
-          git grep -nE 'yaml\.(load|safe_load|full_load|unsafe_load)\(|Loader=' -- scripts skills hooks ':!scripts/_lib/bw.py' ':!scripts/_vendor' || rc=$?
+          git grep -nE 'yaml\.(load|safe_load|full_load|unsafe_load)\(|Loader=' -- scripts skills hooks ':!scripts/bytewyrd/frontmatter.py' ':!scripts/_vendor' || rc=$?
           test "$rc" = 1
 
       - name: CI's lint tool versions match mise.toml

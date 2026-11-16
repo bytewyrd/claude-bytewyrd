@@ -25,7 +25,7 @@ import re
 import sys
 from typing import NamedTuple
 
-import bw
+from bytewyrd import cli, detect, fs, git, seed
 
 SEVERITIES = ("ok", "info", "warn", "drift")
 
@@ -98,10 +98,10 @@ FIX_CLAUDE_LEGACY = (
 )
 
 MISSING = {
-    bw.AGENTS_MD.path: "no AGENTS.md at the top of the work tree",
-    bw.CLAUDE_MD.path: "no CLAUDE.md at the top of the work tree",
-    bw.PR_TEMPLATE.path: "no pull request template at the top level, in docs/ or in .github/",
-    bw.CI_YML.path: "no workflow in .github/workflows/",
+    seed.AGENTS_MD.path: "no AGENTS.md at the top of the work tree",
+    seed.CLAUDE_MD.path: "no CLAUDE.md at the top of the work tree",
+    seed.PR_TEMPLATE.path: "no pull request template at the top level, in docs/ or in .github/",
+    seed.CI_YML.path: "no workflow in .github/workflows/",
 }
 
 
@@ -129,24 +129,24 @@ class Context:
 
     def __init__(self, root):
         self.root = root
-        self.comps, self.skipped = bw.detect(root)
-        self.templates = {name: bw.read_template(name) for name in bw.TEMPLATES}
-        self.pin = caller_pin(self.templates[bw.CI_CALLER][0])
-        self.name = bw.project_name(root)
-        self.sha = bw.plugin_sha(bw.PLUGIN_DIR)
+        self.comps, self.skipped = detect.detect(root)
+        self.templates = {name: seed.read_template(name) for name in seed.TEMPLATES}
+        self.pin = caller_pin(self.templates[seed.CI_CALLER][0])
+        self.name = git.project_name(root)
+        self.sha = seed.plugin_sha(seed.PLUGIN_DIR)
 
     def render(self, template):
-        return bw.render(self.templates[template][0], self.comps, self.name)
+        return seed.render(self.templates[template][0], self.comps, self.name)
 
     def stamp(self, target, template):
-        return bw.stamp(target.kind, template, self.templates[template][1], self.sha)
+        return seed.stamp(target.kind, template, self.templates[template][1], self.sha)
 
 
 def caller_pin(text):
     """The commit the caller template pins: its one uses: line's 40 hex digits."""
     pins = [m.group(1) for m in map(_PIN_LINE.fullmatch, text.replace("\r", "").split("\n")) if m]
     if len(pins) != 1:
-        raise bw.BwError("template ci-caller.yml has no single pinned lang-ci uses: line")
+        raise cli.BwError("template ci-caller.yml has no single pinned lang-ci uses: line")
     return pins[0]
 
 
@@ -175,7 +175,7 @@ def diff(rel, text, rendered):
         if i < 2 or line.startswith("@@"):
             out.append(line)  # the ---/+++ headers and @@ hunk headers, built from safe text
         elif _unprintable(line[1:]):
-            out.append(line[0] + bw.quote(line[1:]))
+            out.append(line[0] + cli.quote(line[1:]))
         else:
             out.append(line)
     return tuple(out)
@@ -192,9 +192,9 @@ def legacy_lines(text):
 def legacy_header(target_path, shown, lines):
     where = _where(lines)
     detail = "a 0.2.x /sync header or banner on " + where
-    if target_path == bw.CLAUDE_MD.path:
+    if target_path == seed.CLAUDE_MD.path:
         fixes = FIX_CLAUDE_LEGACY
-    elif target_path in (bw.PR_TEMPLATE.path, bw.CI_YML.path):
+    elif target_path in (seed.PR_TEMPLATE.path, seed.CI_YML.path):
         fixes = ("delete %s so the repo's own file stays; drift then reports it as unstamped" % where,)
     elif target_path == "docs/BEST_PRACTICES.md":
         fixes = (FIX_BEST_PRACTICES,)
@@ -205,20 +205,20 @@ def legacy_header(target_path, shown, lines):
 
 def stamp_row(ctx, target, rel, shown, path, text):
     """The stamp row for a readable seed target with no 0.2.x header, and its stamp."""
-    stamp = bw.read_stamp(path)
+    stamp = seed.read_stamp(path)
     if stamp is None:
         detail = "line 1 has no scaffold stamp, so drift compares it with no template"
         return [Finding("info", shown, "unstamped", detail)], None
-    pick = bw.template_for(target, ctx.comps)
-    if stamp is bw.BAD or not bw.fits(target, stamp[0]):
-        if stamp is bw.BAD:
+    pick = seed.template_for(target, ctx.comps)
+    if stamp is seed.BAD or not seed.fits(target, stamp[0]):
+        if stamp is seed.BAD:
             detail = "line 1 has a bytewyrd:scaffold stamp that does not parse"
         else:
-            detail = "the stamp names %s, which is not a template for this file" % bw.quote(stamp[0])
+            detail = "the stamp names %s, which is not a template for this file" % cli.quote(stamp[0])
         fix = "replace line 1 with: %s after reviewing the diff" % ctx.stamp(target, pick)
         return [Finding("drift", shown, "bad-stamp", detail, (fix,), diff(rel, text, ctx.render(pick)))], None
     template, digest, _ = stamp
-    if target is bw.CI_YML and template != pick:
+    if target is seed.CI_YML and template != pick:
         return [], stamp  # ci-variant's first case reports this file instead
     current = ctx.templates[template][1]
     if digest == current:
@@ -234,9 +234,9 @@ def line_count(text):
 
 def too_long(target, shown, text):
     lines, chars = line_count(text), len(text)
-    if target is bw.AGENTS_MD and (lines > 100 or chars > 8000):
+    if target is seed.AGENTS_MD and (lines > 100 or chars > 8000):
         detail = "%d lines and %d characters; the limits are 100 lines and 8,000 characters" % (lines, chars)
-    elif target is bw.CLAUDE_MD and lines > 200:
+    elif target is seed.CLAUDE_MD and lines > 200:
         detail = "%d lines; the limit is 200" % lines
     else:
         return []
@@ -248,17 +248,17 @@ def check_seed(ctx, target):
     and the stamp its row accepted (None without one)."""
     parent, base = posixpath.split(target.path)
     directory = os.path.join(ctx.root, parent)
-    entry = bw.find_entry(directory, base)
+    entry = fs.find_entry(directory, base)
     if entry is None:
-        if target is bw.PR_TEMPLATE and bw.pr_template(ctx.root) is not None:
+        if target is seed.PR_TEMPLATE and seed.pr_template(ctx.root) is not None:
             return [], None
-        if target is bw.CI_YML and bw.workflow_exists(ctx.root):
+        if target is seed.CI_YML and seed.workflow_exists(ctx.root):
             return [], None
-        return [Finding("warn", bw.quote(target.path), "missing", MISSING[target.path], (FIX_SCAFFOLD,))], None
+        return [Finding("warn", cli.quote(target.path), "missing", MISSING[target.path], (FIX_SCAFFOLD,))], None
     rel = posixpath.join(parent, entry)
     path = os.path.join(directory, entry)
-    shown = bw.quote(rel)
-    text = bw.read_text(path)
+    shown = cli.quote(rel)
+    text = fs.read_text(path)
     stamp = None
     header = legacy_lines(text) if text is not None and target.path in LEGACY_HEADER_PATHS else []
     if header:
@@ -268,12 +268,12 @@ def check_seed(ctx, target):
     else:
         findings, stamp = stamp_row(ctx, target, rel, shown, path, text)
 
-    if target is bw.CLAUDE_MD and bw.exists(ctx.root, bw.AGENTS_MD.path) and bw.lacks_import(ctx.root):
+    if target is seed.CLAUDE_MD and fs.exists(ctx.root, seed.AGENTS_MD.path) and seed.lacks_import(ctx.root):
         detail = "no line is @AGENTS.md, so Claude Code does not read AGENTS.md"
         findings.append(Finding("drift", shown, "no-import", detail, (FIX_IMPORT,)))
-    if target in (bw.AGENTS_MD, bw.CLAUDE_MD) and text is not None:
+    if target in (seed.AGENTS_MD, seed.CLAUDE_MD) and text is not None:
         findings.extend(too_long(target, shown, text))
-    if target is bw.CI_YML and stamp is not None:
+    if target is seed.CI_YML and stamp is not None:
         findings.extend(caller_checks(ctx, shown, text, stamp[0]))
     return findings, stamp
 
@@ -333,12 +333,12 @@ def pin_fixes(value, language, pin):
     at PIN; LANGUAGE None takes the id that VALUE names, or "<id>"."""
     if language is None:
         m = re.fullmatch(r"lang-ci-(.+)\.yml", workflow_name(value))
-        language = bw.quote(m.group(1)) if m else "<id>"
+        language = cli.quote(m.group(1)) if m else "<id>"
     call = CALL % (language, pin)
     base, _, ref = value.partition("@")
     fixes = []
     if ref and base == call.partition("@")[0]:
-        fixes.append(COMPARE % (bw.quote(ref), pin))
+        fixes.append(COMPARE % (cli.quote(ref), pin))
     fixes.append("set this uses: to " + call)
     return tuple(fixes)
 
@@ -346,22 +346,22 @@ def pin_fixes(value, language, pin):
 def missing_job(ctx, shown, comp):
     """ci-variant's second case: COMP has no job block. The fix lines mark its
     manifests; the job block to add follows, rendered as scaffold would."""
-    where = comp.language if comp.directory == "." else "%s in %s/" % (comp.language, bw.quote(comp.directory))
-    detail = "no job block for %s (job id %s)" % (where, bw.quote(comp.job_id))
-    fixes = (FIX_MISSING_JOB,) + tuple(bw.attr_line(m) for m in comp.manifests)
-    caller = ctx.templates[bw.CI_CALLER][0].replace("\r", "").split("\n")
-    job = bw.render("\n".join(line for line in caller if line.startswith("@@job@@ ")), [comp], ctx.name)
+    where = comp.language if comp.directory == "." else "%s in %s/" % (comp.language, cli.quote(comp.directory))
+    detail = "no job block for %s (job id %s)" % (where, cli.quote(comp.job_id))
+    fixes = (FIX_MISSING_JOB,) + tuple(detect.attr_line(m) for m in comp.manifests)
+    caller = ctx.templates[seed.CI_CALLER][0].replace("\r", "").split("\n")
+    job = seed.render("\n".join(line for line in caller if line.startswith("@@job@@ ")), [comp], ctx.name)
     return Finding("warn", shown, "ci-variant", detail, fixes, tuple(job.split("\n")))
 
 
 def caller_checks(ctx, shown, text, template):
     """ci-variant, and for a caller-stamped ci.yml, pin-changed."""
     findings = []
-    pick = bw.template_for(bw.CI_YML, ctx.comps)
+    pick = seed.template_for(seed.CI_YML, ctx.comps)
     if template != pick:
         detail = "the stamp names %s, and scaffold now picks %s for this repo's components" % (template, pick)
         findings.append(Finding("warn", shown, "ci-variant", detail, (FIX_CI_VARIANT,)))
-    if template != bw.CI_CALLER:
+    if template != seed.CI_CALLER:
         return findings
 
     lines = text.split("\n")
@@ -377,7 +377,7 @@ def caller_checks(ctx, shown, text, template):
             continue
         owner.update((j, c) for j in block.body)
         if not any(_USES_LINE.match(lines[j]) for j in block.body):
-            detail = "job %s has no uses: line" % bw.quote(c.job_id)
+            detail = "job %s has no uses: line" % cli.quote(c.job_id)
             fixes = pin_fixes("", c.language, ctx.pin)
             pinned.append((block.start, Finding("drift", shown, "pin-changed", detail, fixes)))
 
@@ -391,13 +391,13 @@ def caller_checks(ctx, shown, text, template):
         if c is not None:
             expected, language = {CALL % (c.language, ctx.pin)}, c.language
         elif workflow_name(value).startswith("lang-ci"):
-            expected, language = {CALL % (lang, ctx.pin) for lang in bw.LANGUAGES}, None
+            expected, language = {CALL % (lang, ctx.pin) for lang in detect.LANGUAGES}, None
         else:
             continue
         if value in expected or value in seen:
             continue
         seen.add(value)
-        detail = "line %d uses %s" % (i + 1, bw.quote(value))
+        detail = "line %d uses %s" % (i + 1, cli.quote(value))
         pinned.append((i, Finding("drift", shown, "pin-changed", detail, pin_fixes(value, language, ctx.pin))))
     findings.extend(f for _, f in sorted(pinned, key=lambda p: p[0]))
     return findings
@@ -410,31 +410,31 @@ def check_legacy(ctx):
     """The legacy-* findings for the paths that are not seed targets."""
     findings = []
     for rel in LEGACY_HEADER_PATHS:
-        if rel in (t.path for t in bw.TARGETS):
+        if rel in (t.path for t in seed.TARGETS):
             continue
-        text = bw.read_text(os.path.join(ctx.root, rel))
+        text = fs.read_text(os.path.join(ctx.root, rel))
         lines = legacy_lines(text) if text is not None else []
         if lines:
-            findings.append(legacy_header(rel, bw.quote(rel), lines))
+            findings.append(legacy_header(rel, cli.quote(rel), lines))
 
-    text = bw.read_text(os.path.join(ctx.root, ".gitignore"))
+    text = fs.read_text(os.path.join(ctx.root, ".gitignore"))
     if text is not None:
         lines = [i + 1 for i, line in enumerate(text.split("\n")) if _HEADER.match(line) or line.startswith(_TAG)]
         if lines:
             detail = "a 0.2.x /sync header or # bytewyrd: tag on " + _where(lines)
             findings.append(Finding("drift", ".gitignore", "legacy-gitignore", detail, (FIX_GITIGNORE,)))
 
-    text = bw.read_text(os.path.join(ctx.root, "docs", "rfc-process.md"))
+    text = fs.read_text(os.path.join(ctx.root, "docs", "rfc-process.md"))
     if text is not None and "# RFC Process" in text.split("\n"):
         detail = "a 0.2.x copy of the RFC process; the plugin's rfc-process skill replaces it"
         findings.append(Finding("drift", "docs/rfc-process.md", "legacy-rfc-process-copy", detail, (FIX_RFC_COPY,)))
 
-    text = bw.read_text(os.path.join(ctx.root, SETTINGS))
+    text = fs.read_text(os.path.join(ctx.root, SETTINGS))
     if text is not None and any(marker in text for marker in SETTINGS_MARKERS):
         detail = "0.2.x /sync hook entries"
         findings.append(Finding("drift", SETTINGS, "legacy-settings-hooks", detail, (FIX_SETTINGS,)))
 
-    launcher = bw.quote(os.path.join(bw.PLUGIN_DIR, "scripts", "bw"))
+    launcher = cli.quote(os.path.join(seed.PLUGIN_DIR, "scripts", "bw"))
     for code, paths, detail in (
         ("legacy-sidecar", SIDECARS, "the 0.2.x /sync version sidecar"),
         ("legacy-state", STATE_FILES, "a 0.2.x /sync state file"),
@@ -447,12 +447,12 @@ def check_legacy(ctx):
 
 def check_skipped(ctx, ci_template):
     """ci-skipped: with a caller-stamped ci.yml, each SKIPPED manifest on its path."""
-    if ci_template != bw.CI_CALLER:
+    if ci_template != seed.CI_CALLER:
         return []
     findings = []
     for s in ctx.skipped:
-        fix = bw.skip_fix(s.path, s.reason)
-        findings.append(Finding("info", bw.quote(s.path), "ci-skipped", s.reason, (fix,) if fix else ()))
+        fix = detect.skip_fix(s.path, s.reason)
+        findings.append(Finding("info", cli.quote(s.path), "ci-skipped", s.reason, (fix,) if fix else ()))
     return findings
 
 
@@ -464,10 +464,10 @@ def check(root):
     ctx = Context(root)
     findings = []
     ci_template = None
-    for target in bw.TARGETS:
+    for target in seed.TARGETS:
         found, stamp = check_seed(ctx, target)
         findings.extend(found)
-        if target is bw.CI_YML and stamp is not None:
+        if target is seed.CI_YML and stamp is not None:
             ci_template = stamp[0]
     findings.extend(check_legacy(ctx))
     findings.extend(check_skipped(ctx, ci_template))
@@ -475,10 +475,10 @@ def check(root):
 
 
 def drift(argv):
-    parser = bw.Parser(prog="bw drift", description="Check scaffold's seed files and list leftover 0.2.x artifacts.")
+    parser = cli.Parser(prog="bw drift", description="Check scaffold's seed files and list leftover 0.2.x artifacts.")
     parser.add_argument("--strict", action="store_true", help="exit 2 for warnings too")
     args = parser.parse_args(argv)
-    findings = check(bw.root())
+    findings = check(git.root())
     counts = {s: sum(f.severity == s for f in findings) for s in SEVERITIES}
     code = 2 if counts["drift"] or (args.strict and counts["warn"]) else 0
     out = [line for f in findings for line in f.lines()]
@@ -500,7 +500,7 @@ def main(argv):
         return code if isinstance(code, int) else (0 if code is None else 1)
     except BaseException as e:
         try:
-            sys.stderr.write("drift: " + bw.describe(e) + "\n")
+            sys.stderr.write("drift: " + cli.describe(e) + "\n")
             sys.stderr.flush()
         except BaseException:
             pass

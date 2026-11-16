@@ -2,7 +2,7 @@ r"""bw rfc-set-status FILE STATUS [REASON]: set an RFC's status in place.
 
 STATUS is Draft, Approved, Done or Dropped. REASON, the drop_reason, is
 required for Dropped, refused for any other status, and may not hold a
-newline. The old status is the one bw.load_frontmatter() reads.
+newline. The old status is the one frontmatter.load_frontmatter() reads.
 
 FILE is rewritten line by line as the bash script's awk rewrote it, between
 its first two "---" lines: a line whose first blank-separated field is
@@ -24,7 +24,7 @@ Contract: docs/rfcs/2026-11-09-scaffold-and-drift.md, Appendix B2 ("Ports").
 import os
 import re
 
-import bw
+from bytewyrd import cli, frontmatter, fs, jsonout
 
 STATUSES = ("Draft", "Approved", "Done", "Dropped")
 # The bash script's wording, with the command named as scripts/bw runs it.
@@ -39,7 +39,7 @@ def rewrite(data, status, reason):
     of status lines rewritten."""
     out, delimiters, wrote_reason, rewritten = [], 0, False, 0
     reason_line = b'drop_reason: "' + reason + b'"'
-    for line in bw.split_lines(data):
+    for line in fs.split_lines(data):
         if line == b"---":
             delimiters += 1
             if delimiters == 2 and status == "Dropped" and not wrote_reason:
@@ -62,43 +62,43 @@ def rewrite(data, status, reason):
 def run(argv):
     path, status, reason = (list(argv[:3]) + ["", "", ""])[:3]
     if not path or not status:
-        bw.emit_error(USAGE)
+        jsonout.emit_error(USAGE)
         return 2
     if status not in STATUSES:
-        bw.emit_error("rfc-set-status: invalid status '%s' (allowed: Draft, Approved, Done, Dropped)" % status)
+        jsonout.emit_error("rfc-set-status: invalid status '%s' (allowed: Draft, Approved, Done, Dropped)" % status)
         return 2
     if status == "Dropped" and not reason:
-        bw.emit_error("rfc-set-status: drop_reason is required when status=Dropped")
+        jsonout.emit_error("rfc-set-status: drop_reason is required when status=Dropped")
         return 2
     if status != "Dropped" and reason:
-        bw.emit_error("rfc-set-status: drop_reason is only allowed when status=Dropped")
+        jsonout.emit_error("rfc-set-status: drop_reason is only allowed when status=Dropped")
         return 2
     if not os.path.isfile(path):
-        bw.emit_error("rfc-set-status: file not found: %s" % path)
+        jsonout.emit_error("rfc-set-status: file not found: %s" % path)
         return 2
     try:
-        old = bw.load_frontmatter(path)["status"]
-    except bw.BwError as e:
-        bw.emit_error("rfc-set-status: " + str(e))
+        old = frontmatter.load_frontmatter(path)["status"]
+    except cli.BwError as e:
+        jsonout.emit_error("rfc-set-status: " + str(e))
         return 2
     no_status = "rfc-set-status: %s has no 'status:' line in its frontmatter" % path
     if not old:
-        bw.emit_error(no_status)
+        jsonout.emit_error(no_status)
         return 2
     if "\n" in reason:
-        bw.emit_error("rfc-set-status: drop_reason must not contain newlines")
+        jsonout.emit_error("rfc-set-status: drop_reason must not contain newlines")
         return 2
     escaped = os.fsencode(reason).replace(b"\\", b"\\\\").replace(b'"', b'\\"')
     with open(path, "rb") as f:
         text, rewritten = rewrite(f.read(), status, escaped)
     if not rewritten:
-        bw.emit_error(no_status)
+        jsonout.emit_error(no_status)
         return 2
     with open(path, "wb") as f:
         f.write(text)
-    bw.emit({"file": path, "old_status": old, "new_status": status})
+    jsonout.emit({"file": path, "old_status": old, "new_status": status})
     return 0
 
 
 def main(argv):
-    return bw.json_main("rfc-set-status", run, argv)
+    return jsonout.json_main("rfc-set-status", run, argv)

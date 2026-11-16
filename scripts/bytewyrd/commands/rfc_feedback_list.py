@@ -18,7 +18,7 @@ Contract: docs/rfcs/2026-11-09-scaffold-and-drift.md, Appendix B2 ("Ports").
 import os
 import re
 
-import bw
+from bytewyrd import fs, jsonout
 
 MARKER = re.compile(rb"\s*[-*>]*\s*FEEDBACK:")  # for bytes, \s is [ \t\n\r\f\v]
 # The bash script's wording, with the command named as scripts/bw runs it.
@@ -28,7 +28,7 @@ USAGE = "usage: bw rfc-feedback-list <path-to-rfc.md>"
 def markers(data):
     """The markers in a file whose bytes are DATA."""
     found = []
-    for n, line in enumerate(bw.split_lines(data), 1):
+    for n, line in enumerate(fs.split_lines(data), 1):
         if MARKER.match(line):
             found.append({"line": n, "text": line.decode("utf-8", "replace").partition("\t")[0]})
     return found
@@ -37,16 +37,16 @@ def markers(data):
 def run(argv):
     path = argv[0] if argv else ""
     if not path:
-        bw.emit_error(USAGE)
+        jsonout.emit_error(USAGE)
         return 2
     if not os.path.isfile(path):
-        bw.emit_error("rfc-feedback-list: file not found: %s" % path)
+        jsonout.emit_error("rfc-feedback-list: file not found: %s" % path)
         return 2
     with open(path, "rb") as f:
         data = f.read()
-    bw.emit({"markers": markers(data)})
+    jsonout.emit({"markers": markers(data)})
     return 0
 
 
 def main(argv):
-    return bw.json_main("rfc-feedback-list", run, argv)
+    return jsonout.json_main("rfc-feedback-list", run, argv)
