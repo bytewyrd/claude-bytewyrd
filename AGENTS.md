@@ -7,7 +7,7 @@ Guidance for people and coding agents working in this repository. Keep it under 
 
 ## Project facts
 
-- Tests: `uv run --no-sync tests/run.sh` (bats) and `uv run --no-sync pytest -q tests/py tests/e2e`, after `uv sync --locked`; both need Python 3.11 or newer.
+- Tests: `uv run --no-sync pytest -q tests/py tests/e2e`, after `uv sync --locked`; they need Python 3.11 or newer.
 - Lint: the checks and pinned tools are in [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md#quality-gate).
 
 ## Workflow
@@ -39,7 +39,7 @@ claude-bytewyrd/
 │   ├── bytewyrd/                — the Python package behind the commands, typed and checked with mypy --strict
 │   └── _vendor/                 — PyYAML, vendored unmodified from the sdist that uv.lock pins
 ├── templates/scaffold/          — the seed templates scaffold renders and drift compares against
-├── tests/                       — bats (scripts/), pytest (py/, e2e/) and fixtures/
+├── tests/                       — pytest (py/, e2e/) and fixtures/
 ├── .claude-plugin/
 │   └── plugin.json              — plugin identity and metadata
 ├── .claude/skills/              — plugin-local maintenance skills (not exported to consumers)

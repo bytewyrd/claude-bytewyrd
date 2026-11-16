@@ -63,7 +63,7 @@ Current plugin-local skills:
 ### Commands (`scripts/bw`, `scripts/bytewyrd/`, `scripts/_vendor/`, `templates/scaffold/`)
 
 **Purpose:** The plugin's deterministic commands. `scaffold` seeds a repository, `drift` checks it, `state-touch` is the only writer into `.bytewyrd/`, and `compact-reminder` backs the compact hook. The nine JSON helpers, `rfc-*` and `tool-probe`, do the scripted steps of the RFC skills and `/best-practices-extract`. Skills, hooks, tests and CI run each one as `sh scripts/bw NAME`.
-**Location:** `scripts/bw`, a POSIX-sh launcher; `scripts/bytewyrd/`, the Python package behind it (layout below); `scripts/_vendor/yaml/`, an unmodified copy of the PyYAML release that `uv.lock` pins; `templates/scaffold/*.tpl`, the seed templates. The bats files in `tests/scripts/` pin the command-line contracts, `tests/py/` covers the modules and the vendored copy, and `tests/e2e/test_consumer_sim.py` runs scaffold and drift end to end, as a consumer repository sees them.
+**Location:** `scripts/bw`, a POSIX-sh launcher; `scripts/bytewyrd/`, the Python package behind it (layout below); `scripts/_vendor/yaml/`, an unmodified copy of the PyYAML release that `uv.lock` pins; `templates/scaffold/*.tpl`, the seed templates. `tests/py/` pins the command-line contracts, running `scripts/bw` and the hook commands as child processes, and covers the modules and the vendored copy. `tests/e2e/test_consumer_sim.py` runs scaffold and drift end to end, as a consumer repository sees them.
 **Key behavior:**
 - The launcher runs Python 3.11 or newer: `$BYTEWYRD_PYTHON` when it reports 3.11 or newer, else the first of `python3.15` … `python3.11` on `PATH`, else `python3` when it reports 3.11 or newer. It starts it with `-I -S -B`, so `PYTHON*` variables, a virtualenv's `.pth` files and bytecode stay out. Without such an interpreter, `scaffold`, `drift` and the hook commands exit 1 and the JSON helpers exit 2, except that `state-touch precompact-extraction-done` still writes its sentinel in plain sh.
 - The plugin root is the parent of `scripts/`, found from `__file__`. No command reads `CLAUDE_PLUGIN_ROOT`, which commands run through the Bash tool don't get.
@@ -88,14 +88,14 @@ Current plugin-local skills:
 ### CI (`.github/workflows/ci.yml`, `.github/scripts/`)
 
 **Purpose:** Gates merges to `main`. Three of its jobs, `lint`, `validate`, and `test`, are the checks the branch ruleset is meant to require.
-**Location:** `.github/workflows/ci.yml`. The Python lint helpers `lint-frontmatter.py` and `check-links.py` live in `.github/scripts/` and are tested by `tests/scripts/ci-lint.bats`; `vendor-pyyaml.py`, next to them, is tested by `tests/py/test_vendor.py`. `.github/workflows/lang-ci-<id>.yml` (go, js, python, ruby, rust) are reusable workflows, one per language, which consumer repositories' CI calls by commit SHA (RFC `2026-11-09-scaffold-and-drift`). `.github/actionlint.yaml` configures actionlint.
+**Location:** `.github/workflows/ci.yml`. The Python lint helpers `lint-frontmatter.py` and `check-links.py` live in `.github/scripts/` and are tested by `tests/py/test_ci_lint.py`; `vendor-pyyaml.py`, next to them, is tested by `tests/py/test_vendor.py`. `.github/workflows/lang-ci-<id>.yml` (go, js, python, ruby, rust) are reusable workflows, one per language, which consumer repositories' CI calls by commit SHA (RFC `2026-11-09-scaffold-and-drift`). `.github/actionlint.yaml` configures actionlint.
 **Key behavior:**
 - `lint` installs the dev tools from `uv.lock`, then checks the JSON manifests, strict-YAML agent and skill frontmatter, the `lang-ci-<id>.yml` workflows' pins, permissions and fixtures, the vendored PyYAML against the sdist that `uv.lock` pins, that nothing but `load_frontmatter()` loads YAML, the lint tools' and uv's versions against `mise.toml`, ruff's lint and format checks, `mypy --strict` on the package, shellcheck warnings, shfmt formatting (style in `.editorconfig`), actionlint on every workflow, and, last, relative Markdown links.
 - `validate` runs `claude plugin validate .` with a pinned Claude Code CLI.
-- `test` runs the bats suite, then pytest over `tests/py` and `tests/e2e`, with the dev tools from `uv.lock`.
+- `test` runs pytest over `tests/py` and `tests/e2e`, with the dev tools from `uv.lock`.
 - `lang-ci-fixture-<id>` runs each `lang-ci-<id>.yml` on its fixture in `tests/fixtures/lang-ci/<id>/`.
-- `compat` runs both suites on Python 3.11 under Linux and on the latest 3.x under macOS.
-- `history` runs bats at every commit of a pull request, checks that no port commit edits `tests/scripts/`, and checks that the scaffold caller template pins a `main` commit that has every `lang-ci-<id>.yml`.
+- `compat` runs pytest on Python 3.11 under Linux and on the latest 3.x under macOS.
+- `history` runs pytest over `tests/py` at every commit of a pull request, and checks that the scaffold caller template pins a `main` commit that has every `lang-ci-<id>.yml`.
 - `install-check` installs the plugin into a temporary HOME from the checkout, and updates an install of `main` to the pull request's branch, failing on any load error that `claude plugin list --json` reports.
 
 Actions are pinned to commit SHAs. shellcheck, shfmt and actionlint are pinned releases verified by sha256, and `mise.toml` and `mise.lock` pin the same versions for local runs. `astral-sh/setup-uv` installs uv at `UV_VERSION`, which `lint` checks against `mise.toml`. Jobs run on `ubuntu-26.04` instead of `ubuntu-latest`; GitHub still updates that image weekly. The `lang-ci-<id>.yml` jobs run on `ubuntu-latest`, as they do for the repositories that call them.
@@ -108,7 +108,7 @@ Actions are pinned to commit SHAs. shellcheck, shfmt and actionlint are pinned r
 - `pyproject.toml` has a `[project]` table, so that `uv lock` records `requires-python = ">=3.11"`, and sets `package = false`, so that uv never builds or installs the project. Its one `dev` group pins pytest, PyYAML, ruff, mypy and types-PyYAML, and it holds the pytest, ruff and mypy settings. The `[project]` table also makes detection find a root `python` component in this repository.
 - `uv.lock` pins every tool by hash, and only `uv lock` writes it. Contributors and CI run `uv sync --locked`, which fails on a stale lock, then each tool with `uv run --no-sync`.
 - mise pins uv 0.13.4 next to the lint tools, and CI checks its own uv version against that pin.
-- ruff lints and formats the repository's Python, but not `scripts/_vendor/`, the bats submodules or Markdown. mypy runs `--strict` on `scripts/bytewyrd/`.
+- ruff lints and formats the repository's Python, but not `scripts/_vendor/` or Markdown. mypy runs `--strict` on `scripts/bytewyrd/`.
 - `uv.lock` is also the source of truth for the vendored PyYAML. `.github/scripts/vendor-pyyaml.py`, standard library only, rebuilds `scripts/_vendor/yaml/` and `scripts/_vendor/PyYAML-LICENSE` from the sdist that `uv.lock` records, after checking its size and sha256, and `lint` runs its `--check`.
 
 ## Data Flow

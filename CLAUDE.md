@@ -39,7 +39,7 @@ Default to `haiku` unless the task clearly requires more. Err on the side of che
 - **Compact reminder** (`SessionStart`, matcher `compact`): `scripts/bw compact-reminder` reminds Claude to ask the user to run `/docs-review` while `.bytewyrd/last-feature-engineer-stop` is under a day old.
 - **SubagentStop reminder** (matcher `(^|:)feature-engineer$`): when a `feature-engineer` subagent finishes, `scripts/bw state-touch last-feature-engineer-stop` writes the sentinel the compact reminder reads. The hook also runs an `echo` with the reminder text, but Claude Code doesn't add a SubagentStop hook's plain-text output to Claude's context, so the sentinel is what does the work. `/docs-review` removes it with `state-touch --rm`.
 
-The two `scripts/bw` commands need Python 3.11 or newer and end in `|| true`, so without it they print one stderr line and the hook still exits 0. Hooks run outside the sandbox, so `state-touch`, the only writer into `.bytewyrd/`, refuses symlinks. `tests/scripts/hooks.bats` runs each hook's command string from `hooks.json`.
+The two `scripts/bw` commands need Python 3.11 or newer and end in `|| true`, so without it they print one stderr line and the hook still exits 0. Hooks run outside the sandbox, so `state-touch`, the only writer into `.bytewyrd/`, refuses symlinks. `tests/py/test_hooks.py` runs each hook's command string from `hooks.json`.
 
 When you add a skill or agent that depends on a specific external tool, add a probe to the skill body (the in-skill pattern used by `best-practices-extract`) and handle a missing tool there.
 
