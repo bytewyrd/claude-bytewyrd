@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 from bytewyrd import jsonout
 from bytewyrd.commands import (
@@ -146,6 +147,11 @@ def test_list_prints_the_bullets_as_jq_did(call):
 def test_list_without_a_regular_file_is_empty(call):
     assert call(rfc_braindump_list) == (0, NO_ENTRIES, b"")
     BRAINDUMP.mkdir()
+    assert call(rfc_braindump_list) == (0, NO_ENTRIES, b"")
+
+
+def test_list_of_a_file_without_bullets_is_empty(call):
+    BRAINDUMP.write_bytes(b"# RFC Braindump\n\nNo ideas yet.\n")
     assert call(rfc_braindump_list) == (0, NO_ENTRIES, b"")
 
 
@@ -464,6 +470,12 @@ def test_resolve_picks_the_only_modified_rfc(call, repo):
     assert (code, label(out)) == (0, "RFC 2026-02-01-beta (unique modified file)")
 
 
+def test_resolve_in_a_clean_tree_falls_back_to_the_most_recently_dated_rfc(call, repo):
+    path = os.path.join(os.getcwd(), "docs/rfcs/2026-03-01-gamma.md")
+    want = ('{\n  "path": "%s",\n  "label": "RFC 2026-03-01-gamma (most recently dated file)"\n}\n' % path).encode()
+    assert call(rfc_resolve) == (0, want, b"")
+
+
 def test_resolve_reads_git_status_as_the_bash_script_s_awk_did(call, repo):
     # A deletion is skipped and a rename gives its new path.
     run_git("rm", "-q", "docs/rfcs/2026-03-01-gamma.md")
@@ -615,6 +627,36 @@ def test_set_status_checks_in_the_bash_script_s_order(call, argv, message):
     Path("docs/rfcs/none.md").write_text("---\nrfc: none\n---\n")
     assert call(rfc_set_status, *argv) == (2, error(message), b"")
     assert Path(RFC).read_text() == "---\nstatus: Draft\n---\n"
+
+
+def test_set_status_approves_a_draft_in_place(call):
+    Path(RFC).write_text('---\nrfc: "x"\nstatus: "Draft"\ndrop_reason: ~\n---\n\n## Summary\n')
+    assert call(rfc_set_status, RFC, "Approved") == (0, status_set("Draft", "Approved"), b"")
+    assert Path(RFC).read_text() == '---\nrfc: "x"\nstatus: "Approved"\ndrop_reason: ~\n---\n\n## Summary\n'
+
+
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "Superseded by RFC 2026-02-01.",
+        'Superseded by the "init" RFC.',
+        "Moved to C:\\temp\\new (see \\n in the notes).",
+        "Folded into the parent RFC\\",
+        'Superseded by the "init" RFC; see C:\\temp\\notes, trailing\\',
+        'say "hi", C:\\temp\\new, a\\nb, trailing\\',
+    ],
+)
+def test_set_status_writes_a_reason_that_reads_back_as_given(call, reason):
+    # Through rfc-frontmatter and through PyYAML's own safe loader: a \t or
+    # \n typed in the reason must not read back as a tab or a newline, and a
+    # trailing backslash must not escape the closing quote.
+    Path(RFC).write_text('---\nrfc: "x"\nstatus: "Draft"\ndrop_reason: ~\n---\n')
+    assert call(rfc_set_status, RFC, "Dropped", reason) == (0, status_set("Draft", "Dropped"), b"")
+    code, out, err = call(rfc_frontmatter, RFC)
+    fields = json.loads(out)
+    assert (code, fields["status"], fields["drop_reason"], err) == (0, "Dropped", reason, b"")
+    block = yaml.safe_load(Path(RFC).read_text().split("---\n")[1])
+    assert (block["status"], block["drop_reason"]) == ("Dropped", reason)
 
 
 def test_set_status_writes_a_reason_s_bytes_as_given():
