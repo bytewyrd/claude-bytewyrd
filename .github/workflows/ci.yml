@@ -51,7 +51,7 @@ jobs:
     env:
       # Shell files held to shellcheck and shfmt, as git pathspecs. Formatting
       # style comes from .editorconfig.
-      SHELL_FILES: scripts/bw tests/run.sh tests/scripts/helpers.bash
+      SHELL_FILES: scripts/bw
       # sha256 values are the digests GitHub records for these release assets.
       SHELLCHECK_VERSION: "0.11.0"
       SHELLCHECK_SHA256: "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
@@ -130,7 +130,7 @@ jobs:
           grep -qxF "\"aqua:astral-sh/uv\" = \"$UV_VERSION\"" mise.toml
 
       # ruff's rules and file set are in pyproject.toml, which keeps it off
-      # scripts/_vendor, the bats submodules and Markdown.
+      # scripts/_vendor and Markdown.
       - name: Python code passes ruff
         run: uv run --no-sync ruff check
 
@@ -218,7 +218,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          submodules: recursive
           persist-credentials: false
 
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -231,17 +230,10 @@ jobs:
           version: ${{ env.UV_VERSION }}
           enable-cache: false
 
-      # pytest, and PyYAML, which lets the ci.yml rendering tests parse their
-      # output instead of skipping.
+      # pytest, and PyYAML, without which test_ci_lint.py and test_vendor.py
+      # fail under CI.
       - name: Install the dev tools from uv.lock
         run: uv sync --locked
-
-      # uv run puts the environment's python3, which has PyYAML, first on
-      # PATH. BYTEWYRD_PYTHON makes scripts/bw run the interpreter set up above.
-      - name: Run the bats suite
-        env:
-          BYTEWYRD_PYTHON: ${{ steps.py.outputs.python-path }}
-        run: uv run --no-sync tests/run.sh
 
       - name: Run pytest
         env:
@@ -276,9 +268,9 @@ jobs:
     with:
       directory: tests/fixtures/lang-ci/rust
 
-  # bats and pytest on the oldest supported Python under Linux and the latest
-  # 3.x under macOS, each with the dev tools from uv.lock. They include PyYAML,
-  # since under CI ci-lint.bats and rfc-set-status.bats fail without it.
+  # pytest on the oldest supported Python under Linux and the latest 3.x under
+  # macOS, each with the dev tools from uv.lock. They include PyYAML, since
+  # under CI test_ci_lint.py and test_vendor.py fail without it.
   compat:
     strategy:
       fail-fast: false
@@ -293,7 +285,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          submodules: recursive
           persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         id: py
@@ -306,20 +297,28 @@ jobs:
       - run: uv sync --locked
       - env:
           BYTEWYRD_PYTHON: ${{ steps.py.outputs.python-path }}
-        run: |
-          uv run --no-sync tests/run.sh
-          uv run --no-sync pytest -q tests/py tests/e2e
+        run: uv run --no-sync pytest -q tests/py tests/e2e
 
-  # bats at every commit of the pull request, and the caller template's pin.
-  # A bats run takes about a minute, so 120 minutes cover about 100 commits.
-  history:
+  # pytest's tests/py at each commit of the pull request that no earlier run
+  # of this job covered. A green test-every-commit check on a commit means
+  # tests/py passed there and at every commit before it. So the loop starts
+  # after the newest commit that has one, unless the pull request has changed
+  # ci.yml, uv.lock or pyproject.toml since, which changes what this job runs.
+  # Without such a commit, or when the lookup fails, it tests every commit
+  # since main; a push to main has none. tests/e2e runs only on the head, in
+  # test and compat. A tests/py run takes under half a minute, so 60 minutes
+  # cover more than 100 commits.
+  test-every-commit:
     runs-on: ubuntu-26.04
-    timeout-minutes: 120
+    timeout-minutes: 60
+    # The workflow's contents: read, plus checks: read for that lookup.
+    permissions:
+      contents: read
+      checks: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-          submodules: recursive
           persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         id: py
@@ -329,27 +328,59 @@ jobs:
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: false
-      # Once, at HEAD: the commits before uv.lock have none.
+      # Once, at HEAD: every commit runs with HEAD's dev tools.
       - run: uv sync --locked
-      - name: bats passes at every commit, and no port commit edits tests/scripts
+      - name: tests/py passes at every commit since the last green check
         env:
           BYTEWYRD_PYTHON: ${{ steps.py.outputs.python-path }}
+          GH_TOKEN: ${{ github.token }}
+          # Set only for a pull request. HEAD is then GitHub's merge of it into
+          # main, which test runs the whole suite on.
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
-          # HEAD's environment stays first on PATH at every commit, so older
-          # commits still get pytest and PyYAML.
-          export PATH="$PWD/.venv/bin:$PATH"
-          base=$(git merge-base origin/main HEAD); h=$(git rev-parse HEAD); bad=0
-          for c in $(git rev-list --reverse "$base..HEAD"); do
-            git checkout -q --recurse-submodules "$c"
-            if ! tests/run.sh > "$RUNNER_TEMP/bats-$c.log" 2>&1; then
-              echo "::group::bats fails at $c"; cat "$RUNNER_TEMP/bats-$c.log"; echo "::endgroup::"; bad=1
+          h=$(git rev-parse HEAD); tip=${PR_HEAD:-$h}; bad=0
+          from=$(git merge-base origin/main "$tip")
+          if [ -n "$PR_HEAD" ]; then
+            for c in $(git rev-list "$tip" ^origin/main); do
+              if ! n=$(gh api "repos/$GITHUB_REPOSITORY/commits/$c/check-runs?check_name=test-every-commit" --jq '[.check_runs[] | select(.app.slug == "github-actions" and .conclusion == "success")] | length'); then
+                echo "::warning::could not look up the test-every-commit checks of $(git rev-parse --short "$c"); testing every commit"; break
+              fi
+              if [ "$n" = 0 ]; then continue; fi
+              if git diff --quiet "$c" "$tip" -- .github/workflows/ci.yml uv.lock pyproject.toml; then
+                from=$c
+              else
+                echo "test-every-commit passed at $(git rev-parse --short "$c"), but ci.yml, uv.lock or pyproject.toml has changed since"
+              fi
+              break
+            done
+          fi
+          echo "commits after $(git rev-parse --short "$from") to test: $(git rev-list --count "$tip" ^"$from" ^origin/main)"
+          for c in $(git rev-list --reverse "$tip" ^"$from" ^origin/main); do
+            git checkout -q "$c"
+            if ! uv run --no-sync pytest -q tests/py > "$RUNNER_TEMP/pytest-$c.log" 2>&1; then
+              echo "::group::tests/py fails at $c"; cat "$RUNNER_TEMP/pytest-$c.log"; echo "::endgroup::"; bad=1
             fi
           done
-          git checkout -q --recurse-submodules "$h"
-          for c in $(git rev-list --grep='^refactor(scripts): port ' "$base..HEAD"); do git diff --quiet "$c^" "$c" -- tests/scripts || { echo "::error::$c edits tests/scripts"; bad=1; }; done
+          git checkout -q "$h"
           exit "$bad"
+
+  # The pin in templates/scaffold/ci-caller.yml.tpl: the commit of this
+  # repository whose lang-ci-<id>.yml files scaffold makes consumer
+  # repositories' CI call. It must be a main commit that has every one of
+  # them. When the lang-ci files differ from the pinned ones, a pull request
+  # that leaves the pin gets a warning to bump it after merging, and one that
+  # moves it fails. Both checks read older commits, so this job checks out
+  # full history. Consumer repositories run none of this; drift tells them
+  # when their pin falls behind the template's.
+  check-ci-template-pin:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - name: The caller template pins a main commit that has every lang-ci file
-        if: ${{ !cancelled() }}
         run: |
           tpl=templates/scaffold/ci-caller.yml.tpl
           pin=$(sed -n 's|^@@job@@     uses: bytewyrd/claude-bytewyrd/\.github/workflows/lang-ci-@@job_language@@\.yml@\([0-9a-f]\{40\}\)$|\1|p' "$tpl")

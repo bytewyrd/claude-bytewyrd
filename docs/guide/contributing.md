@@ -22,7 +22,7 @@ claude-bytewyrd/
 │   ├── bytewyrd/                — the Python package behind the commands
 │   └── _vendor/                 — vendored PyYAML
 ├── templates/scaffold/          — the seed templates that scaffold renders and drift compares against
-├── tests/                       — bats and pytest suites, and fixtures
+├── tests/                       — pytest suites and fixtures
 ├── docs/
 │   ├── ARCHITECTURE.md          — internal design reference
 │   ├── BEST_PRACTICES.md        — accumulated session learnings
@@ -109,7 +109,7 @@ Skills under `skills/` and agents under `agents/` are auto-discovered — no arr
 
 `.claude-plugin/marketplace.json` declares the plugin within its own local marketplace, used by the project-local install pattern in `docs/CONTRIBUTING.md`. Both files are short and rarely change.
 
-Skills and hooks that need deterministic work run `sh "${CLAUDE_PLUGIN_ROOT}/scripts/bw" <command>`. `bw` is a POSIX-sh launcher: it picks Python 3.11 or newer and runs `scripts/bytewyrd/commands/<command>.py`. The package uses the standard library and the PyYAML copy in `scripts/_vendor/`, so nothing installs at run time. Setup, tests and lint (uv, bats, pytest, ruff, mypy) are in [`docs/CONTRIBUTING.md`](../CONTRIBUTING.md#development-setup).
+Skills and hooks that need deterministic work run `sh "${CLAUDE_PLUGIN_ROOT}/scripts/bw" <command>`. `bw` is a POSIX-sh launcher: it picks Python 3.11 or newer and runs `scripts/bytewyrd/commands/<command>.py`. The package uses the standard library and the PyYAML copy in `scripts/_vendor/`, so nothing installs at run time. Setup, tests and lint (uv, pytest, ruff, mypy) are in [`docs/CONTRIBUTING.md`](../CONTRIBUTING.md#development-setup).
 
 ## Where to put best-practice learnings
 
