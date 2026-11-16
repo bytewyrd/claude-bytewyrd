@@ -1,4 +1,4 @@
-<!-- bytewyrd:scaffold v1 tpl=AGENTS.md:8196f27a3913 plugin=bbef72e2bec6 -->
+<!-- bytewyrd:scaffold v1 tpl=AGENTS.md:5b6487db202b plugin=f46d66f6c5c8 -->
 # claude-bytewyrd
 
 Opinionated Claude Code plugin for Bytewyrd projects — skills, agents, and RFC-driven workflow
@@ -7,7 +7,6 @@ Guidance for people and coding agents working in this repository. Keep it under 
 
 ## Project facts
 
-- Languages found by scaffold (run each one's commands in its directory): none
 - Tests: `tests/run.sh` (bats) and `python3 -m pytest -q tests/py tests/e2e` (pytest 9.2.0); both need Python 3.11 or newer.
 - Lint: the checks and pinned tools are in [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md#quality-gate).
 

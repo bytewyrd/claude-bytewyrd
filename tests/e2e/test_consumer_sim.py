@@ -307,9 +307,11 @@ def test_s01_to_s11_and_s22_seeding_a_fresh_repo(own_sim):
     assert all((repo / t).is_file() for t in TARGETS) and list(sub.iterdir()) == []
     assert not any(".claude" in Path(os.fsdecode(p)).parts for p in snapshot(repo))
 
-    # S22: the no-language ci.yml equals the committed fixture from line 2 on.
+    # S22: the no-language ci.yml equals the committed fixture from line 2 on,
+    # and the no-language AGENTS.md has no Project facts section.
     fixture = (SOURCE / ".github" / "workflows" / "scaffold-noop-fixture.yml").read_text()
     assert (repo / TARGETS[3]).read_text().split("\n", 1)[1] == fixture.split("\n", 1)[1]
+    assert "## Project facts" not in (repo / "AGENTS.md").read_text().split("\n")
 
     # S3: each line 1 is a stamp, plugin=unknown since the plugin copy isn't a git checkout.
     for t in TARGETS:
@@ -662,7 +664,7 @@ def test_s25_subdirectory_components(sim):
         assert CALL.fullmatch(block[1].strip()[len("uses: ") :]).group(1) == language
         assert block[3] == '      directory: "%s"' % directory
     agents = (repo / "AGENTS.md").read_text().split("\n")
-    assert next(line for line in agents if line.startswith("- Languages found")).endswith("go in api/, js in web/")
+    assert next(line for line in agents if line.startswith("- Languages ")).endswith("go in api/, js in web/")
     assert sim.drift(repo).code == 0
 
 

@@ -129,8 +129,8 @@ def test_manifest_languages_are_language_ids():
 
 def test_language_ids_equal_the_agents_template_tags():
     lines = (REPO / "templates" / "scaffold" / "AGENTS.md.tpl").read_text().splitlines()
-    tags = [m.group(1) for m in (re.match(r"@@([a-z0-9_]+)@@ ", line) for line in lines) if m]
-    assert sorted(t for t in tags if t not in ("none", "job")) == sorted(detect.LANGUAGES)
+    tags = [m.group(1) for m in (re.match(r"@@([a-z0-9_]+)@@( |$)", line) for line in lines) if m]
+    assert sorted(t for t in tags if t not in ("any", "job")) == sorted(detect.LANGUAGES)
 
 
 def test_dir_fd_and_no_follow_calls_are_supported_here():
@@ -800,13 +800,13 @@ CALLER = (
 AGENTS = (
     "# @@project_name@@\n"
     "\n"
-    "- Languages: @@languages@@\n"
+    "@@any@@ - Languages: @@languages@@\n"
     "@@go@@ - Go: go test ./...\n"
     "@@js@@ - JS: bun test\n"
     "@@python@@ - Python: uv run pytest\n"
     "@@ruby@@ - Ruby: bundle exec rake\n"
     "@@rust@@ - Rust: cargo test --workspace\n"
-    "@@none@@ - No language markers found.\n"
+    "@@any@@\n"
     "end\n"
 )
 GO = detect.Component("go", ".", "go", ("go.mod",))
@@ -838,12 +838,54 @@ def test_render_gathers_the_job_lines_where_the_first_stood():
 
 def test_render_keeps_tagged_lines_for_present_languages():
     assert seed.render(AGENTS, [GO, WEB], "proj") == (
-        "# proj\n\n- Languages: go, js in web/\n- Go: go test ./...\n- JS: bun test\nend\n"
+        "# proj\n\n- Languages: go, js in web/\n- Go: go test ./...\n- JS: bun test\n\nend\n"
     )
 
 
-def test_render_keeps_the_none_line_only_without_components():
-    assert seed.render(AGENTS, [], "proj") == "# proj\n\n- Languages: none\n- No language markers found.\nend\n"
+def test_render_drops_the_any_lines_without_components_and_keeps_them_with_one():
+    assert seed.render(AGENTS, [], "proj") == "# proj\n\nend\n"
+    assert seed.render(AGENTS, [GO], "proj") == "# proj\n\n- Languages: go\n- Go: go test ./...\n\nend\n"
+
+
+def test_render_turns_a_line_that_is_only_a_kept_tag_into_an_empty_line():
+    tpl = "a\n@@go@@\n@@any@@\n@@js@@\n@@any@@ \nb\n"
+    assert seed.render(tpl, [GO], "p") == "a\n\n\n\nb\n"
+    assert seed.render(tpl, [], "p") == "a\nb\n"
+
+
+def test_render_raises_when_languages_is_left_without_components():
+    assert seed.render("- Languages: @@languages@@\n", [GO], "p") == "- Languages: go\n"
+    with pytest.raises(cli.BwError, match="@@languages@@"):
+        seed.render("- Languages: @@languages@@\n", [], "p")
+
+
+@pytest.mark.parametrize("comps", [[], [GO]], ids=["none", "go"])
+def test_render_takes_none_for_an_unknown_placeholder(comps):
+    with pytest.raises(cli.BwError, match="placeholder"):
+        seed.render("@@none@@ - No language markers found.\n", comps, "p")
+
+
+def test_the_agents_template_has_project_facts_only_when_a_language_is_found():
+    text, _ = seed.read_template("AGENTS.md")
+    bare = seed.render(text, [], "proj")
+    # AC-8: the no-language render says nothing about languages or scaffold.
+    assert [word for word in ("anguage", "scaffold", "## project facts") if word in bare.lower()] == []
+    assert bare.split("\n")[:5] == [
+        "# proj",
+        "",
+        "Guidance for people and coding agents working in this repository. Keep it under 100 lines; put detail in docs/.",
+        "",
+        "## Workflow",
+    ]
+    lines = seed.render(text, [GO], "proj").split("\n")
+    assert lines[4:10] == [
+        "## Project facts",
+        "",
+        "- Languages (run each one's commands in its directory): go",
+        "- Go: build `go build ./...`, test `go test ./...`",
+        "",
+        "## Workflow",
+    ]
 
 
 @pytest.mark.parametrize(

@@ -103,10 +103,12 @@ def read_stamp(path: str) -> Stamp | _Bad | None:
 
 _JOB_TAG: str = "@@job@@ "
 
+# The tags that keep a line or drop it: each language id, kept when a
+# component has that language, and "any", kept when there is a component.
+_LINE_TAGS: tuple[str, ...] = detect.LANGUAGES + ("any",)
+
 
 def _languages_line(comps: list[detect.Component]) -> str:
-    if not comps:
-        return "none"
     items = [c.language if c.directory == "." else "%s in %s/" % (c.language, c.directory) for c in comps]
     text = ", ".join(items[:10])
     if len(items) > 10:
@@ -119,10 +121,12 @@ def render(tpl: str, comps: list[detect.Component], name: str) -> str:
 
     The @@job@@ lines form one block, repeated per component where the first
     of them stood. A line tagged @@<id>@@ stays only when a component has
-    language <id> (or, for @@none@@, when there are none). Values are inserted
-    with str.replace, so they are literal; NAME goes in last, so a name holding
-    "@@" is never taken for a placeholder. Raises BwError when a placeholder
-    is left, or when a @@job@@ block meets no components.
+    language <id>, and a line tagged @@any@@ only when there is a component;
+    a line that is only such a tag renders as an empty line. Values are
+    inserted with str.replace, so they are literal; NAME goes in last, so a
+    name holding "@@" is never taken for a placeholder. Raises BwError when a
+    placeholder is left, when a @@job@@ block meets no components, and when
+    @@languages@@ does, so that no languages line is rendered without one.
     """
     lines = tpl.replace("\r", "").split("\n")
     block = [line[len(_JOB_TAG) :] for line in lines if line.startswith(_JOB_TAG)]
@@ -142,16 +146,20 @@ def render(tpl: str, comps: list[detect.Component], name: str) -> str:
     present = {c.language for c in comps}
     kept: list[str] = []
     for line in lines:
-        for tag in detect.LANGUAGES + ("none",):
-            prefix = "@@%s@@ " % tag
-            if line.startswith(prefix):
-                if tag in present or (tag == "none" and not comps):
-                    kept.append(line[len(prefix) :])
+        for tag in _LINE_TAGS:
+            prefix = "@@%s@@" % tag
+            if line == prefix or line.startswith(prefix + " "):
+                if tag in present or (tag == "any" and comps):
+                    kept.append(line[len(prefix) + 1 :])  # "" when the line is only the tag
                 break
         else:
             kept.append(line)
 
-    text = "\n".join(kept).replace("@@languages@@", _languages_line(comps))
+    text = "\n".join(kept)
+    if "@@languages@@" in text:
+        if not comps:
+            raise cli.BwError("the template's @@languages@@ needs at least one component")
+        text = text.replace("@@languages@@", _languages_line(comps))
     if "@@" in text.replace("@@project_name@@", ""):
         raise cli.BwError("the template has a placeholder that render() doesn't know")
     return text.replace("@@project_name@@", name)
