@@ -1,0 +1,25 @@
+# Development and CI only. The plugin runs on Python 3.11 or newer with the
+# standard library and scripts/_vendor/, installs nothing, and needs no uv
+# (RFC 2026-11-09-scaffold-and-drift, Language policy and D8).
+#
+# `uv sync --locked` installs the dev group as uv.lock pins it, and only
+# `uv lock` writes uv.lock. uv needs the [project] table: without it, `uv lock`
+# takes requires-python from the interpreter it runs. package = false keeps uv
+# from building or installing this project.
+
+[project]
+name = "claude-bytewyrd-dev"
+version = "0"
+requires-python = ">=3.11"
+
+[dependency-groups]
+dev = [
+  "pytest==9.2.0",
+  "pyyaml==6.0.3",
+  "ruff==0.17.5",
+  "mypy==2.4.1",
+  "types-pyyaml==6.0.12.20261113",
+]
+
+[tool.uv]
+package = false

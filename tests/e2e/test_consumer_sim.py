@@ -38,7 +38,7 @@ CALL = re.compile(r"bytewyrd/claude-bytewyrd/\.github/workflows/lang-ci-([a-z]+)
 SCAFFOLD_PREFIXES = ("bytewyrd scaffold: ", "would create  ", "created  ", "skip  ", "note: ", "dry run: ", "applied: ")
 DRIFT_PREFIXES = ("ok  ", "info  ", "warn  ", "drift  ", "  ", "result: ")
 IS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
-COPY_SKIPS = (".git", "__pycache__", ".pytest_cache", ".worktrees")
+COPY_SKIPS = (".git", "__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".venv", ".worktrees")
 
 
 # --- the plugin copy ---------------------------------------------------------
