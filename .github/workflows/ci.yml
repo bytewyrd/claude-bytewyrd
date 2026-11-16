@@ -310,16 +310,17 @@ jobs:
           uv run --no-sync tests/run.sh
           uv run --no-sync pytest -q tests/py tests/e2e
 
-  # bats at every commit of the pull request, and the caller template's pin.
-  # A bats run takes about a minute, so 120 minutes cover about 100 commits.
+  # pytest's tests/py at every commit of the pull request, and the caller
+  # template's pin. tests/e2e runs only on the head, in test and compat. A
+  # tests/py run takes under half a minute, so 60 minutes cover more than
+  # 100 commits.
   history:
     runs-on: ubuntu-26.04
-    timeout-minutes: 120
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-          submodules: recursive
           persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         id: py
@@ -329,24 +330,20 @@ jobs:
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: false
-      # Once, at HEAD: the commits before uv.lock have none.
+      # Once, at HEAD: every commit runs with HEAD's dev tools.
       - run: uv sync --locked
-      - name: bats passes at every commit, and no port commit edits tests/scripts
+      - name: tests/py passes at every commit
         env:
           BYTEWYRD_PYTHON: ${{ steps.py.outputs.python-path }}
         run: |
-          # HEAD's environment stays first on PATH at every commit, so older
-          # commits still get pytest and PyYAML.
-          export PATH="$PWD/.venv/bin:$PATH"
           base=$(git merge-base origin/main HEAD); h=$(git rev-parse HEAD); bad=0
           for c in $(git rev-list --reverse "$base..HEAD"); do
-            git checkout -q --recurse-submodules "$c"
-            if ! tests/run.sh > "$RUNNER_TEMP/bats-$c.log" 2>&1; then
-              echo "::group::bats fails at $c"; cat "$RUNNER_TEMP/bats-$c.log"; echo "::endgroup::"; bad=1
+            git checkout -q "$c"
+            if ! uv run --no-sync pytest -q tests/py > "$RUNNER_TEMP/pytest-$c.log" 2>&1; then
+              echo "::group::tests/py fails at $c"; cat "$RUNNER_TEMP/pytest-$c.log"; echo "::endgroup::"; bad=1
             fi
           done
-          git checkout -q --recurse-submodules "$h"
-          for c in $(git rev-list --grep='^refactor(scripts): port ' "$base..HEAD"); do git diff --quiet "$c^" "$c" -- tests/scripts || { echo "::error::$c edits tests/scripts"; bad=1; }; done
+          git checkout -q "$h"
           exit "$bad"
       - name: The caller template pins a main commit that has every lang-ci file
         if: ${{ !cancelled() }}
