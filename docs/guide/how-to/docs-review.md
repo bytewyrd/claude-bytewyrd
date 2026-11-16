@@ -1,6 +1,6 @@
 # Run a documentation review
 
-`/docs-review` audits `docs/guide/**` and `README.md` against the current codebase and surfaces broken examples, stale references, workflow drift, and coverage gaps. It does not auto-apply changes — it presents a plan and waits for your approval.
+`/docs-review` audits `docs/guide/**` and `README.md` against the current codebase and surfaces broken examples, stale references, workflow drift, and coverage gaps. It does not auto-apply changes — it presents a plan and waits for your approval. It is a user-only skill, so you run it yourself; when a review is due, Claude asks you to.
 
 ---
 
@@ -8,7 +8,7 @@
 
 - **After `/rfc-implement` lands user-visible changes** — a new skill, an agent change, a new CLI flag, a new workflow. The `feature-engineer` agent does not update docs; run `/docs-review` to close that gap before the session ends.
 - **Before a release** — sweep `docs/guide/**` to confirm no broken examples or stale references ship to users.
-- **When `/sync` reports the docs-agent has improved** — re-audit the existing docs with the updated checks.
+- **When the docs-agent has improved** — after a plugin update that changes it, re-audit the existing docs with the updated checks.
 - **When a user reports a broken tutorial or missing flag** — run a scoped review against the affected area rather than editing blindly.
 
 ---
@@ -90,9 +90,8 @@ The review is strictly scoped to `docs/guide/**` and `README.md`. It never modif
 | `docs/ARCHITECTURE.md` | Agent that made the structural change |
 | `docs/CONTRIBUTING.md` | Agent that changed the dev workflow |
 | `docs/BEST_PRACTICES.md` | `/best-practices-extract` |
-| `docs/project-brief.md` | `/sync` |
+| `docs/project-brief.md` | The project's maintainers |
 | `docs/rfcs/**` | RFC lifecycle skills (`/rfc-new`, `/rfc-implement`, etc.) |
-| `docs/rfc-process.md` | `/sync` |
 | `docs/rfc-braindump.md` | `/rfc-braindump` |
 
 If a finding seems to require editing one of these files, the plan will say so and recommend the appropriate skill or agent instead.
@@ -101,5 +100,5 @@ If a finding seems to require editing one of these files, the plan will say so a
 
 ## Related
 
-- [Reference: Hooks](../reference/hooks.md) — the `SubagentStop` hook that reminds you to run `/docs-review` after a feature-engineer finishes (temporarily removed until PR 1 of RFC `2026-11-09-scaffold-and-drift` re-adds it safely).
+- [Reference: Hooks](../reference/hooks.md) — the `SubagentStop` hook that records when a `feature-engineer` finishes, and the compact reminder that asks you to run `/docs-review` after a compaction. Claude Code doesn't add a `SubagentStop` hook's plain-text output to Claude's context, so the sentinel and the compact reminder carry the reminder.
 - [Reference: Skills](../reference/skills.md) — full skill description for `/docs-review`.
