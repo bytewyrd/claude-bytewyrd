@@ -4,6 +4,8 @@ An RFC (Request for Comments) is a short design document written *before* implem
 
 For the skill command reference (syntax for each `/rfc-*` skill), see [RFC workflow](rfc-workflow.md).
 
+The full process document ships with the plugin as the `rfc-process` skill ([`skills/rfc-process/references/rfc-process.md`](../../../skills/rfc-process/references/rfc-process.md)), and Claude reads it from there, so your repository keeps no copy. A repository opts in to RFCs by having a `docs/rfcs/` directory. Project-specific extensions to the process go in its `AGENTS.md`.
+
 ---
 
 ## When to write an RFC — and when to skip it
@@ -53,9 +55,9 @@ The `rfc-architect` agent writes the RFC from your description. Your job is to g
 
 One paragraph. Answer: what is being proposed, and why. Prefer concrete statements over vague ones.
 
-Weak: "Improve the sync skill to handle more cases."
+Weak: "Improve the drift skill to handle more cases."
 
-Strong: "Extend `/sync` with a `--dry-run` flag that prints every file it would create or update without writing to disk. Teams with large projects need to preview sync output before committing, especially during plugin upgrades."
+Strong: "Extend `/bytewyrd:drift` with a `--json` flag that prints each finding as a JSON object. Teams that gate CI on drift need to read its output without scraping text lines."
 
 ### A clear "Should we do this?"
 
@@ -80,8 +82,8 @@ The implementation spec is what the `feature-engineer` agent follows. Every step
 ```markdown
 | Action | Path | Responsibility |
 |--------|------|----------------|
-| Create | `scripts/dry-run.sh` | Print planned changes without writing |
-| Modify | `skills/sync/SKILL.md` | Add --dry-run flag handling to Step 3 |
+| Create | `scripts/bytewyrd/findings_json.py` | Render drift findings as JSON |
+| Modify | `scripts/bytewyrd/commands/drift.py` | Add --json flag handling to `drift()` |
 ```
 
 This is where decomposition is decided. Doing it explicitly in the spec prevents the implementation agent from guessing.
