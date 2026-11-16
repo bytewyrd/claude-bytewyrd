@@ -2,10 +2,10 @@
 rfc: "2026-11-09-scaffold-and-drift"
 title: "Replace /sync with scaffold + drift"
 author: "Rodrigo Kochenburger"
-status: "Approved"
+status: "Done"
 created: "2026-11-09"
 drop_reason: ~
-implemented_by: ~  # PR URL(s) of the implementation; set when status becomes Done
+implemented_by: ["https://github.com/bytewyrd/claude-bytewyrd/pull/115", "https://github.com/bytewyrd/claude-bytewyrd/pull/117"]
 ---
 
 # Replace /sync with scaffold + drift
