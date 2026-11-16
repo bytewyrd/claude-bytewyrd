@@ -95,7 +95,8 @@ Current plugin-local skills:
 - `test` runs pytest over `tests/py` and `tests/e2e`, with the dev tools from `uv.lock`.
 - `lang-ci-fixture-<id>` runs each `lang-ci-<id>.yml` on its fixture in `tests/fixtures/lang-ci/<id>/`.
 - `compat` runs pytest on Python 3.11 under Linux and on the latest 3.x under macOS.
-- `history` runs pytest over `tests/py` at every commit of a pull request, and checks that the scaffold caller template pins a `main` commit that has every `lang-ci-<id>.yml`. A run skips the commits up to the newest one that a green `history` check covers, unless `ci.yml`, `uv.lock` or `pyproject.toml` has changed since; it reads those checks with `checks: read`.
+- `test-every-commit` runs pytest over `tests/py` at every commit of a pull request. A run skips the commits up to the newest one that a green `test-every-commit` check covers, unless `ci.yml`, `uv.lock` or `pyproject.toml` has changed since; it reads those checks with `checks: read`.
+- `check-ci-template-pin` checks that the scaffold caller template pins a `main` commit that has every `lang-ci-<id>.yml`, and fails a pull request that moves the pin to a commit whose lang-ci files differ from its own.
 - `install-check` installs the plugin into a temporary HOME from the checkout, and updates an install of `main` to the pull request's branch, failing on any load error that `claude plugin list --json` reports.
 
 Actions are pinned to commit SHAs. shellcheck, shfmt and actionlint are pinned releases verified by sha256, and `mise.toml` and `mise.lock` pin the same versions for local runs. `astral-sh/setup-uv` installs uv at `UV_VERSION`, which `lint` checks against `mise.toml`. Jobs run on `ubuntu-26.04` instead of `ubuntu-latest`; GitHub still updates that image weekly. The `lang-ci-<id>.yml` jobs run on `ubuntu-latest`, as they do for the repositories that call them.

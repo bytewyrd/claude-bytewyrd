@@ -299,16 +299,16 @@ jobs:
           BYTEWYRD_PYTHON: ${{ steps.py.outputs.python-path }}
         run: uv run --no-sync pytest -q tests/py tests/e2e
 
-  # pytest's tests/py at each commit of the pull request that no earlier
-  # history check covered, and the caller template's pin. A green history
-  # check on a commit means tests/py passed there and at every commit before
-  # it. So the loop starts after the newest commit that has one, unless the
-  # pull request has changed ci.yml, uv.lock or pyproject.toml since, which
-  # changes what this job runs. Without such a commit, or when the lookup
-  # fails, it tests every commit since main; a push to main has none.
-  # tests/e2e runs only on the head, in test and compat. A tests/py run
-  # takes under half a minute, so 60 minutes cover more than 100 commits.
-  history:
+  # pytest's tests/py at each commit of the pull request that no earlier run
+  # of this job covered. A green test-every-commit check on a commit means
+  # tests/py passed there and at every commit before it. So the loop starts
+  # after the newest commit that has one, unless the pull request has changed
+  # ci.yml, uv.lock or pyproject.toml since, which changes what this job runs.
+  # Without such a commit, or when the lookup fails, it tests every commit
+  # since main; a push to main has none. tests/e2e runs only on the head, in
+  # test and compat. A tests/py run takes under half a minute, so 60 minutes
+  # cover more than 100 commits.
+  test-every-commit:
     runs-on: ubuntu-26.04
     timeout-minutes: 60
     # The workflow's contents: read, plus checks: read for that lookup.
@@ -330,7 +330,7 @@ jobs:
           enable-cache: false
       # Once, at HEAD: every commit runs with HEAD's dev tools.
       - run: uv sync --locked
-      - name: tests/py passes at every commit since the last green history check
+      - name: tests/py passes at every commit since the last green check
         env:
           BYTEWYRD_PYTHON: ${{ steps.py.outputs.python-path }}
           GH_TOKEN: ${{ github.token }}
@@ -342,14 +342,14 @@ jobs:
           from=$(git merge-base origin/main "$tip")
           if [ -n "$PR_HEAD" ]; then
             for c in $(git rev-list "$tip" ^origin/main); do
-              if ! n=$(gh api "repos/$GITHUB_REPOSITORY/commits/$c/check-runs?check_name=history" --jq '[.check_runs[] | select(.app.slug == "github-actions" and .conclusion == "success")] | length'); then
-                echo "::warning::could not look up the history checks of $(git rev-parse --short "$c"); testing every commit"; break
+              if ! n=$(gh api "repos/$GITHUB_REPOSITORY/commits/$c/check-runs?check_name=test-every-commit" --jq '[.check_runs[] | select(.app.slug == "github-actions" and .conclusion == "success")] | length'); then
+                echo "::warning::could not look up the test-every-commit checks of $(git rev-parse --short "$c"); testing every commit"; break
               fi
               if [ "$n" = 0 ]; then continue; fi
               if git diff --quiet "$c" "$tip" -- .github/workflows/ci.yml uv.lock pyproject.toml; then
                 from=$c
               else
-                echo "history passed at $(git rev-parse --short "$c"), but ci.yml, uv.lock or pyproject.toml has changed since"
+                echo "test-every-commit passed at $(git rev-parse --short "$c"), but ci.yml, uv.lock or pyproject.toml has changed since"
               fi
               break
             done
@@ -363,8 +363,24 @@ jobs:
           done
           git checkout -q "$h"
           exit "$bad"
+
+  # The pin in templates/scaffold/ci-caller.yml.tpl: the commit of this
+  # repository whose lang-ci-<id>.yml files scaffold makes consumer
+  # repositories' CI call. It must be a main commit that has every one of
+  # them. When the lang-ci files differ from the pinned ones, a pull request
+  # that leaves the pin gets a warning to bump it after merging, and one that
+  # moves it fails. Both checks read older commits, so this job checks out
+  # full history. Consumer repositories run none of this; drift tells them
+  # when their pin falls behind the template's.
+  check-ci-template-pin:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - name: The caller template pins a main commit that has every lang-ci file
-        if: ${{ !cancelled() }}
         run: |
           tpl=templates/scaffold/ci-caller.yml.tpl
           pin=$(sed -n 's|^@@job@@     uses: bytewyrd/claude-bytewyrd/\.github/workflows/lang-ci-@@job_language@@\.yml@\([0-9a-f]\{40\}\)$|\1|p' "$tpl")

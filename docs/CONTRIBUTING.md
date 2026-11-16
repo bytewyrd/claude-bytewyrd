@@ -95,7 +95,7 @@ chore(scope): tooling, deps, config
 
 ## Quality Gate
 
-CI (`.github/workflows/ci.yml`) runs eleven jobs on every pull request to `main`. Three of them are the checks the branch ruleset is meant to require:
+CI (`.github/workflows/ci.yml`) runs twelve jobs on every pull request to `main`. Three of them are the checks the branch ruleset is meant to require:
 
 - **`lint`**, with the dev tools from `uv.lock`:
   - The JSON manifests parse.
@@ -110,11 +110,12 @@ CI (`.github/workflows/ci.yml`) runs eleven jobs on every pull request to `main`
 - **`validate`**: `claude plugin validate .` with the pinned Claude Code CLI.
 - **`test`**: pytest over `tests/py` and `tests/e2e`, through `uv run --no-sync`. pytest also checks that the language ids, the `lang-ci-<id>.yml` files, their fixture jobs and the AGENTS.md template's tags agree.
 
-The other eight are not required:
+The other nine are not required:
 
 - **`lang-ci-fixture-<id>`**, five jobs, run each `lang-ci-<id>.yml` on its fixture in `tests/fixtures/lang-ci/<id>/`.
 - **`compat`** runs pytest on Python 3.11 under Linux and on the latest 3.x under macOS.
-- **`history`** runs pytest over `tests/py` at every commit of the pull request, and checks that `templates/scaffold/ci-caller.yml.tpl` pins a `main` commit that has every `lang-ci-<id>.yml`. Keep `tests/py` passing at every commit; `tests/e2e` runs only on the pull request's head, in `test` and `compat`. A green `history` check on a commit covers that commit and those before it, so a later run tests only the commits after the newest such commit. It tests them all again when `ci.yml`, `uv.lock` or `pyproject.toml` has changed since.
+- **`test-every-commit`** runs pytest over `tests/py` at every commit of the pull request. Keep `tests/py` passing at every commit; `tests/e2e` runs only on the pull request's head, in `test` and `compat`. A green `test-every-commit` check on a commit covers that commit and those before it, so a later run tests only the commits after the newest such commit. It tests them all again when `ci.yml`, `uv.lock` or `pyproject.toml` has changed since.
+- **`check-ci-template-pin`** checks that `templates/scaffold/ci-caller.yml.tpl` pins a `main` commit that has every `lang-ci-<id>.yml`. When the lang-ci files differ from the pinned ones, a pull request that leaves the pin gets a warning to bump it after merging, and one that moves it fails.
 - **`install-check`** installs the plugin into a temporary HOME from the checkout, and updates an install of `main` to the pull request's branch; any load error that `claude plugin list --json` reports fails it.
 
 To run the same checks locally before pushing, after the [setup](#development-setup) above (`python3` must be 3.11 or newer, and `BYTEWYRD_PYTHON` can point `scripts/bw` at another interpreter):

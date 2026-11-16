@@ -1297,7 +1297,7 @@ CALLER_PIN_LINE = (
 
 
 def test_the_caller_template_has_one_uses_line_of_the_pinned_shape():
-    # The same shape as the history job's pin checks (B4).
+    # The same shape as the check-ci-template-pin job's pin checks (B4).
     text = (ROOT_TEMPLATES / "ci-caller.yml.tpl").read_text()
     assert text.count("uses:") == 1
     assert len(re.findall(CALLER_PIN_LINE, text, re.M)) == 1
