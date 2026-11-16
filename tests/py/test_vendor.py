@@ -18,6 +18,8 @@ import subprocess
 import sys
 import tarfile
 import tomllib
+import types
+import urllib.error
 from pathlib import Path
 
 import pytest
@@ -385,3 +387,59 @@ def test_an_sdist_without_the_license_or_the_modules_fails_before_anything_is_wr
     assert run_vendor(root, data=data)[0] == 1
     assert not (root / "scripts").exists()
     assert "the sdist lacks pyyaml-9.9.9/LICENSE or the files of pyyaml-9.9.9/lib/yaml/" in capsys.readouterr().err
+
+
+class FakeResponse:
+    """What urlopen returns: a context manager whose read(limit) gives the body."""
+
+    def __init__(self, body):
+        self.body = body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def read(self, limit):
+        return self.body[:limit]
+
+
+def stub_urlopen(monkeypatch, outcomes):
+    """urlopen raises or returns OUTCOMES in turn; the calls and the pauses are recorded."""
+    calls, pauses, outcomes = [], [], list(outcomes)
+
+    def urlopen(url, timeout):
+        calls.append((url, timeout))
+        outcome = outcomes.pop(0)
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return FakeResponse(outcome)
+
+    monkeypatch.setattr(vendor_pyyaml.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(vendor_pyyaml, "time", types.SimpleNamespace(sleep=pauses.append))
+    return calls, pauses
+
+
+def http_error(code):
+    return urllib.error.HTTPError("https://files.pythonhosted.org/x", code, "status", {}, None)
+
+
+def test_fetch_retries_a_dropped_connection_and_a_503_then_reads_the_body(monkeypatch):
+    calls, pauses = stub_urlopen(monkeypatch, [urllib.error.URLError("reset"), http_error(503), b"sdist-bytes"])
+    assert vendor_pyyaml.fetch("https://files.pythonhosted.org/x", 5) == b"sdist"
+    assert len(calls) == 3 and pauses == [1.0, 2.0]
+
+
+def test_fetch_gives_up_after_three_retries_as_curl_retry_3_did(monkeypatch):
+    calls, pauses = stub_urlopen(monkeypatch, [TimeoutError("slow")] * 4)
+    with pytest.raises(TimeoutError):
+        vendor_pyyaml.fetch("https://files.pythonhosted.org/x", 5)
+    assert len(calls) == 4 and pauses == [1.0, 2.0, 4.0]
+
+
+def test_fetch_fails_at_once_on_a_status_that_is_not_transient(monkeypatch):
+    calls, pauses = stub_urlopen(monkeypatch, [http_error(404), b"unused"])
+    with pytest.raises(urllib.error.HTTPError):
+        vendor_pyyaml.fetch("https://files.pythonhosted.org/x", 5)
+    assert len(calls) == 1 and pauses == []

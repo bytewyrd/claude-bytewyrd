@@ -24,12 +24,16 @@ import shutil
 import sys
 import tarfile
 import tempfile
+import time
 import tomllib
+import urllib.error
 import urllib.request
 from pathlib import Path
 
 PYPI = "https://pypi.org/simple"
 FILES = "https://files.pythonhosted.org/packages/"
+# The HTTP statuses curl --retry treats as transient, as the CI step this script replaced did.
+TRANSIENT_HTTP = frozenset({408, 429, 500, 502, 503, 504})
 
 
 class VendorError(Exception):
@@ -58,10 +62,22 @@ def locked_sdist(root):
     return version, url, digest[len("sha256:") :], size
 
 
-def fetch(url, limit):
-    """At most LIMIT bytes of URL's body."""
-    with urllib.request.urlopen(url, timeout=60) as response:
-        return response.read(limit)
+def fetch(url, limit, attempts=4, pause=1.0):
+    """At most LIMIT bytes of URL's body. Like the `curl --retry 3` it replaced, a
+    timeout, a failed connection or a transient HTTP status is retried up to three
+    times, after 1, 2 and 4 seconds; any other error is final at once."""
+    for attempt in range(attempts):
+        try:
+            with urllib.request.urlopen(url, timeout=60) as response:
+                return response.read(limit)
+        except urllib.error.HTTPError as e:
+            if e.code not in TRANSIENT_HTTP or attempt == attempts - 1:
+                raise
+        except (urllib.error.URLError, TimeoutError, ConnectionError):
+            if attempt == attempts - 1:
+                raise
+        time.sleep(pause * 2**attempt)
+    raise AssertionError("unreachable: the last attempt returns or raises")
 
 
 def sdist_files(data, version):
