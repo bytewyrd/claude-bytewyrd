@@ -10,7 +10,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-Everything merged after the 0.2.0 release notes were written: #94, #96, #110, #111, #112, #113 (the release-hygiene PR that introduced this section), and #116.
+Everything merged after the 0.2.0 release notes were written: #94, #96, #110, #111, #112, #113 (the release-hygiene PR that introduced this section), #115, #116, and #117.
 
 ### Changed
 
@@ -23,6 +23,8 @@ Everything merged after the 0.2.0 release notes were written: #94, #96, #110, #1
   - `rfc-resolve` falls back to the last regular file in `docs/rfcs/`, so a directory named `*.md` that sorts last no longer gives "no RFC files".
   - `tool-probe` needs the execute bit, and `tool-probe jq` without jq reports it missing with exit 1, where it failed with exit 2.
   - Input that isn't UTF-8 becomes U+FFFD in the JSON.
+- **The Python behind `scripts/bw` is one typed package, `scripts/bytewyrd/`** (RFC `2026-11-09-scaffold-and-drift`). `scripts/bw NAME` is unchanged: the launcher runs the bootstrap, `scripts/bytewyrd/__main__.py`, which dispatches NAME to `scripts/bytewyrd/commands/<name>.py`, and every command keeps its arguments, output and exit codes. Seven shared modules, `cli`, `git`, `fs`, `detect`, `seed`, `frontmatter` and `jsonout`, hold what the commands share, and only `frontmatter` imports the vendored PyYAML. Every module but the bootstrap is typed and checked with `mypy --strict`.
+- **Seeded files say nothing when no language is found** (RFC `2026-11-09-scaffold-and-drift`). The `AGENTS.md` template has a Project facts section only when scaffold finds a language, and its languages line no longer says that scaffold found them. With no languages, the seeded `ci.yml` is a neutral no-op, whose one step is `run: exit 0`. Repositories seeded before this change see `template-changed` until they apply drift's diff and the stamp that its fix line prints.
 - **`github`, `context7` and `code-review` are hard dependencies.** `plugin.json` declares them from `claude-plugins-official`, `code-review` at `^1.0.1` since it is the only one that publishes a version, and `marketplace.json` allows that marketplace, so installing bytewyrd installs them. Claude Code doesn't load bytewyrd while one is missing or disabled. The `claude plugin` commands never register the official marketplace on their own; see Upgrading.
 - **The SessionStart requirement check is removed**, with `scripts/check-requirements.sh` and `BYTEWYRD_SKIP_WARN`. The companion plugins are dependencies now, Exa and Firefox are MCP servers whose tools degrade where they are used, and scaffold and drift exit 1 without git.
 - **`.bytewyrd/` sentinels go through `bw state-touch`.** `/best-practices-extract` writes its PreCompact sentinel, and `/docs-review` removes the SubagentStop one, through a no-follow directory descriptor that refuses symlinks.
@@ -53,6 +55,9 @@ Everything merged after the 0.2.0 release notes were written: #94, #96, #110, #1
 - **Always-on rules.** A SessionStart hook on `startup|clear|compact` adds five workflow conventions, from `hooks/always-on-rules.json`, as `additionalContext`. CI caps them at 2,000 characters.
 - **`rfc-process` and `best-practices` skills.** The RFC process and the curated best practices per stack (general, go, js-ts, python, rust, svelte, ruby, rails, k8s-cue, terraform) ship in the plugin and are read at runtime, so repositories don't need copies.
 - **More CI.** `test` also runs pytest over `tests/py` and `tests/e2e`. New jobs, not required: `compat` runs bats and pytest on Python 3.11 under Linux and on the latest 3.x under macOS; `history` runs bats at every commit of a pull request and checks the scaffold caller's pin; `install-check` installs the plugin into a temporary HOME and updates an install of `main`.
+- **A uv development environment** (RFC `2026-11-09-scaffold-and-drift`). `pyproject.toml` and `uv.lock` pin the development tools, pytest, PyYAML, ruff, mypy and types-PyYAML, and `mise.toml` pins uv 0.13.4. Contributors and every CI job install them with `uv sync --locked` and run them with `uv run --no-sync`, in place of CI's pip installs. The plugin itself installs nothing and needs no uv.
+- **ruff and `mypy --strict` in CI.** `lint` runs `ruff check`, `ruff format --check` and `mypy` as `pyproject.toml` configures them: ruff's classic rule set plus import sorting, on the repository's Python but not `scripts/_vendor/` or Markdown, and `--strict` on `scripts/bytewyrd/`.
+- **The vendored PyYAML is checked against `uv.lock`.** `.github/scripts/vendor-pyyaml.py`, standard library only, rebuilds `scripts/_vendor/yaml/` and `scripts/_vendor/PyYAML-LICENSE` from the sdist that `uv.lock` pins, after checking its size and sha256, and `lint` runs it with `--check`, which compares the files both ways. `scripts/_vendor/PyYAML-6.0.3.sha256` is gone, since `uv.lock` records the same hash. [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md#updating-the-vendored-pyyaml) has the steps to update PyYAML.
 
 - **CI that gates merges.** Three jobs replace the stub workflow:
   - `lint`: JSON manifests parse, `bootstrap-manifest.json` is current, agent and skill frontmatter is strict YAML, relative Markdown links resolve, and the shell scripts pass shellcheck (warning level) and shfmt.

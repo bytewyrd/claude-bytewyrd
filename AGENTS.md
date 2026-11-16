@@ -7,7 +7,7 @@ Guidance for people and coding agents working in this repository. Keep it under 
 
 ## Project facts
 
-- Tests: `tests/run.sh` (bats) and `python3 -m pytest -q tests/py tests/e2e` (pytest 9.2.0); both need Python 3.11 or newer.
+- Tests: `uv run --no-sync tests/run.sh` (bats) and `uv run --no-sync pytest -q tests/py tests/e2e`, after `uv sync --locked`; both need Python 3.11 or newer.
 - Lint: the checks and pinned tools are in [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md#quality-gate).
 
 ## Workflow
@@ -25,6 +25,8 @@ claude-bytewyrd/
 ├── CLAUDE.md                    — Claude Code additions; imports AGENTS.md
 ├── LICENSE                      — Apache-2.0
 ├── THIRD_PARTY_NOTICES.md       — upstream MIT notices: agents derived from VoltAgent/awesome-claude-code-subagents, and the vendored PyYAML
+├── pyproject.toml               — development only: the dev tools (pytest, PyYAML, ruff, mypy) and their settings
+├── uv.lock                      — pins the dev tools, and the PyYAML sdist that scripts/_vendor/ is built from
 ├── agents/                      — subagent definitions (many originally from VoltAgent/awesome-claude-code-subagents, MIT; now locally owned)
 ├── skills/                      — exported plugin skills (auto-discovered by Claude Code), including
 │   ├── scaffold/                — seeds AGENTS.md, CLAUDE.md, a PR template and CI, each only if missing
@@ -34,8 +36,8 @@ claude-bytewyrd/
 ├── hooks/                       — hooks.json, and always-on-rules.json, the conventions added to each session
 ├── scripts/
 │   ├── bw                       — POSIX-sh launcher that runs every command
-│   ├── _lib/                    — the Python modules behind the commands
-│   └── _vendor/                 — PyYAML, vendored unmodified
+│   ├── bytewyrd/                — the Python package behind the commands, typed and checked with mypy --strict
+│   └── _vendor/                 — PyYAML, vendored unmodified from the sdist that uv.lock pins
 ├── templates/scaffold/          — the seed templates scaffold renders and drift compares against
 ├── tests/                       — bats (scripts/), pytest (py/, e2e/) and fixtures/
 ├── .claude-plugin/
