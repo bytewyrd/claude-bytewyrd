@@ -166,7 +166,7 @@ A `SessionStart` hook is a natural place to surface a "plugin not installed" war
 
 **Optional project-scope enforcement**
 
-Teams that want Claude Code to auto-install the plugin for any collaborator who opens the repo — bypassing the manual install step — can add both `enabledPlugins` and `extraKnownMarketplaces` entries to `.claude/settings.json` and commit them. Both entries are required: `enabledPlugins` alone is not enough because Claude Code needs `extraKnownMarketplaces` to resolve the marketplace source before it can prompt the install. Teams that choose this path own the maintenance of those entries. See `docs/guide/installation.md` for the exact JSON.
+Teams that want Claude Code to register the marketplace and turn the plugin on for every collaborator can add both `enabledPlugins` and `extraKnownMarketplaces` entries to `.claude/settings.json` and commit them. `extraKnownMarketplaces` registers the marketplace once a collaborator trusts the folder, and `enabledPlugins` turns the plugin on. Neither installs it: each collaborator still runs `claude plugin install bytewyrd@bytewyrd --scope project` once per clone ([Claude Code docs](https://code.claude.com/docs/en/plugins/org#require-plugins-per-repository)). Teams that choose this path own the maintenance of those entries. See `docs/guide/installation.md` for the exact JSON.
 
 ## Dependencies
 
