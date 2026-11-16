@@ -105,17 +105,12 @@ jobs:
           grep -qx CHECKSUMS tests/fixtures/lang-ci/ruby/Gemfile.lock  # no CHECKSUMS section
           grep -qE '^  rake \([0-9.]+\) sha256=[0-9a-f]{64}$' tests/fixtures/lang-ci/ruby/Gemfile.lock  # a CHECKSUMS entry without its hash
 
-      # scripts/_vendor/yaml/ is the sdist's lib/yaml/, unmodified, next to its
-      # LICENSE. The sdist is checked against the sha256 recorded in the
-      # repository before anything is extracted from it.
-      - name: The vendored PyYAML matches its sdist
-        run: |
-          curl -fsSL --retry 3 -o "$RUNNER_TEMP/pyyaml.tar.gz" \
-            "https://files.pythonhosted.org/packages/05/8e/961c0007c59b8dd7729d542c61a4d537767a59645b82a0b521206e1e25c2/pyyaml-6.0.3.tar.gz"
-          echo "$(cut -d' ' -f1 scripts/_vendor/PyYAML-6.0.3.sha256)  $RUNNER_TEMP/pyyaml.tar.gz" | sha256sum -c -
-          tar -xzf "$RUNNER_TEMP/pyyaml.tar.gz" -C "$RUNNER_TEMP"
-          diff -r -x __pycache__ "$RUNNER_TEMP/pyyaml-6.0.3/lib/yaml" scripts/_vendor/yaml
-          cmp "$RUNNER_TEMP/pyyaml-6.0.3/LICENSE" scripts/_vendor/PyYAML-LICENSE
+      # scripts/_vendor/yaml/ is the lib/yaml/ of the sdist that uv.lock pins,
+      # unmodified, next to its LICENSE. The script checks the sdist's size and
+      # sha256 against uv.lock before reading anything from it, then compares
+      # the files both ways.
+      - name: The vendored PyYAML matches the sdist uv.lock pins
+        run: python3 .github/scripts/vendor-pyyaml.py --check
 
       # load_frontmatter in scripts/bytewyrd/frontmatter.py parses YAML only
       # through its alias-refusing, size-capped loader, and nothing else may
