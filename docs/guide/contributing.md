@@ -116,7 +116,7 @@ Skills and hooks that need deterministic work run `sh "${CLAUDE_PLUGIN_ROOT}/scr
 After a session where you learned something non-obvious about working on the plugin, capture it:
 
 - **`/best-practices-record <one-line lesson>`** — writes to `~/.claude/BEST_PRACTICES.md` (global, cross-project). Use for portable patterns like "always run the quality gate before opening a PR."
-- **`/best-practices-extract`** at session end — surfaces session learnings to this repo's `docs/BEST_PRACTICES.md`. Use for plugin-specific patterns like "the `tools:` frontmatter field is silently ignored by Claude Code, so don't bother adding it."
+- **`/best-practices-extract`** at session end — surfaces session learnings to this repo's `docs/BEST_PRACTICES.md`. Use for plugin-specific patterns like "a `tools:` list that names external CLIs such as `kubectl` silently leaves the subagent with no usable tools, so omit the field or list only real tool names."
 
 The global pool flows into every project through the `best-practices` skill, after a maintainer promotes entries with the plugin-local `best-practices-sync` skill.
 
