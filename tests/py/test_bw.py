@@ -1310,6 +1310,14 @@ def test_the_noop_fixture_workflow_is_the_noop_render_from_line_2():
     assert fixture.split("\n", 1)[1] == seed.render(text, [], "any")
 
 
+def test_the_noop_render_is_a_neutral_job_that_names_neither_scaffold_nor_languages():
+    # AC-8: the job passes and says nothing about what scaffold found.
+    text, _ = seed.read_template("ci-noop.yml")
+    rendered = seed.render(text, [], "proj")
+    assert rendered.split("\n")[-3:] == ["    steps:", "      - run: exit 0", ""]
+    assert [word for word in ("scaffold", "language", "replace") if word in rendered.lower()] == []
+
+
 def test_find_entry(tmp_path):
     d = str(tmp_path)
     (tmp_path / "b.md").write_text("x")
