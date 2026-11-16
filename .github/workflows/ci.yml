@@ -134,6 +134,14 @@ jobs:
           grep -qxF "\"aqua:rhysd/actionlint\" = \"$ACTIONLINT_VERSION\"" mise.toml
           grep -qxF "\"aqua:astral-sh/uv\" = \"$UV_VERSION\"" mise.toml
 
+      # ruff's rules and file set are in pyproject.toml, which keeps it off
+      # scripts/_vendor, the bats submodules and Markdown.
+      - name: Python code passes ruff
+        run: uv run --no-sync ruff check
+
+      - name: Python code is ruff-formatted
+        run: uv run --no-sync ruff format --check
+
       - name: Install shellcheck, shfmt and actionlint
         run: |
           bin="$RUNNER_TEMP/bin"
