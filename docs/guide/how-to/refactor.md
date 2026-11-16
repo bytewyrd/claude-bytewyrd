@@ -21,7 +21,7 @@ Use `/refactor` when:
 Pass a scope hint describing what to refactor:
 
 ```
-/bytewyrd:refactor scripts/check-requirements.sh
+/bytewyrd:refactor src/payments/processor.py
 ```
 
 The scope hint can be:
@@ -61,16 +61,16 @@ If the scope already has comprehensive test coverage, this phase is skipped.
 The agent presents a numbered list of refactoring steps. Each step is small enough that the test suite is green after it. Example:
 
 ```
-Refactoring plan for scripts/check-requirements.sh:
+Refactoring plan for src/payments/processor.py:
 
-1. Extract method — move probe logic into separate check_github() function
-   Files: scripts/check-requirements.sh
+1. Extract method — move card validation into a separate validate_card() function
+   Files: src/payments/processor.py
    Risk: low — no callers outside this file
    Reversal: inline the function body
 
-2. Introduce parameter object — bundle warning ID + message + fix into a struct
-   Files: scripts/check-requirements.sh
-   Risk: low — internal to the script
+2. Introduce parameter object — bundle amount, currency and idempotency key into a PaymentRequest dataclass
+   Files: src/payments/processor.py
+   Risk: low — internal to the module
    Reversal: expand back to positional arguments
 ```
 
