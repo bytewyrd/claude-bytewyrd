@@ -12,10 +12,10 @@ Contract: docs/rfcs/2026-11-09-scaffold-and-drift.md, Appendix B2
 from bytewyrd import cli, frontmatter, jsonout
 
 # The bash script's wording, with the command named as scripts/bw runs it.
-USAGE = "usage: bw rfc-frontmatter <path-to-rfc.md>"
+USAGE: str = "usage: bw rfc-frontmatter <path-to-rfc.md>"
 
 
-def run(argv):
+def run(argv: list[str]) -> int:
     path = argv[0] if argv else ""
     if not path:
         jsonout.emit_error(USAGE)
@@ -29,5 +29,5 @@ def run(argv):
     return 0
 
 
-def main(argv):
+def main(argv: list[str]) -> int:
     return jsonout.json_main("rfc-frontmatter", run, argv)

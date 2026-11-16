@@ -1,8 +1,8 @@
 """Tests for the vendored PyYAML (RFC 2026-11-09-scaffold-and-drift, B2
 "Vendored PyYAML"): a command imports scripts/_vendor/yaml/, PyYAML 6.0.3,
 without its C extension, also when another PyYAML is installed; and only
-load_frontmatter() imports it. CI's lint job checks the copy against the
-sdist itself.
+frontmatter.py imports it, so a module that doesn't import frontmatter never
+loads it. CI's lint job checks the copy against the sdist itself.
 """
 
 import ast
@@ -20,7 +20,7 @@ PACKAGE = SCRIPTS / "bytewyrd"
 VENDOR = SCRIPTS / "_vendor"
 
 # Runs the bootstrap's path setup through main(), with a command that prints
-# nothing in an empty directory, then imports yaml as load_frontmatter() does.
+# nothing in an empty directory, then imports yaml as frontmatter.py does.
 PROBE = """
 import json, sys
 sys.path.insert(0, sys.argv[1])
@@ -82,31 +82,45 @@ def package_modules():
     return names
 
 
-def test_no_command_imports_yaml_until_it_reads_frontmatter(tmp_path):
-    (tmp_path / "x.md").write_text("---\nrfc: a\n---\n")
+# The modules that must never load yaml: the class-A commands, which read no
+# frontmatter, and the shared modules other than frontmatter.
+NO_YAML = [
+    *("bytewyrd." + m for m in ("cli", "git", "fs", "detect", "seed", "jsonout")),
+    *("bytewyrd.commands." + m for m in ("scaffold", "drift", "state_touch", "compact_reminder")),
+]
+
+# Imports one module, with scripts and scripts/_vendor first on sys.path as the
+# bootstrap puts them, and says whether frontmatter and yaml are now loaded.
+IMPORT_PROBE = """
+import importlib, json, sys
+sys.path[0:0] = sys.argv[1:3]
+importlib.import_module(sys.argv[3])
+print(json.dumps(["bytewyrd.frontmatter" in sys.modules, "yaml" in sys.modules]))
+"""
+
+
+def test_a_module_loads_yaml_only_when_it_imports_frontmatter(tmp_path):
     modules = package_modules()
-    shared = ["bytewyrd." + m for m in ("cli", "git", "fs", "detect", "seed", "frontmatter", "jsonout")]
-    commands = ["bytewyrd.commands." + m for m in ("scaffold", "drift", "state_touch", "compact_reminder")]
-    assert {"bytewyrd", "bytewyrd.__main__", *shared, *commands} <= set(modules)
-    code = (
-        "import importlib, sys; sys.path[0:0] = sys.argv[1:3]; "
-        "[importlib.import_module(m) for m in sys.argv[3:]]; "
-        "print('yaml' in sys.modules); from bytewyrd import frontmatter; frontmatter.load_frontmatter('x.md'); "
-        "print('yaml' in sys.modules)"
-    )
-    proc = subprocess.run(
-        [sys.executable, "-I", "-S", "-B", "-c", code, str(SCRIPTS), str(VENDOR), *modules],
-        cwd=tmp_path,
-        capture_output=True,
-        encoding="utf-8",
-    )
-    assert (proc.returncode, proc.stdout, proc.stderr) == (0, "False\nTrue\n", "")
+    assert {"bytewyrd", "bytewyrd.__main__", "bytewyrd.frontmatter", *NO_YAML} <= set(modules)
+    loads = {}
+    for module in modules:
+        proc = subprocess.run(
+            [sys.executable, "-I", "-S", "-B", "-c", IMPORT_PROBE, str(SCRIPTS), str(VENDOR), module],
+            cwd=tmp_path,
+            capture_output=True,
+            encoding="utf-8",
+        )
+        assert (proc.returncode, proc.stderr) == (0, ""), module
+        frontmatter, yaml = json.loads(proc.stdout)
+        assert yaml == frontmatter, "importing %s: frontmatter loaded %s, yaml loaded %s" % (module, frontmatter, yaml)
+        loads[module] = yaml
+    assert loads["bytewyrd.frontmatter"]
+    assert [m for m in NO_YAML if loads[m]] == []
 
 
-def test_only_frontmatter_imports_yaml_and_only_inside_a_function():
+def test_only_frontmatter_imports_yaml():
     for path in sorted(PACKAGE.rglob("*.py")):
         tree = ast.parse(path.read_text(), str(path))
-        top_level = set(tree.body)
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 names = [alias.name for alias in node.names]
@@ -117,4 +131,3 @@ def test_only_frontmatter_imports_yaml_and_only_inside_a_function():
             if any(name == "yaml" or name.startswith("yaml.") for name in names):
                 rel = path.relative_to(PACKAGE)
                 assert rel == Path("frontmatter.py"), "%s imports yaml at line %d" % (rel, node.lineno)
-                assert node not in top_level, "frontmatter.py imports yaml at module level, line %d" % node.lineno

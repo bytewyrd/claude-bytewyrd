@@ -18,13 +18,15 @@ import os
 
 from bytewyrd import jsonout
 
-FILE = "docs/rfc-braindump.md"
-HEADER = b"# RFC Braindump\n\nPotential RFC ideas. Add with `/rfc-braindump`, promote to full RFC with `/rfc-new`.\n\n"
+FILE: str = "docs/rfc-braindump.md"
+HEADER: bytes = (
+    b"# RFC Braindump\n\nPotential RFC ideas. Add with `/rfc-braindump`, promote to full RFC with `/rfc-new`.\n\n"
+)
 # The bash script's wording, with the command named as scripts/bw runs it.
-USAGE = "usage: bw rfc-braindump-append <full-bullet-body-without-leading-star-space>"
+USAGE: str = "usage: bw rfc-braindump-append <full-bullet-body-without-leading-star-space>"
 
 
-def run(argv):
+def run(argv: list[str]) -> int:
     body = argv[0] if argv else ""
     if not body:
         jsonout.emit_error(USAGE)
@@ -37,5 +39,5 @@ def run(argv):
     return 0
 
 
-def main(argv):
+def main(argv: list[str]) -> int:
     return jsonout.json_main("rfc-braindump-append", run, argv)

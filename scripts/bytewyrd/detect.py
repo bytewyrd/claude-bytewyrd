@@ -12,16 +12,17 @@ import os
 import posixpath
 import re
 import tomllib
-from typing import NamedTuple
+from collections.abc import Callable, Iterable
+from typing import Any, Literal, NamedTuple, TypeAlias, TypeGuard
 
 from bytewyrd import cli, git
 
 # The language ids. Each has a .github/workflows/lang-ci-<id>.yml and a
 # lang-ci-fixture-<id> job in ci.yml; tests/py/test_bw.py checks both.
-LANGUAGES = ("go", "js", "python", "ruby", "rust")
+LANGUAGES: tuple[str, ...] = ("go", "js", "python", "ruby", "rust")
 
 # Manifest basenames and their language.
-MANIFESTS = {
+MANIFESTS: dict[str, str] = {
     "go.mod": "go",
     "package.json": "js",
     "pyproject.toml": "python",
@@ -37,7 +38,7 @@ class Component(NamedTuple):
     language: str
     directory: str
     job_id: str
-    manifests: tuple
+    manifests: tuple[str, ...]
 
 
 class Skip(NamedTuple):
@@ -47,25 +48,25 @@ class Skip(NamedTuple):
     reason: str
 
 
-def attr_line(path):
+def attr_line(path: str) -> str:
     """A .gitattributes line whose root-anchored pattern opts out exactly PATH."""
     escaped = "".join("\\" + c if c in "\\*?[" else c for c in path)
     return cli.quote("/" + escaped) + " -bytewyrd-ci"
 
 
-REASON_NAME = "directory name not allowed (letters, digits, '.', '_' and '-', at most 64 characters)"
-REASON_RAKEFILE = "no Rakefile (the ruby job runs bundle exec rake)"
-REASON_PYPROJECT = "no pyproject.toml with [project] (the python job runs uv sync)"
-REASON_VALUE = "bytewyrd-ci has a value; use bytewyrd-ci or -bytewyrd-ci"
-REASON_OPTED_OUT = "opted out by -bytewyrd-ci"
+REASON_NAME: str = "directory name not allowed (letters, digits, '.', '_' and '-', at most 64 characters)"
+REASON_RAKEFILE: str = "no Rakefile (the ruby job runs bundle exec rake)"
+REASON_PYPROJECT: str = "no pyproject.toml with [project] (the python job runs uv sync)"
+REASON_VALUE: str = "bytewyrd-ci has a value; use bytewyrd-ci or -bytewyrd-ci"
+REASON_OPTED_OUT: str = "opted out by -bytewyrd-ci"
 
 
-def reason_taken(job_id, directory):
+def reason_taken(job_id: str, directory: str) -> str:
     """The reason for a group whose job id DIRECTORY's group already holds."""
     return "job id %s is taken by %s" % (cli.quote(job_id), cli.quote(directory))
 
 
-def skip_fix(path, reason):
+def skip_fix(path: str, reason: str) -> str | None:
     """The fix line for a Skip(PATH, REASON), or None for an opt-out."""
     if reason == REASON_OPTED_OUT:
         return None
@@ -79,15 +80,15 @@ def skip_fix(path, reason):
     return "rename the directory, or mark the manifest: " + line  # REASON_NAME and reason_taken()
 
 
-_RAKEFILES = ("rakefile", "Rakefile", "rakefile.rb", "Rakefile.rb")
-_OUT_OF_SCOPE = frozenset(
+_RAKEFILES: tuple[str, ...] = ("rakefile", "Rakefile", "rakefile.rb", "Rakefile.rb")
+_OUT_OF_SCOPE: frozenset[str] = frozenset(
     "node_modules vendor third_party testdata test tests spec e2e fixture fixtures "
     "example examples sample samples template templates".split()
 )
-_DIRECTORY_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*")
+_DIRECTORY_RE: re.Pattern[str] = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*")
 
 
-def dir_matches(pattern, directory):
+def dir_matches(pattern: str, directory: str) -> bool:
     """True when the workspace PATTERN matches DIRECTORY, segment by segment.
 
     A leading "./" and a trailing "/" are stripped from PATTERN. Each segment
@@ -116,15 +117,15 @@ def dir_matches(pattern, directory):
     return after[0]
 
 
-def _matches_any(patterns, directory):
+def _matches_any(patterns: Iterable[str], directory: str) -> bool:
     return any(dir_matches(p, directory) for p in patterns)
 
 
-def _str_list(value):
+def _str_list(value: object) -> TypeGuard[list[str]]:
     return isinstance(value, list) and all(isinstance(v, str) for v in value)
 
 
-def _load(root, entry, parse):
+def _load(root: str, entry: git.Entry | None, parse: Callable[[str], object]) -> object:
     """PARSE applied to an index entry's text, or None when it declares nothing."""
     data = git.blob(root, entry) if entry is not None else None
     if data is None:
@@ -135,7 +136,7 @@ def _load(root, entry, parse):
         return None
 
 
-def _js_workspaces(root, entry):
+def _js_workspaces(root: str, entry: git.Entry | None) -> list[str] | None:
     """The workspace patterns of a package.json, or None."""
     doc = _load(root, entry, json.loads)
     if not isinstance(doc, dict) or "workspaces" not in doc:
@@ -146,10 +147,14 @@ def _js_workspaces(root, entry):
     return patterns if _str_list(patterns) else None
 
 
-def _toml_workspace(doc, *keys):
+# A workspace table's (members, exclude).
+_Workspace: TypeAlias = tuple[list[str], list[str]]
+
+
+def _toml_workspace(doc: dict[str, Any], *keys: str) -> _Workspace | Literal[False] | None:
     """The (members, exclude) of the table at KEYS in DOC: None when the table
     is absent, False when its shape is wrong."""
-    table = doc
+    table: object = doc
     for key in keys:
         table = table.get(key) if isinstance(table, dict) else None
     if not isinstance(table, dict):
@@ -160,7 +165,7 @@ def _toml_workspace(doc, *keys):
     return members, exclude
 
 
-def _pyproject(root, entry):
+def _pyproject(root: str, entry: git.Entry | None) -> tuple[bool, _Workspace | None]:
     """(counts, workspace) of a pyproject.toml: whether it has [project] or
     [tool.uv.workspace], and that workspace's (members, exclude) or None. A
     wrong-shaped workspace means the file declares nothing."""
@@ -173,7 +178,7 @@ def _pyproject(root, entry):
     return workspace is not None or isinstance(doc.get("project"), dict), workspace
 
 
-def _cargo_workspace(root, entry):
+def _cargo_workspace(root: str, entry: git.Entry | None) -> _Workspace | None:
     """The (members, exclude) of a Cargo.toml's [workspace] table, or None."""
     doc = _load(root, entry, tomllib.loads)
     if not isinstance(doc, dict):
@@ -182,20 +187,20 @@ def _cargo_workspace(root, entry):
     return workspace or None
 
 
-def _under(directory, prefix):
+def _under(directory: str, prefix: str) -> bool:
     """True when DIRECTORY is PREFIX or lies under it, comparing whole segments."""
     want = [s for s in prefix.split("/") if s not in ("", ".")]
     return directory.split("/")[: len(want)] == want
 
 
-def _in_default_scope(directory):
+def _in_default_scope(directory: str) -> bool:
     if directory == ".":
         return True
     segments = directory.split("/")
     return len(segments) <= 2 and not any(s.startswith((".", "_")) or s.lower() in _OUT_OF_SCOPE for s in segments)
 
 
-def _attributes(root, paths):
+def _attributes(root: str, paths: list[str]) -> dict[str, str]:
     """The bytewyrd-ci attribute of each path, from one git check-attr run."""
     if not paths:
         return {}
@@ -207,15 +212,15 @@ def _attributes(root, paths):
     return {os.fsdecode(fields[i]): os.fsdecode(fields[i + 2]) for i in range(0, len(fields) - 2, 3)}
 
 
-def _directory(path):
+def _directory(path: str) -> str:
     return posixpath.dirname(path) or "."
 
 
-def _join(directory, name):
+def _join(directory: str, name: str) -> str:
     return name if directory == "." else directory + "/" + name
 
 
-def _job_id(language, directory):
+def _job_id(language: str, directory: str) -> str:
     if directory == ".":
         return language
     return language + "-" + directory.lower().replace("/", "-").replace(".", "-")
@@ -224,10 +229,16 @@ def _job_id(language, directory):
 # The root manifest whose workspace a root job covers. go and ruby have none:
 # a root ./... never includes another module, and a root rake runs the root's
 # own suite.
-_WORKSPACE_MANIFESTS = (("js", "package.json"), ("python", "pyproject.toml"), ("rust", "Cargo.toml"))
+_WORKSPACE_MANIFESTS: tuple[tuple[str, str], ...] = (
+    ("js", "package.json"),
+    ("python", "pyproject.toml"),
+    ("rust", "Cargo.toml"),
+)
 
 
-def _covered(root, language, manifest, nested, by_path):
+def _covered(
+    root: str, language: str, manifest: git.Entry, nested: list[str], by_path: dict[str, git.Entry]
+) -> set[str]:
     """The directories of NESTED that LANGUAGE's root job covers, given the
     index entry MANIFEST of the root manifest that declares the workspace."""
     if language == "js":
@@ -257,23 +268,23 @@ def _covered(root, language, manifest, nested, by_path):
     }
 
 
-def detect(root):
+def detect(root: str) -> tuple[list[Component], list[Skip]]:
     """The components and skipped manifests of the repo at ROOT.
 
     Returns (COMPS, SKIPPED): COMPS lists Component(language, directory,
     job_id, manifests) sorted by language, then directory; SKIPPED lists
     Skip(path, reason) in path order. Only index entries are read.
     """
-    by_path = {}
+    by_path: dict[str, git.Entry] = {}
     for entry in git.tracked(root):  # an unmerged path has up to three entries; it counts once
         by_path.setdefault(entry.path, entry)
 
     candidates = sorted(p for p in by_path if posixpath.basename(p) in MANIFESTS)
     attrs = _attributes(root, candidates)
 
-    skipped = []
-    groups = {}  # (language, directory) -> manifests
-    forced = set()  # groups with a manifest whose bytewyrd-ci is set
+    skipped: list[Skip] = []
+    groups: dict[tuple[str, str], list[str]] = {}  # (language, directory) -> manifests
+    forced: set[tuple[str, str]] = set()  # groups with a manifest whose bytewyrd-ci is set
     for path in candidates:
         base = posixpath.basename(path)
         if base == "pyproject.toml" and not _pyproject(root, by_path[path])[0]:
@@ -305,11 +316,11 @@ def detect(root):
             del groups[(language, directory)]
 
     # Validation, in sorted order, so the first directory keeps a shared job id.
-    comps = []
-    holders = {}  # job id -> directory
+    comps: list[Component] = []
+    holders: dict[str, str] = {}  # job id -> directory
     for language, directory in sorted(groups):
         manifests = tuple(sorted(groups[(language, directory)]))
-        reason = None
+        reason: str | None = None
         if directory != "." and not (len(directory) <= 64 and _DIRECTORY_RE.fullmatch(directory)):
             reason = REASON_NAME
         elif language == "ruby" and not any(_join(directory, r) in by_path for r in _RAKEFILES):

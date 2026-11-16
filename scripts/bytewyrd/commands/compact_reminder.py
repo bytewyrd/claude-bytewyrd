@@ -14,16 +14,16 @@ import time
 
 from bytewyrd import cli
 
-SENTINEL = os.path.join(".bytewyrd", "last-feature-engineer-stop")
-MAX_AGE = 86400  # seconds
-TEXT = (
+SENTINEL: str = os.path.join(".bytewyrd", "last-feature-engineer-stop")
+MAX_AGE: int = 86400  # seconds
+TEXT: str = (
     "Post-compact reminder: a feature-engineer agent finished in the last 24 hours and "
     "/docs-review may not yet have run. Ask the user to run /docs-review against the "
     "implemented files."
 )
 
 
-def due():
+def due() -> bool:
     """True while the sentinel is a regular file whose mtime is under a day old."""
     try:
         st = os.lstat(SENTINEL)
@@ -32,7 +32,7 @@ def due():
     return stat.S_ISREG(st.st_mode) and time.time() - st.st_mtime < MAX_AGE
 
 
-def main(argv):
+def main(argv: list[str]) -> int:
     try:
         cli.Parser(
             prog="bw compact-reminder", description="Print the /docs-review reminder when it is due."

@@ -19,12 +19,12 @@ import os
 
 from bytewyrd import frontmatter, fs, jsonout
 
-RFCS = "docs/rfcs"
-STATUSES = ("Draft", "Approved", "Done", "Dropped")
-ROW = ("status", "created", "rfc", "title", "author")
+RFCS: str = "docs/rfcs"
+STATUSES: tuple[str, ...] = ("Draft", "Approved", "Done", "Dropped")
+ROW: tuple[str, ...] = ("status", "created", "rfc", "title", "author")
 
 
-def names():
+def names() -> list[str]:
     """The names docs/rfcs/*.md matches, as bash's glob does, sorted."""
     try:
         entries = os.listdir(RFCS)
@@ -33,8 +33,10 @@ def names():
     return sorted(n for n in entries if n.endswith(".md") and not n.startswith("."))
 
 
-def summary():
+def summary() -> tuple[list[dict[str, str]], list[str]]:
     """The rows and warnings for the RFCs under docs/rfcs/."""
+    rows: list[dict[str, str]]
+    warnings: list[str]
     rows, warnings = [], []
     for name in names():
         path = RFCS + "/" + name
@@ -56,7 +58,7 @@ def summary():
     return rows, [line for warning in warnings for line in warning.split("\n")]
 
 
-def run(argv):
+def run(argv: list[str]) -> int:
     if not os.path.isdir(RFCS):
         jsonout.emit_error("no docs/rfcs/ directory in " + fs.pwd())
         return 2
@@ -65,5 +67,5 @@ def run(argv):
     return 0
 
 
-def main(argv):
+def main(argv: list[str]) -> int:
     return jsonout.json_main("rfc-summary", run, argv)

@@ -17,17 +17,17 @@ import subprocess
 from bytewyrd import jsonout
 
 # Each probe's hint when its tool is missing.
-MISSING = {
+MISSING: dict[str, str] = {
     "gh": "gh CLI not on PATH. Install: https://cli.github.com.",
     "git": "git not on PATH. Install: https://git-scm.com/downloads.",
     "jq": "Install jq: https://stedolan.github.io/jq/download/",
 }
-UNAUTHENTICATED = "gh CLI present but not authenticated. Run: gh auth login."
+UNAUTHENTICATED: str = "gh CLI present but not authenticated. Run: gh auth login."
 # The bash script's wording, with the command named as scripts/bw runs it.
-USAGE = "usage: bw tool-probe <gh|git|jq>"
+USAGE: str = "usage: bw tool-probe <gh|git|jq>"
 
 
-def logged_in(gh):
+def logged_in(gh: str) -> bool:
     """True when `gh auth status`, run from the path GH, exits 0."""
     try:
         proc = subprocess.run([gh, "auth", "status"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -36,7 +36,7 @@ def logged_in(gh):
     return proc.returncode == 0
 
 
-def run(argv):
+def run(argv: list[str]) -> int:
     name = argv[0] if argv else ""
     if not name:
         jsonout.emit_error(USAGE)
@@ -55,5 +55,5 @@ def run(argv):
     return 0
 
 
-def main(argv):
+def main(argv: list[str]) -> int:
     return jsonout.json_main("tool-probe", run, argv)

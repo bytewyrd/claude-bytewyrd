@@ -319,7 +319,7 @@ def test_an_unreadable_file_is_an_error():
 
 
 def test_frontmatter_loader_is_a_safe_loader_with_no_implicit_resolvers():
-    loader = frontmatter.FrontmatterLoader  # built, and yaml imported, on first access
+    loader = frontmatter.FrontmatterLoader
     yaml = sys.modules["yaml"]
     assert issubclass(loader, yaml.SafeLoader)
     assert loader.yaml_implicit_resolvers == {}

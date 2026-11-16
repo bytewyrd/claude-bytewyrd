@@ -9,15 +9,16 @@ import json
 import os
 import re
 import sys
+from collections.abc import Callable
 
 from bytewyrd import cli
 
 # Lone surrogates that are not os.fsdecode()'s U+DC80..U+DCFF escape of a
 # byte; a YAML escape such as "\ud800" makes one.
-_LONE_SURROGATE = re.compile("[\ud800-\udc7f\udd00-\udfff]")
+_LONE_SURROGATE: re.Pattern[str] = re.compile("[\ud800-\udc7f\udd00-\udfff]")
 
 
-def jq_string(s):
+def jq_string(s: str) -> str:
     """S as valid Unicode, as jq holds a string, so encoding it can't raise
     UnicodeEncodeError [R80].
 
@@ -38,7 +39,7 @@ def jq_string(s):
     return s.encode("utf-8", "surrogateescape").decode("utf-8", "replace")
 
 
-def _jq_strings(value):
+def _jq_strings(value: object) -> object:
     if isinstance(value, str):
         return jq_string(value)
     if isinstance(value, dict):
@@ -48,7 +49,7 @@ def _jq_strings(value):
     return value
 
 
-def jq_dumps(value):
+def jq_dumps(value: object) -> str:
     """VALUE as jq prints it, with its final newline: two-space indents,
     keys in insertion order, raw UTF-8, and json's escapes plus \\u007f for
     DEL, the one character jq escapes and json doesn't. Every string, keys
@@ -57,7 +58,7 @@ def jq_dumps(value):
     return text.replace("\x7f", "\\u007f") + "\n"
 
 
-def emit(value):
+def emit(value: object) -> None:
     """Print jq_dumps(VALUE) on stdout, as UTF-8 whatever the locale."""
     data = jq_dumps(value).encode("utf-8")
     sys.stdout.flush()
@@ -68,27 +69,27 @@ def emit(value):
 # Ports of common.bash's functions of the same names, with the same JSON [R51].
 
 
-def emit_error(message):
+def emit_error(message: str) -> None:
     """Print {"error": MESSAGE}."""
     emit({"error": message})
 
 
-def emit_available(name):
+def emit_available(name: str) -> None:
     """Print {"result": "available", "name": NAME}."""
     emit({"result": "available", "name": name})
 
 
-def emit_missing(name, hint):
+def emit_missing(name: str, hint: str) -> None:
     """Print {"result": "missing", "name": NAME, "hint": HINT}."""
     emit({"result": "missing", "name": name, "hint": hint})
 
 
-def emit_unauth(name, hint):
+def emit_unauth(name: str, hint: str) -> None:
     """Print {"result": "unauthenticated", "name": NAME, "hint": HINT}."""
     emit({"result": "unauthenticated", "name": name, "hint": hint})
 
 
-def json_main(name, run, argv):
+def json_main(name: str, run: Callable[[list[str]], int], argv: list[str]) -> int:
     """The main() of the JSON helper NAME: the exit code of RUN(ARGV).
 
     An exception from RUN is printed as {"error": "NAME: ..."} with exit 2,

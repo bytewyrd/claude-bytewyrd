@@ -24,10 +24,10 @@ import subprocess
 
 from bytewyrd import fs, jsonout
 
-RFCS = "docs/rfcs"
+RFCS: str = "docs/rfcs"
 
 
-def modified():
+def modified() -> list[str]:
     """The .md paths that `git status --short -- docs/rfcs/` lists, without
     deletions, each once and sorted; [] when git fails or isn't there."""
     try:
@@ -36,7 +36,7 @@ def modified():
         )
     except OSError:
         return []
-    paths = set()
+    paths: set[str] = set()
     for line in proc.stdout.split(b"\n"):
         if line[:1] == b"D" or line[1:2] == b"D":
             continue
@@ -50,7 +50,7 @@ def modified():
     return sorted(paths)
 
 
-def latest():
+def latest() -> str | None:
     """The last regular file docs/rfcs/*.md in code point order, or None."""
     try:
         names = os.listdir(RFCS)
@@ -61,17 +61,18 @@ def latest():
     return files[-1] if files else None
 
 
-def found(path, how):
+def found(path: str, how: str) -> int:
     stem = posixpath.basename(path.removesuffix(".md"))
     jsonout.emit({"path": os.path.join(fs.pwd(), path), "label": "RFC %s (%s)" % (stem, how)})
     return 0
 
 
-def run(argv):
+def run(argv: list[str]) -> int:
     if not os.path.isdir(RFCS):
         jsonout.emit_error("rfc-resolve: no docs/rfcs/ directory in %s; run from project root" % fs.pwd())
         return 2
     arg = argv[0] if argv else ""
+    path: str | None
     if arg:
         stem = arg.removeprefix(RFCS + "/").removesuffix(".md")
         if "/" in stem:
@@ -95,5 +96,5 @@ def run(argv):
     return found(path, "most recently dated file")
 
 
-def main(argv):
+def main(argv: list[str]) -> int:
     return jsonout.json_main("rfc-resolve", run, argv)

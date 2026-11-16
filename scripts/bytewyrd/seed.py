@@ -5,44 +5,52 @@ which fills a template in for the detected components.
 Contract: docs/rfcs/2026-11-09-scaffold-and-drift.md, Appendix B2.
 """
 
+import enum
 import hashlib
 import os
 import re
-from typing import NamedTuple
+from typing import NamedTuple, TypeAlias
 
 from bytewyrd import cli, detect, fs, git
 
 # The plugin root: the parent of scripts/, found from this file.
-PLUGIN_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PLUGIN_DIR: str = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-STAMP_RE = re.compile(
+STAMP_RE: re.Pattern[str] = re.compile(
     r"^(<!-- |# )bytewyrd:scaffold v1 tpl=([A-Za-z0-9._-]+):([0-9a-f]{12}) plugin=([0-9a-f]{12}|unknown)( -->)?$"
 )
 
 
-class _Bad:
-    """The type of BAD, read_stamp()'s result for a stamp that doesn't parse."""
+# A stamp as read_stamp() parses it: (template, hash, plugin commit).
+Stamp: TypeAlias = tuple[str, str, str]
 
-    __slots__ = ()
 
-    def __repr__(self):
+class _Bad(enum.Enum):
+    """The type of BAD, read_stamp()'s result for a stamp that doesn't parse.
+    It has one member, so `stamp is BAD` narrows a stamp's type."""
+
+    BAD = "BAD"
+
+    def __repr__(self) -> str:
         return "BAD"
 
+    __str__ = __repr__
 
-BAD = _Bad()
+
+BAD: _Bad = _Bad.BAD
 
 
 # --- hashes, stamps and the plugin commit ------------------------------------
 
 
-def file_hash(path):
+def file_hash(path: str) -> str:
     """The first 12 hex digits of the sha256 of PATH's bytes, CRs removed."""
     with open(path, "rb") as f:
         data = f.read()
     return hashlib.sha256(data.replace(b"\r", b"")).hexdigest()[:12]
 
 
-def plugin_sha(plugin_dir):
+def plugin_sha(plugin_dir: str) -> str:
     """The installed plugin commit, as 12 hex digits, or "unknown".
 
     A marketplace install lives in a directory named by its commit; a git
@@ -62,7 +70,7 @@ def plugin_sha(plugin_dir):
     return sha[:12] if re.fullmatch(r"[0-9a-f]{40,64}", sha) else "unknown"
 
 
-def stamp(kind, tpl, digest, sha):
+def stamp(kind: str, tpl: str, digest: str, sha: str) -> str:
     """Line 1 of a seeded file: KIND "md" (an HTML comment) or "yml"."""
     body = "bytewyrd:scaffold v1 tpl=%s:%s plugin=%s" % (tpl, digest, sha)
     if kind == "md":
@@ -76,7 +84,7 @@ def stamp(kind, tpl, digest, sha):
     return line
 
 
-def read_stamp(path):
+def read_stamp(path: str) -> Stamp | _Bad | None:
     """PATH's stamp as (tpl, hash, sha); None if line 1 has none; BAD if it doesn't parse."""
     with open(path, "rb") as f:
         first = f.readline()
@@ -93,10 +101,10 @@ def read_stamp(path):
 
 # --- rendering ---------------------------------------------------------------
 
-_JOB_TAG = "@@job@@ "
+_JOB_TAG: str = "@@job@@ "
 
 
-def _languages_line(comps):
+def _languages_line(comps: list[detect.Component]) -> str:
     if not comps:
         return "none"
     items = [c.language if c.directory == "." else "%s in %s/" % (c.language, c.directory) for c in comps]
@@ -106,7 +114,7 @@ def _languages_line(comps):
     return text
 
 
-def render(tpl, comps, name):
+def render(tpl: str, comps: list[detect.Component], name: str) -> str:
     """Render the template text TPL for components COMPS and project NAME.
 
     The @@job@@ lines form one block, repeated per component where the first
@@ -132,7 +140,7 @@ def render(tpl, comps, name):
         lines = lines[:first] + jobs + [line for line in lines[first:] if not line.startswith(_JOB_TAG)]
 
     present = {c.language for c in comps}
-    kept = []
+    kept: list[str] = []
     for line in lines:
         for tag in detect.LANGUAGES + ("none",):
             prefix = "@@%s@@ " % tag
@@ -151,10 +159,10 @@ def render(tpl, comps, name):
 
 # --- seed targets (scaffold and drift) ---------------------------------------
 
-TEMPLATE_DIR = os.path.join(PLUGIN_DIR, "templates", "scaffold")
-CI_NOOP = "ci-noop.yml"
-CI_CALLER = "ci-caller.yml"
-TEMPLATES = ("AGENTS.md", "CLAUDE.md", "PULL_REQUEST_TEMPLATE.md", CI_NOOP, CI_CALLER)
+TEMPLATE_DIR: str = os.path.join(PLUGIN_DIR, "templates", "scaffold")
+CI_NOOP: str = "ci-noop.yml"
+CI_CALLER: str = "ci-caller.yml"
+TEMPLATES: tuple[str, ...] = ("AGENTS.md", "CLAUDE.md", "PULL_REQUEST_TEMPLATE.md", CI_NOOP, CI_CALLER)
 
 
 class Target(NamedTuple):
@@ -164,17 +172,17 @@ class Target(NamedTuple):
 
     path: str
     kind: str
-    template: object
+    template: str | None
 
 
-AGENTS_MD = Target("AGENTS.md", "md", "AGENTS.md")
-CLAUDE_MD = Target("CLAUDE.md", "md", "CLAUDE.md")
-PR_TEMPLATE = Target(".github/PULL_REQUEST_TEMPLATE.md", "md", "PULL_REQUEST_TEMPLATE.md")
-CI_YML = Target(".github/workflows/ci.yml", "yml", None)
-TARGETS = (AGENTS_MD, CLAUDE_MD, PR_TEMPLATE, CI_YML)
+AGENTS_MD: Target = Target("AGENTS.md", "md", "AGENTS.md")
+CLAUDE_MD: Target = Target("CLAUDE.md", "md", "CLAUDE.md")
+PR_TEMPLATE: Target = Target(".github/PULL_REQUEST_TEMPLATE.md", "md", "PULL_REQUEST_TEMPLATE.md")
+CI_YML: Target = Target(".github/workflows/ci.yml", "yml", None)
+TARGETS: tuple[Target, ...] = (AGENTS_MD, CLAUDE_MD, PR_TEMPLATE, CI_YML)
 
 
-def template_for(target, comps):
+def template_for(target: Target, comps: list[detect.Component]) -> str:
     """The template scaffold seeds TARGET from: for ci.yml, the no-op job
     when COMPS is empty, else the language caller."""
     if target.template is not None:
@@ -182,13 +190,13 @@ def template_for(target, comps):
     return CI_CALLER if comps else CI_NOOP
 
 
-def fits(target, name):
+def fits(target: Target, name: str) -> bool:
     """True when NAME is a template that TARGET's stamp may name: one of the
     plugin's templates of TARGET's kind."""
     return name in TEMPLATES and name.endswith("." + target.kind)
 
 
-def read_template(name):
+def read_template(name: str) -> tuple[str, str]:
     """The text of the plugin's template NAME and its file_hash(). Raises
     BwError when the template can't be read or isn't UTF-8."""
     path = os.path.join(TEMPLATE_DIR, name + ".tpl")
@@ -200,7 +208,7 @@ def read_template(name):
         raise cli.BwError("cannot read template %s: %s" % (cli.quote(name), cli.describe(e))) from e
 
 
-def pr_template(root):
+def pr_template(root: str) -> str | None:
     """The root-relative path of a pull request template GitHub would use, or None."""
     for base in (".", "docs", ".github"):
         directory = os.path.join(root, base)
@@ -217,7 +225,7 @@ def pr_template(root):
     return None
 
 
-def workflow_exists(root):
+def workflow_exists(root: str) -> bool:
     """True when ROOT's .github/workflows/ holds any *.yml or *.yaml entry."""
     try:
         names = os.listdir(os.path.join(root, ".github", "workflows"))
@@ -226,7 +234,7 @@ def workflow_exists(root):
     return any(name.endswith((".yml", ".yaml")) for name in names)
 
 
-def lacks_import(root):
+def lacks_import(root: str) -> bool:
     """True when ROOT's CLAUDE.md is a readable file, not AGENTS.md itself,
     with no line "@AGENTS.md", so Claude Code won't read AGENTS.md."""
     claude = os.path.join(root, "CLAUDE.md")

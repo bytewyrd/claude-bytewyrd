@@ -11,13 +11,13 @@ import posixpath
 import stat as stat_module
 
 
-def exists(directory, name):
+def exists(directory: str, name: str) -> bool:
     """True when DIRECTORY/NAME exists, even as a dangling symlink, or an
     entry of DIRECTORY equals NAME ignoring case."""
     return find_entry(directory, name) is not None
 
 
-def find_entry(directory, name):
+def find_entry(directory: str, name: str) -> str | None:
     """The entry of DIRECTORY that exists() finds for NAME: NAME itself, else
     the first entry, in sorted order, that equals NAME ignoring case; None
     when there is neither."""
@@ -31,7 +31,7 @@ def find_entry(directory, name):
     return next((entry for entry in entries if entry.casefold() == folded), None)
 
 
-def symlinked_dir(root, rel):
+def symlinked_dir(root: str, rel: str) -> str | None:
     """The first directory on the way to REL (under ROOT) that is a symlink, or None."""
     parts = rel.split("/")[:-1]
     for i in range(1, len(parts) + 1):
@@ -41,7 +41,7 @@ def symlinked_dir(root, rel):
     return None
 
 
-def create(path, text):
+def create(path: str, text: str) -> None:
     """Create PATH holding TEXT. Raises FileExistsError for any existing path,
     symlinks included, writing nothing there; a failed write removes the file."""
     f = open(path, "x", encoding="utf-8", newline="\n")
@@ -60,10 +60,10 @@ def create(path, text):
         raise
 
 
-MAX_TEXT = 8 << 20  # read_text() reads work-tree files of at most 8 MiB
+MAX_TEXT: int = 8 << 20  # read_text() reads work-tree files of at most 8 MiB
 
 
-def read_text(path):
+def read_text(path: str) -> str | None:
     """PATH's text, with every CR removed, decoded as UTF-8 with surrogateescape.
 
     None when PATH is missing or, symlinks followed, is not a regular file (a
@@ -84,6 +84,7 @@ def read_text(path):
     try:
         if not stat_module.S_ISREG(os.fstat(fd).st_mode):
             return None
+        chunks: list[bytes]
         chunks, size = [], 0
         while size <= MAX_TEXT:
             chunk = os.read(fd, 1 << 16)
@@ -101,7 +102,7 @@ def read_text(path):
 # Input, read as the bash scripts read it.
 
 
-def split_lines(data):
+def split_lines(data: bytes) -> list[bytes]:
     """DATA's lines as awk and grep read them: split at each newline, a last
     line without one still a line, and no line at all in b""."""
     lines = data.split(b"\n")
@@ -110,7 +111,7 @@ def split_lines(data):
     return lines
 
 
-def pwd():
+def pwd() -> str:
     """The current directory as bash's pwd prints it: $PWD when that is an
     absolute, normalized path to the current directory, so a directory reached
     through a symlink keeps that name; else os.getcwd()."""

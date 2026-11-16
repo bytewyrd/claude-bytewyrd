@@ -7,11 +7,11 @@ Contract: docs/rfcs/2026-11-09-scaffold-and-drift.md, Appendix B2.
 
 import os
 import subprocess
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 from bytewyrd import cli
 
-MAX_BLOB = 1 << 20  # blob() reads index entries of at most 1 MiB
+MAX_BLOB: int = 1 << 20  # blob() reads index entries of at most 1 MiB
 
 
 class Entry(NamedTuple):
@@ -23,24 +23,24 @@ class Entry(NamedTuple):
     path: str
 
 
-def _git(cwd, *args, input=None):
+def _git(cwd: str | None, *args: str, input: bytes | None = None) -> subprocess.CompletedProcess[bytes]:
     """Run git (with -C CWD unless CWD is None); BwError if git can't start."""
     cmd = ["git"] + (["-C", cwd] if cwd is not None else []) + list(args)
-    io = {"input": input} if input is not None else {"stdin": subprocess.DEVNULL}
+    io: dict[str, Any] = {"input": input} if input is not None else {"stdin": subprocess.DEVNULL}
     try:
         return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **io)
     except OSError as e:
         raise cli.BwError("cannot run git: %s" % (e.strerror or e)) from e
 
 
-def _line(data):
+def _line(data: bytes) -> str:
     """Bytes of one line of git output, without its final newline, as a str."""
     if data.endswith(b"\n"):
         data = data[:-1]
     return os.fsdecode(data)
 
 
-def root():
+def root() -> str:
     """The top level of the work tree that contains the current directory."""
     proc = _git(None, "rev-parse", "--show-toplevel")
     if proc.returncode != 0 or not proc.stdout.strip():
@@ -48,7 +48,7 @@ def root():
     return _line(proc.stdout)
 
 
-def project_name(root):
+def project_name(root: str) -> str:
     """The project's name: the basename of the parent of the git common dir.
 
     In a linked worktree the top level is the worktree's own directory, while
@@ -66,12 +66,12 @@ def project_name(root):
     return os.path.basename(os.path.dirname(common)) or fallback
 
 
-def tracked(root):
+def tracked(root: str) -> list[Entry]:
     """The index entries of ROOT, as Entry(mode, oid, stage, path) tuples."""
     proc = _git(root, "ls-files", "-s", "-z")
     if proc.returncode != 0:
         raise cli.BwError("git ls-files failed")
-    entries = []
+    entries: list[Entry] = []
     for record in proc.stdout.split(b"\0"):
         if not record:
             continue
@@ -81,7 +81,7 @@ def tracked(root):
     return entries
 
 
-def blob(root, entry):
+def blob(root: str, entry: Entry) -> bytes | None:
     """The bytes of a regular stage-0 entry of at most 1 MiB, else None."""
     if entry.stage != 0 or entry.mode not in ("100644", "100755"):
         return None
@@ -97,7 +97,7 @@ def blob(root, entry):
     return data.stdout
 
 
-def dirty(root):
+def dirty(root: str) -> bool:
     """True when `git status --porcelain` prints anything for ROOT.
 
     --no-optional-locks keeps git from refreshing the index on the way, so a

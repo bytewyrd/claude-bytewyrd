@@ -55,3 +55,25 @@ extend-exclude = [
 # Widening it is a separate change, because #117 must not change behaviour.
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "I"]
+
+# mypy --strict checks the package, as `uv run --no-sync mypy` with no
+# arguments. mypy_path finds bytewyrd under scripts/; scripts/_vendor stays off
+# mypy's path, so yaml is types-PyYAML's stubs, not the untyped vendored copy.
+# The extra error codes found nothing when they were added: every type: ignore
+# names its code, and no name is possibly undefined, no expression redundant,
+# and no object tested for a truth value it always has.
+[tool.mypy]
+strict = true
+python_version = "3.11"
+files = ["scripts/bytewyrd"]
+mypy_path = "scripts"
+enable_error_code = ["ignore-without-code", "possibly-undefined", "redundant-expr", "truthy-bool", "truthy-iterable"]
+
+# The bootstrap, scripts/bytewyrd/__main__.py, is the one module an old
+# interpreter parses before the version check that sends it away, so it stays
+# free of annotations and newer syntax (B2). mypy still checks its function
+# bodies, but does not ask for annotations there, or on the calls it makes.
+[[tool.mypy.overrides]]
+module = "bytewyrd.__main__"
+disallow_untyped_defs = false
+disallow_untyped_calls = false

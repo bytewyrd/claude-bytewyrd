@@ -20,21 +20,21 @@ import re
 
 from bytewyrd import fs, jsonout
 
-MARKER = re.compile(rb"\s*[-*>]*\s*FEEDBACK:")  # for bytes, \s is [ \t\n\r\f\v]
+MARKER: re.Pattern[bytes] = re.compile(rb"\s*[-*>]*\s*FEEDBACK:")  # for bytes, \s is [ \t\n\r\f\v]
 # The bash script's wording, with the command named as scripts/bw runs it.
-USAGE = "usage: bw rfc-feedback-list <path-to-rfc.md>"
+USAGE: str = "usage: bw rfc-feedback-list <path-to-rfc.md>"
 
 
-def markers(data):
+def markers(data: bytes) -> list[dict[str, int | str]]:
     """The markers in a file whose bytes are DATA."""
-    found = []
+    found: list[dict[str, int | str]] = []
     for n, line in enumerate(fs.split_lines(data), 1):
         if MARKER.match(line):
             found.append({"line": n, "text": line.decode("utf-8", "replace").partition("\t")[0]})
     return found
 
 
-def run(argv):
+def run(argv: list[str]) -> int:
     path = argv[0] if argv else ""
     if not path:
         jsonout.emit_error(USAGE)
@@ -48,5 +48,5 @@ def run(argv):
     return 0
 
 
-def main(argv):
+def main(argv: list[str]) -> int:
     return jsonout.json_main("rfc-feedback-list", run, argv)

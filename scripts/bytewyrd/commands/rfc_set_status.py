@@ -23,20 +23,22 @@ Contract: docs/rfcs/2026-11-09-scaffold-and-drift.md, Appendix B2 ("Ports").
 
 import os
 import re
+from typing import cast
 
 from bytewyrd import cli, frontmatter, fs, jsonout
 
-STATUSES = ("Draft", "Approved", "Done", "Dropped")
+STATUSES: tuple[str, ...] = ("Draft", "Approved", "Done", "Dropped")
 # The bash script's wording, with the command named as scripts/bw runs it.
-USAGE = "usage: bw rfc-set-status <path-to-rfc.md> <Draft|Approved|Done|Dropped> [<drop-reason>]"
+USAGE: str = "usage: bw rfc-set-status <path-to-rfc.md> <Draft|Approved|Done|Dropped> [<drop-reason>]"
 
-_FIRST_FIELD = re.compile(rb"[ \t]*([^ \t]*)")  # awk's $1, split at blanks
+_FIRST_FIELD: re.Pattern[bytes] = re.compile(rb"[ \t]*([^ \t]*)")  # awk's $1, split at blanks
 
 
-def rewrite(data, status, reason):
+def rewrite(data: bytes, status: str, reason: bytes) -> tuple[bytes, int]:
     """DATA, a file's bytes, with its frontmatter's status and drop_reason
     lines rewritten for STATUS and the escaped REASON (bytes), and the number
     of status lines rewritten."""
+    out: list[bytes]
     out, delimiters, wrote_reason, rewritten = [], 0, False, 0
     reason_line = b'drop_reason: "' + reason + b'"'
     for line in fs.split_lines(data):
@@ -47,7 +49,8 @@ def rewrite(data, status, reason):
                 wrote_reason = True
             out.append(line)
             continue
-        field = _FIRST_FIELD.match(line).group(1) if delimiters == 1 else None
+        # _FIRST_FIELD matches every line, if only as b"".
+        field = cast("re.Match[bytes]", _FIRST_FIELD.match(line)).group(1) if delimiters == 1 else None
         if field == b"status:":
             out.append(b'status: "' + status.encode() + b'"')
             rewritten += 1
@@ -59,7 +62,7 @@ def rewrite(data, status, reason):
     return b"".join(line + b"\n" for line in out), rewritten
 
 
-def run(argv):
+def run(argv: list[str]) -> int:
     path, status, reason = (list(argv[:3]) + ["", "", ""])[:3]
     if not path or not status:
         jsonout.emit_error(USAGE)
@@ -100,5 +103,5 @@ def run(argv):
     return 0
 
 
-def main(argv):
+def main(argv: list[str]) -> int:
     return jsonout.json_main("rfc-set-status", run, argv)

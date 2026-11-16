@@ -19,20 +19,20 @@ import sys
 
 from bytewyrd import cli
 
-STATE_DIR = ".bytewyrd"
-NAME_RE = re.compile(r"[a-z0-9][a-z0-9.-]*")
-_OPEN_DIR = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+STATE_DIR: str = ".bytewyrd"
+NAME_RE: re.Pattern[str] = re.compile(r"[a-z0-9][a-z0-9.-]*")
+_OPEN_DIR: int = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 
 
-def _warn(message):
+def _warn(message: str) -> None:
     sys.stderr.write("state-touch: " + message + "\n")
 
 
-def _why(e):
+def _why(e: BaseException) -> str:
     return getattr(e, "strerror", None) or str(e) or type(e).__name__
 
 
-def open_state_dir():
+def open_state_dir() -> int | None:
     """Create .bytewyrd if absent and return a no-follow descriptor for it,
     or None (after one stderr line) when that fails."""
     try:
@@ -52,14 +52,14 @@ def open_state_dir():
         return None
 
 
-def _is_link(name, dir_fd):
+def _is_link(name: str, dir_fd: int) -> bool:
     try:
         return stat.S_ISLNK(os.stat(name, dir_fd=dir_fd, follow_symlinks=False).st_mode)
     except OSError:
         return False
 
 
-def _write_gitignore(dir_fd):
+def _write_gitignore(dir_fd: int) -> None:
     # Its patterns apply only within .bytewyrd/, and O_EXCL never follows a
     # symlink, so an existing file or link is left as it is.
     try:
@@ -72,7 +72,7 @@ def _write_gitignore(dir_fd):
         os.close(fd)
 
 
-def _touch(name, dir_fd):
+def _touch(name: str, dir_fd: int) -> None:
     try:
         fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o644, dir_fd=dir_fd)
     except OSError as e:
@@ -85,7 +85,7 @@ def _touch(name, dir_fd):
     os.utime(name, dir_fd=dir_fd, follow_symlinks=False)
 
 
-def _remove(name, dir_fd):
+def _remove(name: str, dir_fd: int) -> None:
     try:
         mode = os.stat(name, dir_fd=dir_fd, follow_symlinks=False).st_mode
     except FileNotFoundError:
@@ -98,7 +98,7 @@ def _remove(name, dir_fd):
         os.unlink(name, dir_fd=dir_fd)
 
 
-def run(argv):
+def run(argv: list[str]) -> None:
     parser = cli.Parser(prog="bw state-touch", description="Touch, or with --rm remove, .bytewyrd/NAME.")
     parser.add_argument("--rm", action="store_true", help="remove NAME instead of touching it")
     parser.add_argument("name", nargs="?", help="a name matching [a-z0-9][a-z0-9.-]*")
@@ -120,7 +120,7 @@ def run(argv):
         os.close(dir_fd)
 
 
-def main(argv):
+def main(argv: list[str]) -> int:
     try:
         run(argv)
     except SystemExit:

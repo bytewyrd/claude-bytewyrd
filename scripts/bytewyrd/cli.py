@@ -8,6 +8,7 @@ Contract: docs/rfcs/2026-11-09-scaffold-and-drift.md, Appendix B2.
 import argparse
 import os
 import sys
+from typing import NoReturn
 
 
 class BwError(Exception):
@@ -17,18 +18,28 @@ class BwError(Exception):
 class Parser(argparse.ArgumentParser):
     """An ArgumentParser whose usage errors exit 1: argparse's 2 would read as drift."""
 
-    def error(self, message):
+    def error(self, message: str) -> NoReturn:
         self.print_usage(sys.stderr)
         self.exit(1, "%s: error: %s\n" % (self.prog, message))
 
 
 # --- quoting -----------------------------------------------------------------
 
-_SAFE = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._/-")
-_C_ESCAPES = {7: "\\a", 8: "\\b", 9: "\\t", 10: "\\n", 11: "\\v", 12: "\\f", 13: "\\r", 34: '\\"', 92: "\\\\"}
+_SAFE: frozenset[str] = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._/-")
+_C_ESCAPES: dict[int, str] = {
+    7: "\\a",
+    8: "\\b",
+    9: "\\t",
+    10: "\\n",
+    11: "\\v",
+    12: "\\f",
+    13: "\\r",
+    34: '\\"',
+    92: "\\\\",
+}
 
 
-def quote(s):
+def quote(s: str) -> str:
     """S when it is non-empty and every character is in [A-Za-z0-9._/-];
     otherwise git's C-style quoting of its bytes. The result is ASCII."""
     if s and all(c in _SAFE for c in s):
@@ -49,7 +60,7 @@ def quote(s):
     return "".join(out)
 
 
-def describe(e):
+def describe(e: BaseException) -> str:
     """A one-line description of the exception E for an error message: the
     text as it is when it is printable ASCII, else quote() of it."""
     if isinstance(e, BwError):

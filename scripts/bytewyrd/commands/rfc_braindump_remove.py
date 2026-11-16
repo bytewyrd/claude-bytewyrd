@@ -20,12 +20,12 @@ import os
 
 from bytewyrd import fs, jsonout
 
-FILE = "docs/rfc-braindump.md"
+FILE: str = "docs/rfc-braindump.md"
 # The bash script's wording, with the command named as scripts/bw runs it.
-USAGE = "usage: bw rfc-braindump-remove <full-bullet-body-without-leading-star-space>"
+USAGE: str = "usage: bw rfc-braindump-remove <full-bullet-body-without-leading-star-space>"
 
 
-def run(argv):
+def run(argv: list[str]) -> int:
     body = argv[0] if argv else ""
     if not body:
         jsonout.emit_error(USAGE)
@@ -46,5 +46,5 @@ def run(argv):
     return 0
 
 
-def main(argv):
+def main(argv: list[str]) -> int:
     return jsonout.json_main("rfc-braindump-remove", run, argv)

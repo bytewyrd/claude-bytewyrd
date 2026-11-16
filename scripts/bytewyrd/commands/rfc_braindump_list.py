@@ -19,17 +19,17 @@ import sys
 
 from bytewyrd import cli, jsonout
 
-FILE = "docs/rfc-braindump.md"
+FILE: str = "docs/rfc-braindump.md"
 
 
-def entries(data):
+def entries(data: bytes) -> list[dict[str, int | str]]:
     """The entries of a braindump file whose bytes are DATA."""
     lines = data.split(b"\n")[:-1]  # what follows the last newline is never read
     bodies = [line[2:] for line in (raw.replace(b"\0", b"") for raw in lines) if line.startswith(b"* ")]
     return [{"n": n, "body": body.decode("utf-8", "replace")} for n, body in enumerate(bodies, 1)]
 
 
-def run(argv):
+def run(argv: list[str]) -> int:
     data = b""
     if os.path.isfile(FILE):
         try:
@@ -42,5 +42,5 @@ def run(argv):
     return 0
 
 
-def main(argv):
+def main(argv: list[str]) -> int:
     return jsonout.json_main("rfc-braindump-list", run, argv)

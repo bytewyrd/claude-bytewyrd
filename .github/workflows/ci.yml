@@ -142,6 +142,11 @@ jobs:
       - name: Python code is ruff-formatted
         run: uv run --no-sync ruff format --check
 
+      # pyproject.toml holds mypy's settings too: --strict on scripts/bytewyrd,
+      # with the old-syntax bootstrap exempt from annotations.
+      - name: The bytewyrd package passes mypy --strict
+        run: uv run --no-sync mypy
+
       - name: Install shellcheck, shfmt and actionlint
         run: |
           bin="$RUNNER_TEMP/bin"
