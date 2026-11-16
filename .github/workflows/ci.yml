@@ -51,7 +51,7 @@ jobs:
     env:
       # Shell files held to shellcheck and shfmt, as git pathspecs. Formatting
       # style comes from .editorconfig.
-      SHELL_FILES: scripts/bw tests/run.sh tests/scripts/helpers.bash
+      SHELL_FILES: scripts/bw
       # sha256 values are the digests GitHub records for these release assets.
       SHELLCHECK_VERSION: "0.11.0"
       SHELLCHECK_SHA256: "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
@@ -130,7 +130,7 @@ jobs:
           grep -qxF "\"aqua:astral-sh/uv\" = \"$UV_VERSION\"" mise.toml
 
       # ruff's rules and file set are in pyproject.toml, which keeps it off
-      # scripts/_vendor, the bats submodules and Markdown.
+      # scripts/_vendor and Markdown.
       - name: Python code passes ruff
         run: uv run --no-sync ruff check
 
@@ -218,7 +218,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          submodules: recursive
           persist-credentials: false
 
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -231,17 +230,10 @@ jobs:
           version: ${{ env.UV_VERSION }}
           enable-cache: false
 
-      # pytest, and PyYAML, which lets the ci.yml rendering tests parse their
-      # output instead of skipping.
+      # pytest, and PyYAML, without which test_ci_lint.py and test_vendor.py
+      # fail under CI.
       - name: Install the dev tools from uv.lock
         run: uv sync --locked
-
-      # uv run puts the environment's python3, which has PyYAML, first on
-      # PATH. BYTEWYRD_PYTHON makes scripts/bw run the interpreter set up above.
-      - name: Run the bats suite
-        env:
-          BYTEWYRD_PYTHON: ${{ steps.py.outputs.python-path }}
-        run: uv run --no-sync tests/run.sh
 
       - name: Run pytest
         env:
@@ -276,9 +268,9 @@ jobs:
     with:
       directory: tests/fixtures/lang-ci/rust
 
-  # bats and pytest on the oldest supported Python under Linux and the latest
-  # 3.x under macOS, each with the dev tools from uv.lock. They include PyYAML,
-  # since under CI ci-lint.bats and rfc-set-status.bats fail without it.
+  # pytest on the oldest supported Python under Linux and the latest 3.x under
+  # macOS, each with the dev tools from uv.lock. They include PyYAML, since
+  # under CI test_ci_lint.py and test_vendor.py fail without it.
   compat:
     strategy:
       fail-fast: false
@@ -293,7 +285,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          submodules: recursive
           persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         id: py
@@ -306,9 +297,7 @@ jobs:
       - run: uv sync --locked
       - env:
           BYTEWYRD_PYTHON: ${{ steps.py.outputs.python-path }}
-        run: |
-          uv run --no-sync tests/run.sh
-          uv run --no-sync pytest -q tests/py tests/e2e
+        run: uv run --no-sync pytest -q tests/py tests/e2e
 
   # pytest's tests/py at every commit of the pull request, and the caller
   # template's pin. tests/e2e runs only on the head, in test and compat. A

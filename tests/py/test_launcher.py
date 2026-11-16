@@ -184,7 +184,7 @@ UNKNOWN_NAMES = [
     pytest.param("../x", id="parent-path"),
     pytest.param("main", id="main"),
     pytest.param("__main__", id="dunder-main"),
-    # bats' $stderr loses trailing blanks, so it could only test 'scaffold x' for 'scaffold '; both run here.
+    # A known NAME followed by a space, with or without more after it, is still unknown.
     pytest.param("scaffold x", id="scaffold-x"),
     pytest.param("scaffold ", id="scaffold-trailing-space"),
     pytest.param("Drift", id="drift-capitalized"),

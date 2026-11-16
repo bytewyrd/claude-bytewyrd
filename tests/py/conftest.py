@@ -1,6 +1,6 @@
 """Fixtures for the tests that run the plugin as a child process, `sh scripts/bw ...`:
 test_launcher.py, test_state_touch.py and test_hooks.py (RFC 2026-11-09-scaffold-and-drift,
-B2 and B4). They port tests/scripts/helpers.bash and tests/scripts/python-stubs.bash.
+B2 and B4).
 
 None of them is autouse. A child gets an environment built here from PATH, TMPDIR and a HOME
 inside the test's directory, so the developer's BYTEWYRD_PYTHON and CLAUDE_PLUGIN_ROOT never

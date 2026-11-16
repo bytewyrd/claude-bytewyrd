@@ -1530,7 +1530,7 @@ def test_emit_writes_utf_8_to_a_stdout_of_another_encoding(monkeypatch):
 
 
 def test_emit_error(capsysbinary):
-    # common.bats: .error is the argument, and there is no other key.
+    # .error is the argument, and there is no other key.
     jsonout.emit_error("something went wrong")
     assert capsysbinary.readouterr() == (b'{\n  "error": "something went wrong"\n}\n', b"")
 

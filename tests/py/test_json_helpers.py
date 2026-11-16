@@ -1,13 +1,13 @@
 """Tests for the JSON helpers' Python ports (RFC 2026-11-09-scaffold-and-drift,
-B2 "Ports"). Each helper's bats file, tests/scripts/<name>.bats, pins its
-arguments, output and exit codes; the cases here pin what bats doesn't: the
-exact bytes jq printed, arguments, paths and files that aren't UTF-8, the bash
-behaviour each port keeps, and failures that end in a JSON error rather than
-a traceback.
+B2 "Ports"): each helper's arguments, output and exit codes, down to the exact
+bytes jq printed; arguments, paths and files that aren't UTF-8; the bash
+behaviour each port keeps; and failures that end in a JSON error rather than a
+traceback.
 
 Most cases run a helper's main() in this process; those that need real
 argument bytes run it the way scripts/bw does, through the bootstrap,
-scripts/bytewyrd/__main__.py.
+scripts/bytewyrd/__main__.py. test_launcher.py runs each helper through
+scripts/bw itself.
 """
 
 import json
@@ -42,7 +42,7 @@ IS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
 
 @pytest.fixture(autouse=True)
 def in_tmp(tmp_path, monkeypatch):
-    """Run in TMP_PATH, which holds docs/rfcs/ as the bats fixtures' does."""
+    """Run in TMP_PATH, which holds an empty docs/rfcs/, as a project root does."""
     monkeypatch.chdir(tmp_path)
     (tmp_path / "docs" / "rfcs").mkdir(parents=True)
 
