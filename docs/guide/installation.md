@@ -1,49 +1,77 @@
 ## Installation
 
-First add the Bytewyrd marketplace, then install the plugin. User scope is the default — install once per machine, active in every project you open:
+bytewyrd depends on three plugins from Anthropic's official marketplace: `github`, `context7` and `code-review`. Claude Code doesn't load bytewyrd unless all three are installed and enabled. The `claude plugin` commands never register the official marketplace themselves, so add it first. User scope is the default — install once per machine, active in every project you open:
 
 ```bash
+claude plugin marketplace add anthropics/claude-plugins-official
 claude plugin marketplace add bytewyrd/claude-bytewyrd
 claude plugin install bytewyrd@bytewyrd
+claude plugin install github@claude-plugins-official
+claude plugin install context7@claude-plugins-official
+claude plugin install code-review@claude-plugins-official
 ```
+
+If the official marketplace is already registered, the first command changes nothing. Installing bytewyrd also installs its three dependencies. The last three commands install them yourself too, so that updates keep them resolved. The plugins load the next time you start Claude Code, or when you run `/reload-plugins` in a session that is already open.
 
 `--scope user` is the default and writes the enable-flag to `~/.claude/settings.json`, making the plugin available in every project you open.
 
-For team-wide setups where every collaborator should be prompted to install, use project scope instead:
+To follow a branch or tag instead of `main`, add `#<ref>` to the bytewyrd marketplace source:
+
+```bash
+claude plugin marketplace add bytewyrd/claude-bytewyrd#<ref>
+```
+
+Without a pin you track `main`. The plugin has no version number, so every new commit on `main` is an update.
+
+To enable the plugin for everyone who works in one repository, install it at project scope instead:
 
 ```bash
 claude plugin install bytewyrd@bytewyrd --scope project
 ```
 
-Once installed, run `/bytewyrd:sync` in any project to bootstrap the conventions.
+This records the plugin in the repository's `.claude/settings.json`. Committing that file turns the plugin on for your collaborators, but it doesn't install the plugin for them: each collaborator runs the same command once per clone. See [Choose an install scope](https://code.claude.com/docs/en/plugins/install#choose-an-install-scope) in the Claude Code docs, and [Team-wide enforcement](#team-wide-enforcement-optional) below.
+
+Once installed, run `/bytewyrd:scaffold` in a project. It seeds `AGENTS.md`, a `CLAUDE.md` that imports it, a pull request template and `.github/workflows/ci.yml`, each only if missing. It is a dry run until you add `--apply`. Run `/bytewyrd:drift` at any time to check those files against the plugin's current templates.
+
+### Upgrading from 0.2.x
+
+An existing install is pinned to the cached 0.2.0 copy, and bytewyrd now loads only once its three dependencies are installed. Add the official marketplace, install the dependencies explicitly so that updates keep them resolved, then refresh the bytewyrd marketplace and update once:
+
+```bash
+claude plugin marketplace add anthropics/claude-plugins-official
+claude plugin install github@claude-plugins-official
+claude plugin install context7@claude-plugins-official
+claude plugin install code-review@claude-plugins-official
+claude plugin marketplace update bytewyrd
+claude plugin update bytewyrd@bytewyrd
+```
+
+The first four commands succeed without changing anything when the marketplace or plugin is already there. Restart Claude Code afterwards. From then on, each `claude plugin update` (or marketplace auto-update, if you turn it on) picks up the latest commit on `main`.
+
+The command that set projects up in 0.2.x is gone. Run `/bytewyrd:drift` in each project to list what 0.2.x left behind, each with a one-line fix. The plugin's commands and hooks now need Python 3.11 or newer; see [Requirements](#requirements).
 
 ### Requirements
 
-The plugin's skills run helper scripts with whichever `bash` comes first on your `PATH`. Those scripts need:
+The plugin's commands and two of its hooks run on Python, and its skills read their JSON output with `jq`. You need:
 
-- **bash 4 or newer.** macOS ships `/bin/bash` 3.2, which lacks features the scripts rely on. Install a current bash with `brew install bash` and make sure Homebrew's `bin` directory comes before `/bin` on your `PATH`; check with `bash --version`. On bash 3.2, `/sync`, `/rfc-approve`, `/rfc-drop`, and `/rfc-summary` stop with an error naming this requirement.
+- **Python 3.11 or newer**, on your `PATH` or named in `BYTEWYRD_PYTHON`. Check yours with `python3 --version`.
 - **git** and **jq**.
-- For `/sync`, also **python3 3.11 or newer** and **sha256sum** or **shasum**.
 
-## What the plugin checks at session start
+The plugin runs `$BYTEWYRD_PYTHON` when it is 3.11 or newer. Otherwise it takes the first of `python3.15` down to `python3.11` that it finds on your `PATH`, and then `python3` if that is 3.11 or newer. If yours is older, install a newer Python and put it on your `PATH`. Or set `BYTEWYRD_PYTHON` to its path, for example `export BYTEWYRD_PYTHON=/path/to/python3.12`, in the environment you start Claude Code from.
 
-Every time you start a session in any project, the plugin runs a one-shot requirement check via a `SessionStart` hook. The check is silent when everything is satisfied. When something is missing, you'll see one of two outputs:
+Without a suitable Python, `/bytewyrd:scaffold`, `/bytewyrd:drift` and the helper commands behind the `/rfc-*` skills stop with an error that names this requirement. The hooks that run Python print the same line to stderr, and the session carries on.
 
-- **Warning bundle** (most common): the plugin lists each missing soft dependency (companion plugins not enabled, MCP servers not configured, optional CLI tools not on PATH) with the exact fix command for each. The session continues normally. Suppress individual warnings by exporting `BYTEWYRD_SKIP_WARN=<id1>,<id2>` in your shell — e.g., `export BYTEWYRD_SKIP_WARN=firefox-devtools,gh-cli` if you're working on a backend project and don't want UI/CLI nudges.
+## What the plugin adds at session start
 
-- **Hard failure** (rare): the plugin exits with a blocking error in one of two conditions:
-  1. The project's `.claude/settings.json` references a `claude-plugins-official` plugin that is not installed (Claude Code itself would error during a tool call later — the hook surfaces this at startup with the exact fix).
-  2. `git` is not on your `PATH` (the plugin cannot do anything without it).
-
-In both cases the error message includes the exact command to fix the condition.
+When a session starts, after `/clear`, and after a compaction, a `SessionStart` hook adds the plugin's always-on rules to Claude's context: five short statements about evidence, decisions, design, git and long-running processes. Their text is in [`hooks/always-on-rules.json`](../../hooks/always-on-rules.json). The hook only adds text. It checks nothing, prints no warnings, and needs no Python. The 0.2.x releases also ran a requirement check here; it is gone, so there are no warnings to suppress.
 
 ## Team-wide enforcement (optional)
 
-The default posture is user-scope-first: install once per machine, available in every project. `/sync` does not write plugin enablement entries to the project's `.claude/settings.json` — adding per-project entries would recreate the maintenance burden (name, marketplace URL, version) that user-scope was designed to eliminate.
+The default posture is user-scope-first: install once per machine, available in every project. `/bytewyrd:scaffold` does not write plugin entries to the project's `.claude/settings.json` — adding per-project entries would recreate the maintenance burden (name and marketplace URL) that user-scope was designed to eliminate.
 
-New collaborators who don't have the plugin are covered by the install hint `/sync` adds to every project's `CONTRIBUTING.md`.
+New collaborators who don't have the plugin are covered by the install commands that `/bytewyrd:scaffold` puts in the `CLAUDE.md` it seeds.
 
-If your team wants Claude Code to auto-install the plugin for any collaborator who opens the repo (bypassing the CONTRIBUTING.md manual step), you can add both entries manually and commit them to source control. Both are required — `enabledPlugins` alone is insufficient because Claude Code needs `extraKnownMarketplaces` to resolve the marketplace source:
+If your team wants Claude Code to register the marketplace and turn the plugin on for collaborators who open the repo, you can add both entries manually and commit them to source control. `extraKnownMarketplaces` registers the marketplace, and `enabledPlugins` turns the plugin on:
 
 ```json
 {
@@ -60,5 +88,7 @@ If your team wants Claude Code to auto-install the plugin for any collaborator w
   }
 }
 ```
+
+Committing these entries does not install the plugin. Claude Code registers the marketplace only after a collaborator trusts the folder, and each collaborator still runs `claude plugin install bytewyrd@bytewyrd --scope project` once per clone, which also installs bytewyrd's three dependencies. They need the official marketplace registered first. Claude Code normally registers it the first time someone starts an interactive terminal session. In a shell, they add it with `claude plugin marketplace add anthropics/claude-plugins-official`. For the details, see [Require plugins per repository](https://code.claude.com/docs/en/plugins/org#require-plugins-per-repository) and [Choose an install scope](https://code.claude.com/docs/en/plugins/install#choose-an-install-scope) in the Claude Code docs.
 
 This is not the default — and if you choose it, these entries become project-owned and must be kept current if the plugin's marketplace or name ever changes.
