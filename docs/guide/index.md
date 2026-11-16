@@ -24,7 +24,6 @@ Task-oriented guides for things you already know you want to do.
 - [Capture and propagate best practices](how-to/best-practices.md) — `/best-practices-record` vs `/best-practices-extract`, the two-destination flow, and how learnings seed future projects.
 - [Run a documentation review](how-to/docs-review.md) — scope hints, severity levels, the approval gate, and what `/docs-review` will not touch.
 - [Run a deliberate refactoring pass](how-to/refactor.md) — when to use `/refactor`, the six-phase protocol from your perspective, and when to just edit the file.
-- [Suppress session-start warnings](how-to/suppress-session-warnings.md) — silence individual requirement-check warnings when they don't apply to your project.
 
 ### Reference — *look it up*
 
