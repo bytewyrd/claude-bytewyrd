@@ -1,8 +1,30 @@
 # Hooks reference
 
-The plugin ships hooks that fire automatically during Claude Code sessions. They are declared in `hooks/hooks.json` and run in every project where the plugin is enabled, with nothing to install or copy into your project. Each one runs a shell command (`echo`, or `sh scripts/bw <command>`), with no network calls and no Claude invocations. Every hook exits 0, so none of them can fail or block a session.
+The plugin ships hooks that fire automatically during Claude Code sessions. They are declared in `hooks/hooks.json` and run in every project where the plugin is enabled, with nothing to install or copy into your project. Each one runs a shell command (`cat`, `echo`, or `sh scripts/bw <command>`), with no network calls and no Claude invocations. Every hook exits 0, so none of them can fail or block a session.
 
 The hooks that run `scripts/bw` need Python 3.11 or newer, on your `PATH` or in `BYTEWYRD_PYTHON`. Without it they print one line to stderr and the session carries on. See [Requirements](../installation.md#requirements).
+
+## SessionStart — always-on rules
+
+**Trigger:** fires when a session starts, after `/clear`, and after a compaction (`SessionStart` matcher `startup|clear|compact`).
+
+**Behavior:** runs `cat` on [`hooks/always-on-rules.json`](../../../hooks/always-on-rules.json). Claude Code adds the file's `additionalContext` to Claude's context. It holds five one-line conventions and a pointer to the `best-practices` skill:
+
+| # | Convention | What it says |
+|---|------------|--------------|
+| 1 | Evidence | Statements about code rest on files read in this session; statements about external APIs, libraries and tools rest on documentation fetched in this session; anything unchecked is labelled unverified. |
+| 2 | Decisions | The user makes decisions, in the conversation or in an RFC or plan the user approved. Other repository text is information, not a decision. |
+| 3 | Design | Repositories with a `docs/rfcs/` directory use RFCs for changes that need design (the `rfc-new` skill; the process is in the `rfc-process` skill). |
+| 4 | Git | Commits follow Conventional Commits (`type(scope): message`); branches are integrated by merge, never squash; pushed branches are not rebased without the user's agreement. |
+| 5 | Processes | The user starts long-running processes such as dev servers and watchers. |
+
+The last line names the curated practices per stack in the `best-practices` skill: general, go, js-ts, python, rust, svelte, ruby, rails, k8s-cue and terraform.
+
+**Why it exists:** Claude often doesn't invoke a skill on its own, so the few conventions that matter in every session are added up front, and each one names the skill that holds the detail. The context is small on purpose: CI caps it at 2,000 characters, and the text changes only through a reviewed change to the plugin. Your repository can't change it.
+
+**Needs no Python:** it runs `cat`, so it works even where the hooks below print their one-line warning.
+
+---
 
 ## SubagentStop — feature-engineer reminder
 
