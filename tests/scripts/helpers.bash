@@ -6,7 +6,11 @@
 # find them inside TEST_TMPDIR, never inside the real project.
 #
 # SCRIPT_ROOT is set to the real project root so test files can reference
-# scripts/ via absolute path: bash "$SCRIPT_ROOT/scripts/rfc-resolve.sh"
+# scripts/ via absolute path. Run a helper through the launcher, the way the
+# skills do, with bw: bw rfc-resolve 2026-01-01-alpha
+
+# bw NAME [ARGS...]: run sh "$SCRIPT_ROOT/scripts/bw" NAME [ARGS...].
+bw() { sh "$SCRIPT_ROOT/scripts/bw" "$@"; }
 
 setup_common() {
   load "../bats-support/load"
@@ -28,27 +32,6 @@ teardown_common() {
   cd "${BATS_TEST_TMPDIR:-${TMPDIR:-/tmp}}" || cd / || true
   chmod -R u+w "$TEST_TMPDIR" 2>/dev/null || true
   temp_del "$TEST_TMPDIR"
-}
-
-# compute_upstream_key <manifest-entry-json>
-# Mirrors _lib/common.bash:compute_upstream_key so tests can build matching
-# markers without hard-coding fingerprints.
-compute_upstream_key() {
-  local entry="$1"
-  local target fingerprint_input fingerprint
-  target="$(printf '%s' "$entry" | jq -r '.target')"
-  fingerprint_input="$(printf '%s' "$entry" | jq -Sc '{
-    extension_strategy,
-    owned_boundaries: (.owned_boundaries // []),
-    owned_paths:      (.owned_paths      // [] | sort),
-    owned_sections:   (.owned_sections   // [] | sort)
-  }')"
-  if command -v sha256sum >/dev/null 2>&1; then
-    fingerprint="$(printf '%s' "$fingerprint_input" | sha256sum | cut -c1-8)"
-  else
-    fingerprint="$(printf '%s' "$fingerprint_input" | shasum -a 256 | cut -c1-8)"
-  fi
-  printf 'bytewyrd/%s@%s' "$target" "$fingerprint"
 }
 
 # Create a minimal docs/rfcs/<name>.md fixture in the current directory.

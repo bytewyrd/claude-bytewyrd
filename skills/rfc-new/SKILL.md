@@ -1,6 +1,7 @@
 ---
 name: rfc-new
 description: Use to create a new RFC. Generates a date-based identifier, creates the file from template, spawns rfc-architect to fill it in, runs review agents, runs consensus review, fixes critical findings, and presents the finished Draft to the human. Triggered by "/rfc-new <description>".
+compatibility: "Claude Code only: relies on Claude Code subagents, AskUserQuestion or ~/.claude paths. Helper scripts need git, jq and python3 >= 3.11."
 ---
 
 # RFC New
@@ -16,9 +17,11 @@ If an argument is provided, use it as the description and proceed to Step 2.
 If no argument is provided:
 
 ```bash
-result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-braindump-list.sh")"
+result="$(sh "${CLAUDE_PLUGIN_ROOT}/scripts/bw" rfc-braindump-list)"
 entries_count="$(printf '%s' "$result" | jq '.entries | length')"
 ```
+
+Outside Claude Code, `${CLAUDE_PLUGIN_ROOT}` is not substituted; use the directory two levels above this SKILL.md.
 
 If `$entries_count` is greater than 0, iterate with `printf '%s' "$result" | jq -r '.entries[] | "\(.n)\t\(.body)"'` to present them as a numbered list and ask "Pick a number to promote, or describe a new RFC." If the user picks a number `N`, use `printf '%s' "$result" | jq -r --argjson n "$N" '.entries[] | select(.n == $n) | .body'` as the description. If they type something else, use that as the description.
 
@@ -114,7 +117,7 @@ git config user.name
 If the description came from a `docs/rfc-braindump.md` entry (the user selected a number in Step 1), remove that bullet:
 
 ```bash
-result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-braindump-remove.sh" "$SELECTED_ENTRY_BODY")"
+result="$(sh "${CLAUDE_PLUGIN_ROOT}/scripts/bw" rfc-braindump-remove "$SELECTED_ENTRY_BODY")"
 removed="$(printf '%s' "$result" | jq -r .removed)"
 ```
 
@@ -126,9 +129,9 @@ Spawn a `bytewyrd:rfc-architect` agent (`model: "$RFC_MODEL"`, the choice record
 - The user's description
 - The path to the created RFC file
 - The full project context (relevant code, existing RFCs, docs)
-- Instruction: fill in the template completely, remove all `<!-- ... -->` guidance comments, follow the RFC process in `docs/rfc-process.md`, especially the no-placeholders rule and file structure mapping requirement
+- Instruction: fill in the template completely, remove all `<!-- ... -->` guidance comments, follow the RFC process in the `rfc-process` skill, especially the no-placeholders rule and file structure mapping requirement
 
-The `bytewyrd:rfc-architect` agent must **immediately** after writing dispatch the appropriate review agents in parallel (per the review agent selection table in `docs/rfc-process.md`), incorporate their feedback, then run the self-review checklist:
+The `bytewyrd:rfc-architect` agent must **immediately** after writing dispatch the appropriate review agents in parallel (per the review agent selection table in the `rfc-process` skill), incorporate their feedback, then run the self-review checklist:
 1. **Coverage** — every requirement pointed to an implementation spec section?
 2. **Placeholder scan** — any prohibited patterns present?
 3. **Consistency** — type names, signatures, paths match across sections?

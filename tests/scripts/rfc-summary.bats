@@ -1,10 +1,9 @@
 #!/usr/bin/env bats
-# Tests for scripts/rfc-summary.sh
+# Tests for `bw rfc-summary`
 
 setup() {
   load "helpers"
   setup_common
-  SCRIPT="$SCRIPT_ROOT/scripts/rfc-summary.sh"
 }
 
 teardown() {
@@ -12,7 +11,7 @@ teardown() {
 }
 
 @test "empty docs/rfcs/ — returns empty rfcs array" {
-  run bash "$SCRIPT"
+  run bw rfc-summary
   assert_success
   assert_equal "$(echo "$output" | jq '.rfcs | length')" "0"
   assert_equal "$(echo "$output" | jq '.warnings | length')" "0"
@@ -20,7 +19,7 @@ teardown() {
 
 @test "single RFC — appears in output" {
   create_rfc_fixture 2026-01-01-solo
-  run bash "$SCRIPT"
+  run bw rfc-summary
   assert_success
   assert_equal "$(echo "$output" | jq '.rfcs | length')" "1"
   assert_equal "$(echo "$output" | jq -r '.rfcs[0].rfc')" "2026-01-01-solo"
@@ -30,7 +29,7 @@ teardown() {
   create_rfc_fixture 2026-03-01-charlie Draft
   create_rfc_fixture 2026-01-01-alpha Draft
   create_rfc_fixture 2026-02-01-beta Draft
-  run bash "$SCRIPT"
+  run bw rfc-summary
   assert_success
   assert_equal "$(echo "$output" | jq '.rfcs | length')" "3"
   assert_equal "$(echo "$output" | jq -r '.rfcs[0].rfc')" "2026-01-01-alpha"
@@ -55,7 +54,7 @@ drop_reason: ~
 
 Has an invalid status.
 EOF
-  run bash "$SCRIPT"
+  run bw rfc-summary
   assert_success
   assert_equal "$(echo "$output" | jq '.rfcs | length')" "1"
   assert [ "$(echo "$output" | jq '.warnings | length')" -ge "1" ]
@@ -76,7 +75,7 @@ drop_reason: ~
 
 Missing rfc field.
 EOF
-  run bash "$SCRIPT"
+  run bw rfc-summary
   assert_success
   assert_equal "$(echo "$output" | jq '.rfcs | length')" "0"
   assert [ "$(echo "$output" | jq '.warnings | length')" -ge "1" ]
@@ -84,7 +83,7 @@ EOF
 
 @test "exits 2 when docs/rfcs/ does not exist" {
   rmdir docs/rfcs
-  run bash "$SCRIPT"
+  run bw rfc-summary
   assert_failure 2
   run bash -c "echo '$output' | jq -e .error"
   assert_success
@@ -92,7 +91,7 @@ EOF
 
 @test "output contains warnings array" {
   create_rfc_fixture 2026-01-01-clean Draft
-  run bash "$SCRIPT"
+  run bw rfc-summary
   assert_success
   run bash -c "echo '$output' | jq -e '.warnings'"
   assert_success

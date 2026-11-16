@@ -1,0 +1,6 @@
+# bootstrap-content-version: bytewyrd/mise.toml@ebf354bf:e3b0c44298fc
+# mise.toml — tool version pins (managed by /sync)
+# Rust is managed via rust-toolchain.toml + rustup (not mise).
+
+[tools]
+go = "1.27.4"

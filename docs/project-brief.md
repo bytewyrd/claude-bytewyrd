@@ -16,7 +16,7 @@ This should be communicated clearly and directly in all user-facing surfaces: th
 
 ## Goals
 
-Every project that installs the plugin gets a consistent, fully-configured Claude Code environment with proven skills, agent delegation patterns, quality gates, and RFC process out of the box — in a single `/sync` command.
+Every project that installs the plugin gets a consistent, fully-configured Claude Code environment with proven skills, agent delegation patterns, quality gates, and RFC process out of the box.
 
 ## Non-Goals
 

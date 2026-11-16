@@ -4,6 +4,7 @@
     "name": "Bytewyrd",
     "email": "divoxx@gmail.com"
   },
+  "allowCrossMarketplaceDependenciesOn": ["claude-plugins-official"],
   "metadata": {
     "description": "Opinionated Claude Code workflow: skills, agents, hooks, and operating principles for evidence-based development with RFC-driven design."
   },

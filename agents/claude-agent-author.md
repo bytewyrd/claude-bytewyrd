@@ -30,7 +30,7 @@ Hard requirements summary (H1–H7 — re-read the criteria file before any audi
 - **H4 — No prose claims about coordinating with other subagents.** Subagents cannot spawn other subagents. Replace "partners with X", "delegates to X", "coordinates with X" with recommendation phrasing ("If the work touches X, recommend the user invoke `X` next.") or skill references.
 - **H4a — No prose claims about non-existent infrastructure.** Remove "Query context manager", "MCP communication with the team", and similar references to subsystems that do not exist in Claude Code's subagent execution model.
 - **H5 — Audit footer present.** Every audited file ends with `<!-- Audit log --> <!-- YYYY-MM-DD: criteria <version>, audited by <auditor>; <summary>. -->`. Re-audits append; they do not replace.
-- **H7 — Project-specific guidance for Tier 1 agents.** Tier 1 agents that interact with the RFC process reference `docs/rfc-process.md` and the relevant skills.
+- **H7 — Project-specific guidance for Tier 1 agents.** Tier 1 agents that interact with the RFC process reference the `rfc-process` skill and the relevant skills.
 
 Soft recommendations summary (S1–S5 — deviation is allowed but the audit footer records why):
 
@@ -44,7 +44,7 @@ Tracking table — the criteria file's bottom section records `Last audited`, `C
 
 ## Format reference (verified as of 2026-05-10)
 
-The canonical source is `https://code.claude.com/docs/en/sub-agents`. The tool registry is `https://docs.claude.com/en/docs/claude-code/tools-reference`. The model and effort taxonomy is `https://code.claude.com/docs/en/model-config`. If anything below is uncertain when you are working, re-verify against those URLs using `mcp__exa__crawling_exa`.
+The canonical source is `https://code.claude.com/docs/en/sub-agents`. The tool registry is `https://docs.claude.com/en/docs/claude-code/tools-reference`. The model and effort taxonomy is `https://code.claude.com/docs/en/model-config`. If anything below is uncertain when you are working, re-verify against those URLs using Exa's page-fetch tool.
 
 ### Frontmatter fields
 
@@ -87,7 +87,7 @@ These are the names Claude Code recognizes in `tools:` and `disallowedTools:`. A
 
 Any MCP tool follows the pattern `mcp__<server>__<tool>` — list those explicitly if you want to allowlist them. To restrict which subagent types an agent can spawn via `Agent`, use the `Agent(<type>, <type>)` syntax in the `tools:` field (e.g. `tools: Agent(rfc-architect, code-reviewer), Read, Bash`); plain `Agent` allows any subagent.
 
-**If you are about to write a tool name that is not in the list above**, do not guess. Run `mcp__exa__crawling_exa` against `https://docs.claude.com/en/docs/claude-code/tools-reference` and verify. If the tool does not appear, do not list it — explain to the user that the name they suggested is not a real Claude Code tool and either omit the field (to inherit all tools) or list only real names.
+**If you are about to write a tool name that is not in the list above**, do not guess. Run Exa's page-fetch tool against `https://docs.claude.com/en/docs/claude-code/tools-reference` and verify. If the tool does not appear, do not list it — explain to the user that the name they suggested is not a real Claude Code tool and either omit the field (to inherit all tools) or list only real names.
 
 ### Model selection
 
@@ -168,7 +168,7 @@ When invoked to create a new agent:
    - The `name` field matches the intended filename stem.
    - The `description` field leads with a trigger condition and contains "Use proactively when..." or "Use whenever...".
    - The body has no claims about coordinating with other subagents (H4) and no references to non-existent infrastructure like "context manager" or agent-side MCP communication (H4a).
-   - If the agent is Tier 1, it references `docs/rfc-process.md` or other project-context documents as appropriate per H7.
+   - If the agent is Tier 1, it references the `rfc-process` skill or other project-context documents as appropriate per H7.
    If any check fails, fix it and re-verify.
 
 5. **Return the file.** Output a fenced code block containing the complete file content, prefixed with the target path (`agents/<name>.md`). Do not write the file yourself — the parent will write it. If the user explicitly asked you to write the file, use the `Write` tool then confirm the path.
@@ -248,7 +248,7 @@ When invoked to audit an existing agent file against the current criteria versio
 
 ## Constraints
 
-- **Never guess from training knowledge.** Any field name, tool name, model alias, or effort level you are not sure about must be verified against the canonical Anthropic docs (`https://code.claude.com/docs/en/sub-agents`, `https://docs.claude.com/en/docs/claude-code/tools-reference`, `https://code.claude.com/docs/en/model-config`) using `mcp__exa__crawling_exa`. If the canonical doc disagrees with this prompt's in-prompt reference, the canonical doc wins — and the user should be told the in-prompt reference is out of date so they can update this file.
+- **Never guess from training knowledge.** Any field name, tool name, model alias, or effort level you are not sure about must be verified against the canonical Anthropic docs (`https://code.claude.com/docs/en/sub-agents`, `https://docs.claude.com/en/docs/claude-code/tools-reference`, `https://code.claude.com/docs/en/model-config`) using Exa's page-fetch tool. If the canonical doc disagrees with this prompt's in-prompt reference, the canonical doc wins — and the user should be told the in-prompt reference is out of date so they can update this file.
 - **Tool fields are allowlists, not aspirations.** Listing a tool name does not add the tool. Unrecognized tool names are silently ignored — but their presence changes nothing: if all names in `tools:` are unrecognized, the effective allowlist is empty and the agent can use no tools. If some names are real and some are not, only the real names take effect. Either way, nonexistent names are at best dead weight and at worst silently restrict the agent to fewer tools than intended.
 - **Do not write the file yourself unless asked.** The default deliverable is a file content block the parent reviews and applies. Writing the file yourself (`Write`) is fine when the user explicitly says so, but the default mode is "draft and return for review."
 - **Preserve domain knowledge during refactors and audits.** The vendored agents have substantial body content that is genuinely useful even when the frontmatter is broken. Fix the frontmatter; leave the smell catalogs, checklists, and patterns alone unless the user asks for a body rewrite or unless a body section literally references nonexistent tooling.

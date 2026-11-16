@@ -1,0 +1,5 @@
+warn  AGENTS.md  missing
+warn  CLAUDE.md  missing
+warn  .github/PULL_REQUEST_TEMPLATE.md  missing
+warn  .github/workflows/ci.yml  missing
+drift  docs/rfc-process.md  legacy-rfc-process-copy

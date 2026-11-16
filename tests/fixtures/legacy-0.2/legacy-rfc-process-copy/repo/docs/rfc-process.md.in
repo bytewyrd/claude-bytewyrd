@@ -1,0 +1,11 @@
+# RFC Process
+
+This document defines the RFC process. Projects set up with `/sync` carry a self-contained copy of it.
+
+## Lifecycle
+
+Draft, then Approved, then Done or Dropped.
+
+## Project Extensions
+
+- RFCs that touch billing also need a review from the payments team.

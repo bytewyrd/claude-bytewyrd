@@ -12,19 +12,19 @@ This guide is organized using the [Diátaxis](https://diataxis.fr/) framework. P
 
 Step-by-step lessons that take you from zero to a working result. Start here if you are new.
 
-- [Getting started](tutorials/getting-started.md) — install the plugin, run `/sync`, author and approve your first RFC, then implement it.
+- [Getting started](tutorials/getting-started.md) — install the plugin, run `/bytewyrd:scaffold`, author and approve your first RFC, then implement it.
 
 ### How-to guides — *recipes for specific tasks*
 
 Task-oriented guides for things you already know you want to do.
 
 - [Install the plugin](installation.md) — install at user or project scope.
+- [Seed and check a repository](how-to/scaffold-and-drift.md) — dry-run and apply `/bytewyrd:scaffold`, read the `/bytewyrd:drift` report, and move a repository off 0.2.x.
 - [Use the RFC process](how-to/rfc-process.md) — when to write an RFC, what makes a good one, and how the review cycle works.
 - [RFC workflow command reference](how-to/rfc-workflow.md) — syntax and behavior for every `/rfc-*` skill.
-- [Capture and propagate best practices](how-to/best-practices.md) — `/best-practices-record` vs `/best-practices-extract`, the two-destination flow, and how learnings seed future projects.
+- [Capture and propagate best practices](how-to/best-practices.md) — `/best-practices-record` vs `/best-practices-extract`, the two-destination flow, and how learnings reach every project.
 - [Run a documentation review](how-to/docs-review.md) — scope hints, severity levels, the approval gate, and what `/docs-review` will not touch.
 - [Run a deliberate refactoring pass](how-to/refactor.md) — when to use `/refactor`, the six-phase protocol from your perspective, and when to just edit the file.
-- [Suppress session-start warnings](how-to/suppress-session-warnings.md) — silence individual requirement-check warnings when they don't apply to your project.
 
 ### Reference — *look it up*
 
@@ -32,11 +32,11 @@ The full surface of the plugin. Skills and agents, the data behind them.
 
 - [Skills reference](reference/skills.md) — every slash command, sourced from each skill's frontmatter.
 - [Agents reference](reference/agents.md) — every specialist agent, sourced from each agent's frontmatter.
-- [Hooks reference](reference/hooks.md) — the two built-in hooks and their behaviors, including warning suppression.
+- [Hooks reference](reference/hooks.md) — the three built-in hooks (the always-on rules and the two `/docs-review` reminders) and their behaviors.
 
 ### Understanding the plugin — *concepts*
 
-- [Concepts](concepts.md) — the mental model: skills vs. agents, how the hook system works, RFC-first design, the best-practices lifecycle, and what `/sync` does.
+- [Concepts](concepts.md) — the mental model: skills vs. agents, how the hook system works, RFC-first design, the best-practices lifecycle, and how scaffold and drift seed and check a project.
 
 ### Contributing to the plugin
 

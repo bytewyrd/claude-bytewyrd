@@ -2,6 +2,7 @@
 name: rfc-read-feedback
 description: >-
   Use to address inline FEEDBACK: comments that humans have added to an RFC file. Spawns rfc-architect to incorporate each comment, removes the markers, and runs the self-review checklist. Triggered by "/rfc-read-feedback [RFC number or filename]".
+compatibility: "Claude Code only: relies on Claude Code subagents, AskUserQuestion or ~/.claude paths. Helper scripts need git, jq and python3 >= 3.11."
 ---
 
 # RFC Read Feedback
@@ -25,10 +26,12 @@ A marker applies to the content immediately above it in the same section. Marker
 Resolve the target RFC using the helper script. `$ARG` is the user-supplied identifier from the skill's argument, if any; omit it to let the script use the heuristic fallbacks.
 
 ```bash
-result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-resolve.sh" "${ARG:-}")"
+result="$(sh "${CLAUDE_PLUGIN_ROOT}/scripts/bw" rfc-resolve "${ARG:-}")"
 RFC_PATH="$(printf '%s' "$result" | jq -r .path)"
 label="$(printf '%s' "$result" | jq -r .label)"
 ```
+
+Outside Claude Code, `${CLAUDE_PLUGIN_ROOT}` is not substituted; use the directory two levels above this SKILL.md.
 
 Show `$label` and ask "Use this RFC? (yes/no)" — accept blank as yes. If the script exited non-zero, extract `.error` from `$result` and show it.
 
@@ -37,7 +40,7 @@ Read the matching RFC file.
 ### 2. Find all FEEDBACK: markers
 
 ```bash
-result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-feedback-list.sh" "$RFC_PATH")"
+result="$(sh "${CLAUDE_PLUGIN_ROOT}/scripts/bw" rfc-feedback-list "$RFC_PATH")"
 count="$(printf '%s' "$result" | jq '.markers | length')"
 ```
 

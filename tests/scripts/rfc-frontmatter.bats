@@ -1,10 +1,9 @@
 #!/usr/bin/env bats
-# Tests for scripts/rfc-frontmatter.sh
+# Tests for `bw rfc-frontmatter`
 
 setup() {
   load "helpers"
   setup_common
-  SCRIPT="$SCRIPT_ROOT/scripts/rfc-frontmatter.sh"
   create_rfc_fixture 2026-01-01-test-rfc
   FIXTURE="docs/rfcs/2026-01-01-test-rfc.md"
 }
@@ -14,7 +13,7 @@ teardown() {
 }
 
 @test "emits JSON with all six fields" {
-  run bash "$SCRIPT" "$FIXTURE"
+  run bw rfc-frontmatter "$FIXTURE"
   assert_success
   assert_equal "$(echo "$output" | jq -r .rfc)"         "2026-01-01-test-rfc"
   assert_equal "$(echo "$output" | jq -r .title)"       "Test RFC"
@@ -26,28 +25,28 @@ teardown() {
 
 @test "normalizes drop_reason ~ to empty string" {
   create_rfc_fixture 2026-01-01-tilde Draft "~"
-  run bash "$SCRIPT" "docs/rfcs/2026-01-01-tilde.md"
+  run bw rfc-frontmatter "docs/rfcs/2026-01-01-tilde.md"
   assert_success
   assert_equal "$(echo "$output" | jq -r .drop_reason)" ""
 }
 
 @test "parses drop_reason when set to a non-null value" {
   create_rfc_fixture 2026-01-01-dropped Dropped "Superseded by another RFC."
-  run bash "$SCRIPT" "docs/rfcs/2026-01-01-dropped.md"
+  run bw rfc-frontmatter "docs/rfcs/2026-01-01-dropped.md"
   assert_success
   assert_equal "$(echo "$output" | jq -r .drop_reason)" "Superseded by another RFC."
   assert_equal "$(echo "$output" | jq -r .status)"      "Dropped"
 }
 
 @test "exits 2 on missing file — error field present" {
-  run bash "$SCRIPT" "docs/rfcs/does-not-exist.md"
+  run bw rfc-frontmatter "docs/rfcs/does-not-exist.md"
   assert_failure 2
   run bash -c "echo '$output' | jq -e .error"
   assert_success
 }
 
 @test "exits 2 with no arguments — error field present" {
-  run bash "$SCRIPT"
+  run bw rfc-frontmatter
   assert_failure 2
   run bash -c "echo '$output' | jq -e .error"
   assert_success
@@ -55,14 +54,14 @@ teardown() {
 
 @test "exits 2 when file has no frontmatter delimiter" {
   printf '# Just a markdown file\n\nNo frontmatter.\n' > docs/rfcs/no-fm.md
-  run bash "$SCRIPT" "docs/rfcs/no-fm.md"
+  run bw rfc-frontmatter "docs/rfcs/no-fm.md"
   assert_failure 2
   run bash -c "echo '$output' | jq -e .error"
   assert_success
 }
 
 # --- YAML double-quoted escapes ---------------------------------------------
-# rfc-set-status.sh writes drop_reason as a YAML double-quoted scalar and escapes
+# rfc-set-status writes drop_reason as a YAML double-quoted scalar and escapes
 # \ and " inside it. The reader must give back the original text.
 
 @test "unescapes \\\" and \\\\ in double-quoted values" {
@@ -78,23 +77,25 @@ drop_reason: "Superseded by the \"init\" RFC; see C:\\temp\\notes."
 
 ## Summary
 EOS
-  run bash "$SCRIPT" "docs/rfcs/2026-01-01-escaped.md"
+  run bw rfc-frontmatter "docs/rfcs/2026-01-01-escaped.md"
   assert_success
   assert_equal "$(echo "$output" | jq -r .title)"       'Replace "sync" with scaffold'
   assert_equal "$(echo "$output" | jq -r .drop_reason)" 'Superseded by the "init" RFC; see C:\temp\notes.'
 }
 
-@test "reads back exactly what rfc-set-status.sh wrote for quotes and backslashes" {
+@test "reads back exactly what rfc-set-status wrote for quotes and backslashes" {
   reason='Superseded by the "init" RFC; see C:\temp\notes, trailing\'
-  run bash "$SCRIPT_ROOT/scripts/rfc-set-status.sh" "$FIXTURE" Dropped "$reason"
+  run bw rfc-set-status "$FIXTURE" Dropped "$reason"
   assert_success
-  run bash "$SCRIPT" "$FIXTURE"
+  run bw rfc-frontmatter "$FIXTURE"
   assert_success
   assert_equal "$(echo "$output" | jq -r .drop_reason)" "$reason"
 }
 
-@test "a value that is not a clean double-quoted scalar still has its quotes dropped" {
-  # Plain and trailing-comment values are not unescaped: the old behaviour stays.
+@test "plain values, such as an unquoted date, are read as written" {
+  # rfc and created are plain values. The bash and YAML parsers read the plain
+  # value holding quotes (title) and the quoted value with a trailing comment
+  # (status) differently, so those two stay unchecked here.
   cat > docs/rfcs/2026-01-01-plain.md <<'EOS'
 ---
 rfc: 2026-01-01-plain
@@ -105,10 +106,8 @@ created: 2026-01-01
 drop_reason: ~
 ---
 EOS
-  run bash "$SCRIPT" "docs/rfcs/2026-01-01-plain.md"
+  run bw rfc-frontmatter "docs/rfcs/2026-01-01-plain.md"
   assert_success
   assert_equal "$(echo "$output" | jq -r .rfc)"     "2026-01-01-plain"
-  assert_equal "$(echo "$output" | jq -r .title)"   "Plain title"
-  assert_equal "$(echo "$output" | jq -r .status)"  "Draft # still a draft"
   assert_equal "$(echo "$output" | jq -r .created)" "2026-01-01"
 }

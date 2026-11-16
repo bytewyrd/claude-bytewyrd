@@ -1,4 +1,3 @@
-<!-- bootstrap-content-version: bytewyrd/.github/PULL_REQUEST_TEMPLATE.md@bc393baf:e3b0c44298fc -->
 
 ## Summary
 

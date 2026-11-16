@@ -15,10 +15,12 @@ Approves a Draft RFC. Only humans invoke this skill — agents write and review,
 Resolve the target RFC using the helper script. The script handles the argument-vs-heuristic logic; the agent surfaces the candidate label to the user. `$ARG` is the user-supplied identifier from the skill's argument, if any; omit it to let the script use the heuristic fallbacks.
 
 ```bash
-result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-resolve.sh" "${ARG:-}")"
+result="$(sh "${CLAUDE_PLUGIN_ROOT}/scripts/bw" rfc-resolve "${ARG:-}")"
 RFC_PATH="$(printf '%s' "$result" | jq -r .path)"
 label="$(printf '%s' "$result" | jq -r .label)"
 ```
+
+Outside Claude Code, `${CLAUDE_PLUGIN_ROOT}` is not substituted; use the directory two levels above this SKILL.md.
 
 `$RFC_PATH` is the resolved absolute path; `$label` is a one-line summary such as `RFC 2026-05-12-foo (unique modified file)`. Show `$label` and ask "Use this RFC? (yes/no)" — accept blank as yes. If the user declines, ask "Which RFC?" and re-run with their answer as `$ARG`. If the script exited non-zero, `result` will contain `{"error":"..."}` — extract with `jq -r .error` and show it. `$RFC_PATH` is used by subsequent steps to identify the file being acted on.
 
@@ -27,12 +29,12 @@ label="$(printf '%s' "$result" | jq -r .label)"
 Read the frontmatter:
 
 ```bash
-fm="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-frontmatter.sh" "$RFC_PATH")" || { printf '%s\n' "$fm"; exit 1; }
+fm="$(sh "${CLAUDE_PLUGIN_ROOT}/scripts/bw" rfc-frontmatter "$RFC_PATH")" || { printf '%s\n' "$fm"; exit 1; }
 status="$(printf '%s' "$fm" | jq -r .status)"
 drop_reason="$(printf '%s' "$fm" | jq -r .drop_reason)"
 ```
 
-If this fails, show the error and stop: either the `.error` field of the printed JSON, or the message the script wrote to stderr (for example, that bash >= 4 is required).
+If this fails, show the error and stop: either the `.error` field of the printed JSON, or the message the script wrote to stderr (for example, that Python 3.11 or newer is required).
 
 If `$status` is not `Draft`:
 - `Approved` → "Already approved."
@@ -60,7 +62,7 @@ Wait for explicit confirmation.
 ### 4. Update status
 
 ```bash
-result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-set-status.sh" "$RFC_PATH" Approved)"
+result="$(sh "${CLAUDE_PLUGIN_ROOT}/scripts/bw" rfc-set-status "$RFC_PATH" Approved)"
 old="$(printf '%s' "$result" | jq -r .old_status)"
 new="$(printf '%s' "$result" | jq -r .new_status)"
 ```

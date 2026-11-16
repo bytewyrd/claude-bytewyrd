@@ -18,8 +18,9 @@ is resolved against the linking file's directory (or the repository
 root when it starts with "/") after dropping any "#fragment" or
 "?query"; the check passes when that file or directory exists.
 
-Templates under templates/*.tpl are not Markdown files and are never
-passed in: their links resolve where /sync renders them, not here.
+Templates under templates/scaffold/*.tpl are not Markdown files and are
+never passed in: their links resolve where /bytewyrd:scaffold renders them,
+not here.
 
 Exit status: 0 when every link resolves, 1 otherwise.
 """
@@ -57,7 +58,12 @@ def strip_non_prose(text):
             out.append("")
             continue
         if fence is not None:
-            if match and match.group(1)[0] == fence[0] and len(match.group(1)) >= len(fence) and not line.strip()[len(match.group(1)):].strip():
+            if (
+                match
+                and match.group(1)[0] == fence[0]
+                and len(match.group(1)) >= len(fence)
+                and not line.strip()[len(match.group(1)) :].strip()
+            ):
                 fence = None
             out.append("")
             continue

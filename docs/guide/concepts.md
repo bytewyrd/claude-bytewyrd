@@ -18,48 +18,27 @@ You generally do not need to invoke agents directly. The skills know which agent
 
 Each agent carries a focused system prompt — the `rfc-architect` knows RFC structure and review protocols; the `refactoring-specialist` knows code smell catalogs, characterization test patterns, and Fowler's refactoring catalog. A specialist produces higher-quality output than the main agent would inline, and the model budget is used more efficiently (specialists default to the cheapest model that fits the task).
 
-The [agent delegation table in CLAUDE.md](../../CLAUDE.md) maps task types to agents.
+The [Agents reference](reference/agents.md) lists every agent with its role and model.
 
 ---
 
 ## The hook system
 
-The plugin ships hooks that fire automatically during Claude Code's session lifecycle. Hooks run outside Claude's context — they are shell scripts, not agent tasks.
+The plugin ships three hooks that fire automatically during Claude Code's session lifecycle. Hooks run outside Claude's context — they are shell commands, not agent tasks. Every one exits 0, so none of them blocks a session.
 
-**`SessionStart` — requirement check**
+**`SessionStart` — always-on rules**
 
-Fires at the start of every Claude Code session. Runs `scripts/check-requirements.sh`, which probes for:
-
-- Companion plugins (GitHub, Context7, code-review)
-- MCP servers (Exa, Firefox DevTools)
-- CLI tools (`git`, `gh`)
-
-If all checks pass, the hook is silent. When something soft is missing, it emits a warning bundle but lets the session continue. Hard failures (`git` missing, a stale plugin reference in settings) block the session with a remediation command.
-
-Individual soft warnings can be silenced with `BYTEWYRD_SKIP_WARN`. See [Suppress session-start warnings](how-to/suppress-session-warnings.md).
-
-**`SessionStart` — compact reminder**
-
-A second `SessionStart` hook checks whether a `feature-engineer` agent finished in the last 24 hours without a subsequent `/docs-review` run. If so, it re-surfaces the reminder to check whether `docs/guide/**` needs updating. This reminder survives context compaction (where the original terminal output would be lost).
+Fires when a session starts, after `/clear`, and after a compaction. Prints [`hooks/always-on-rules.json`](../../hooks/always-on-rules.json), which adds five short workflow conventions to Claude's context: evidence, decisions, design, git, and long-running processes. It also points Claude at the `best-practices` skill. This hook needs no Python.
 
 **`SubagentStop` — feature-engineer reminder**
 
-> **Temporarily removed** until PR 1 of RFC `2026-11-09-scaffold-and-drift` re-adds it safely: it wrote its sentinel through `.bytewyrd`, which a committed symlink can point outside the repository. Until then the compact reminder above fires only for a sentinel that an earlier plugin version wrote in the last 24 hours. See the [Hooks reference](reference/hooks.md).
+Fires whenever a `bytewyrd:feature-engineer` subagent finishes. Runs an `echo` that carries a reminder: if the implemented feature affects user-visible behavior, ask the user to run `/docs-review`. Then runs `scripts/bw state-touch last-feature-engineer-stop`, which creates a sentinel file (`.bytewyrd/last-feature-engineer-stop`) that the compact reminder below reads. `state-touch` is the only writer into `.bytewyrd/`. It refuses to write through a symlink, and it adds a `.gitignore` there so git ignores the folder.
 
-Fires whenever a `bytewyrd:feature-engineer` subagent finishes. Prints a reminder to run `/docs-review` if the implemented feature affects user-visible behavior. Also creates a sentinel file (`.bytewyrd/last-feature-engineer-stop`) that the compact `SessionStart` hook reads.
+**`SessionStart` — compact reminder**
 
-**Plugin-checkout hooks (project-local)**
+Fires when a session starts from a compaction. Runs `scripts/bw compact-reminder`, which checks whether a `feature-engineer` agent finished in the last 24 hours without a later `/docs-review` run. If so, it prints a reminder that Claude should ask you to run `/docs-review` against the implemented files. `/docs-review` removes the sentinel when it finishes. The sentinel is a file, not conversation text, so this reminder survives context compaction.
 
-> *These hooks are relevant only if you are contributing to this plugin repository. Consumer projects do not receive them.*
-
-This repository's own checkout registers additional hooks in `.claude/settings.json` that are not distributed to consumer projects:
-
-- **`PreCompact`** — blocks context compaction until `/best-practices-extract` runs this session (see [the best-practices lifecycle](#the-best-practices-lifecycle) below)
-- **`Stop`** — prints a session-end documentation checklist when Claude Code stops
-- **`PostToolUse`** — reminds you to check `docs/guide/**` for drift after a `git commit` or GitHub file push
-- **`SessionStart`** (two additional) — bootstrap version check (notices when `docs/BEST_PRACTICES.md` is behind the plugin's sync content) and precompact sentinel reset (re-arms the PreCompact gate for each new session)
-
-These hooks fire only in sessions run inside this plugin checkout. Consumer projects do not receive them.
+The two hooks that run `scripts/bw` need Python 3.11 or newer. Without it they print one line to stderr and the session carries on. See [Requirements](installation.md#requirements).
 
 For full hook details, see [Hooks reference](reference/hooks.md).
 
@@ -93,27 +72,23 @@ Engineering learnings accumulate in three files, at increasing scope:
 |------|-------|-------------------|
 | `docs/BEST_PRACTICES.md` | This project | `/best-practices-extract` at session end |
 | `~/.claude/BEST_PRACTICES.md` | All your projects | Promotion step in `/best-practices-extract`, or `/best-practices-record` |
-| `skills/sync/SKILL.md` (plugin bootstrap content) | All future projects | Plugin maintainer runs `/best-practices-sync` |
+| `skills/best-practices/references/<stack>.md` (the `best-practices` skill, read at runtime) | Every project that uses the plugin | Plugin maintainer runs `/best-practices-sync` |
 
-The key design principle is that promotion requires human review at each step. `/best-practices-extract` extracts from the session and offers entries for promotion to the global pool — you confirm the bulk checkbox. `/best-practices-sync` (a plugin-local maintenance skill) promotes from the global pool into the plugin's sync content — a maintainer reviews each entry before it ships to future projects.
+The key design principle is that promotion requires human review at each step. `/best-practices-extract` extracts from the session and offers entries for promotion to the global pool — you confirm the bulk checkbox. `/best-practices-sync` (a plugin-local maintenance skill) promotes from the global pool into the plugin's `best-practices` skill — a maintainer reviews each entry before it ships.
 
-This staged flow prevents one project's specific workaround from landing in every future project's `BEST_PRACTICES.md`. The global bar is higher than the project bar by design.
+This staged flow prevents one project's specific workaround from reaching every project that uses the plugin. The global bar is higher than the project bar by design.
 
-The compaction gate (a `PreCompact` hook) ensures extraction happens before context is compressed. The first compaction trigger of a session blocks until `/best-practices-extract` runs, then the gate releases. See [How to capture and propagate best practices](how-to/best-practices.md).
+The plugin ships no compaction gate, so nothing blocks context compaction until extraction has run. Run `/best-practices-extract` yourself at the end of a meaningful session. If a project still carries the 0.2.x `PreCompact` hook in its `.claude/settings.json`, `/bytewyrd:drift` lists it with the fix. See [How to capture and propagate best practices](how-to/best-practices.md).
 
 ---
 
-## Why `/sync` is the entry point
+## Scaffold and drift
 
-`/sync` is idempotent and safe to re-run. It sets up or refreshes:
+`/bytewyrd:scaffold` seeds a project once. It writes at most four files, each only if it is missing: `AGENTS.md`, a `CLAUDE.md` that imports it, a pull request template and `.github/workflows/ci.yml`. It is a dry run until you pass `--apply`, and it never overwrites a file or writes through a symlink. A seeded file belongs to your project from then on. The plugin does not edit it again.
 
-- `docs/rfc-process.md` — a self-contained copy of the RFC process, updated with upstream sync markers so future `/sync` runs can detect and apply plugin updates
-- `docs/BEST_PRACTICES.md` — seeded with entries promoted into the plugin's sync content
-- `CLAUDE.md` — agent delegation table, evidence-based development rules, model usage guidelines
-- `docs/CONTRIBUTING.md` — developer workflow, including the plugin install hint for new collaborators
-- `.claude/settings.json` — hooks, permissions
+`/bytewyrd:drift` checks those files and changes nothing. It compares each one with the plugin's current template, shows what changed, and lists anything 0.2.x left behind, each with a one-line fix for you to review and run.
 
-Running `/sync` when the plugin updates picks up any new conventions or quality gates. You do not need to manage individual files — `/sync` handles the idempotent merge.
+The rest stays in the plugin and is read at runtime, so your repository holds no copies that can go stale. The RFC process is the `rfc-process` skill, and a `docs/rfcs/` directory opts a project in. The curated best practices are the `best-practices` skill, one file per stack. Updating the plugin updates both.
 
 ---
 
@@ -121,4 +96,4 @@ Running `/sync` when the plugin updates picks up any new conventions or quality 
 
 This repository is a live instance of its own workflow. Every RFC, every skill, every convention was designed and tested here before being distributed to other projects. The pattern you see in the guide pages is not aspirational — it is the workflow the plugin itself runs on.
 
-This matters because it prevents "designed in theory" from shipping as a convention. The RFC process is documented the way it is because it has been used to design and ship the plugin's own features. The agent delegation table reflects the actual agents used for the plugin's development. Best practices in `docs/BEST_PRACTICES.md` were extracted from real sessions.
+This matters because it prevents "designed in theory" from shipping as a convention. The RFC process is documented the way it is because it has been used to design and ship the plugin's own features. Best practices in `docs/BEST_PRACTICES.md` were extracted from real sessions.

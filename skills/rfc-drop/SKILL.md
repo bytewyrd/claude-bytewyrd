@@ -15,10 +15,12 @@ Marks an RFC as Dropped with a recorded reason. Dropped RFCs are permanent histo
 Resolve the target RFC. `$ARG` is the user-supplied identifier from the skill's argument, if any; omit it to let the script use the heuristic fallbacks.
 
 ```bash
-result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-resolve.sh" "${ARG:-}")"
+result="$(sh "${CLAUDE_PLUGIN_ROOT}/scripts/bw" rfc-resolve "${ARG:-}")"
 RFC_PATH="$(printf '%s' "$result" | jq -r .path)"
 label="$(printf '%s' "$result" | jq -r .label)"
 ```
+
+Outside Claude Code, `${CLAUDE_PLUGIN_ROOT}` is not substituted; use the directory two levels above this SKILL.md.
 
 (Same confirmation flow as rfc-approve: show `$label`, ask the user to confirm. On non-zero exit, parse `.error` from `$result` and show it. `$RFC_PATH` carries the resolved absolute path into the steps below.)
 
@@ -27,12 +29,12 @@ If the drop reason is not provided, ask: "Why is this RFC being dropped? (one se
 ### 2. Read and verify status
 
 ```bash
-fm="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-frontmatter.sh" "$RFC_PATH")" || { printf '%s\n' "$fm"; exit 1; }
+fm="$(sh "${CLAUDE_PLUGIN_ROOT}/scripts/bw" rfc-frontmatter "$RFC_PATH")" || { printf '%s\n' "$fm"; exit 1; }
 status="$(printf '%s' "$fm" | jq -r .status)"
 drop_reason="$(printf '%s' "$fm" | jq -r .drop_reason)"
 ```
 
-If this fails, show the error and stop: either the `.error` field of the printed JSON, or the message the script wrote to stderr (for example, that bash >= 4 is required).
+If this fails, show the error and stop: either the `.error` field of the printed JSON, or the message the script wrote to stderr (for example, that Python 3.11 or newer is required).
 
 If `$status` is `Done` → "This RFC is already done — it cannot be dropped." If `Dropped` → "Already dropped: $drop_reason." Stop in either case. Only `Draft` and `Approved` RFCs can be dropped.
 
@@ -52,7 +54,7 @@ Wait for confirmation.
 ### 4. Update frontmatter
 
 ```bash
-result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-set-status.sh" "$RFC_PATH" Dropped "$REASON")"
+result="$(sh "${CLAUDE_PLUGIN_ROOT}/scripts/bw" rfc-set-status "$RFC_PATH" Dropped "$REASON")"
 ```
 
 The script writes `status: "Dropped"` and `drop_reason: "<REASON>"` atomically. If `$REASON` is empty the script exits 2 with `{"error":"..."}` on stdout — extract via `jq -r .error` and re-prompt for a reason.

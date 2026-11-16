@@ -1,0 +1,6 @@
+<!-- bootstrap-content-version: bytewyrd/docs/CONTRIBUTING.md@9a0b1c2d:abcdef012345 -->
+<!-- Managed by the Bytewyrd plugin — do not customize. This file is overwritten on every /sync. -->
+
+# Contributing
+
+Run `go test ./...` before you push.

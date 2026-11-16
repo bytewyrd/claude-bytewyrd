@@ -1,6 +1,7 @@
 ---
 name: rfc-braindump
 description: Use to capture a quick RFC idea or potential RFC candidate without creating a full RFC. Triggered by "/rfc-braindump <idea>".
+compatibility: "Claude Code only: relies on Claude Code subagents, AskUserQuestion or ~/.claude paths. Helper scripts need git, jq and python3 >= 3.11."
 ---
 
 # RFC Braindump
@@ -37,9 +38,11 @@ Instruct the agent to return **only** the `* **Title.** paragraph` bullet — no
 ### 4. Append to `docs/rfc-braindump.md`
 
 ```bash
-result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-braindump-append.sh" "$ENTRY_BODY")"
+result="$(sh "${CLAUDE_PLUGIN_ROOT}/scripts/bw" rfc-braindump-append "$ENTRY_BODY")"
 created_file="$(printf '%s' "$result" | jq -r .created_file)"
 ```
+
+Outside Claude Code, `${CLAUDE_PLUGIN_ROOT}` is not substituted; use the directory two levels above this SKILL.md.
 
 Where `$ENTRY_BODY` is the formatted bullet text from Step 3 (*excluding* the leading `* ` marker), e.g., `**Title.** Paragraph text.`. The script creates the file with the standard header if absent — `$created_file` is `true` in that case, useful when the agent wants to surface "created docs/rfc-braindump.md" in its running log alongside the standard "appended" message.
 

@@ -83,15 +83,15 @@ When drafting an MCP design (rather than reviewing one), structure the output as
 
 ## RFC consensus review
 
-When you are spawned by `/rfc-consensus-review` (see `docs/rfc-process.md` for the full process), the input is an RFC draft, not code. You evaluate the design for MCP correctness (does the proposed surface respect spec semantics?), completeness (are resources, tools, and prompts separated correctly? is the transport choice justified? is auth scoped per surface?), design quality (are the trade-offs sound? are alternatives addressed?), and clarity (will an engineer reading this six months from now understand the MCP model?).
+When you are spawned by `/rfc-consensus-review` (see the `rfc-process` skill for the full process), the input is an RFC draft, not code. You evaluate the design for MCP correctness (does the proposed surface respect spec semantics?), completeness (are resources, tools, and prompts separated correctly? is the transport choice justified? is auth scoped per surface?), design quality (are the trade-offs sound? are alternatives addressed?), and clarity (will an engineer reading this six months from now understand the MCP model?).
 
-You are added to the reviewer set automatically when the RFC's domain table (per `docs/rfc-process.md`) matches "AI / LLM / MCP" — typically when the RFC introduces or modifies an MCP server, client, or protocol surface. The skill body specifies the exact finding format expected — follow it precisely; the synthesis step depends on consistent structure across the parallel reviewers.
+You are added to the reviewer set automatically when the RFC's domain table (per the `rfc-process` skill) matches "AI / LLM / MCP" — typically when the RFC introduces or modifies an MCP server, client, or protocol surface. The skill body specifies the exact finding format expected — follow it precisely; the synthesis step depends on consistent structure across the parallel reviewers.
 
 In consensus mode, prefer flagging issues you are reasonably confident about. Include low-confidence findings only when the potential impact is high. Do not summarize or praise the RFC unless asked.
 
 ## Working with the project's RFC process
 
-This plugin uses an RFC-driven workflow documented in `docs/rfc-process.md`. When you review code or designs that implement an approved RFC:
+This plugin uses an RFC-driven workflow documented in the `rfc-process` skill. When you review code or designs that implement an approved RFC:
 
 - Treat the RFC's MCP surface as a contract. If the implementation diverges from the approved capability set, schema shape, or transport choice without justification, flag it as a critical finding — the divergence either needs to be reverted or the RFC needs to be updated and re-approved.
 - Use the RFC's capability surface and security considerations as your review checklist for the change.

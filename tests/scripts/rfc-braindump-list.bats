@@ -1,10 +1,9 @@
 #!/usr/bin/env bats
-# Tests for scripts/rfc-braindump-list.sh
+# Tests for `bw rfc-braindump-list`
 
 setup() {
   load "helpers"
   setup_common
-  SCRIPT="$SCRIPT_ROOT/scripts/rfc-braindump-list.sh"
 }
 
 teardown() {
@@ -12,14 +11,14 @@ teardown() {
 }
 
 @test "absent file — returns empty entries array" {
-  run bash "$SCRIPT"
+  run bw rfc-braindump-list
   assert_success
   assert_equal "$(echo "$output" | jq '.entries | length')" "0"
 }
 
 @test "file with entries — numbered correctly from 1" {
   create_braindump_fixture "Alpha idea." "Beta idea." "Gamma idea."
-  run bash "$SCRIPT"
+  run bw rfc-braindump-list
   assert_success
   assert_equal "$(echo "$output" | jq '.entries | length')" "3"
   assert_equal "$(echo "$output" | jq -r '.entries[0].n')"    "1"
@@ -32,7 +31,7 @@ teardown() {
 
 @test "header lines are not included as entries" {
   create_braindump_fixture "Only real entry."
-  run bash "$SCRIPT"
+  run bw rfc-braindump-list
   assert_success
   # Header lines start with #, not "* "; only bullet lines count.
   assert_equal "$(echo "$output" | jq '.entries | length')" "1"
@@ -42,14 +41,14 @@ teardown() {
 @test "file with no bullet entries — returns empty array" {
   mkdir -p docs
   printf '# RFC Braindump\n\nNo ideas yet.\n' > docs/rfc-braindump.md
-  run bash "$SCRIPT"
+  run bw rfc-braindump-list
   assert_success
   assert_equal "$(echo "$output" | jq '.entries | length')" "0"
 }
 
 @test "entries preserve file order" {
   create_braindump_fixture "First." "Second." "Third." "Fourth."
-  run bash "$SCRIPT"
+  run bw rfc-braindump-list
   assert_success
   assert_equal "$(echo "$output" | jq -r '.entries[3].body')" "Fourth."
 }

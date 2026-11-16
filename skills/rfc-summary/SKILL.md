@@ -19,15 +19,17 @@ test -d docs/rfcs
 
 If the directory does not exist, tell the user:
 
-> "This project has no `docs/rfcs/` directory. Run `/sync` to set up the RFC process, or `/rfc-new` to create the first RFC."
+> "This project has no `docs/rfcs/` directory. Run `/rfc-new` to create the first RFC."
 
 Stop.
 
 ### 2. Enumerate, parse, and sort
 
 ```bash
-result="$(bash "${CLAUDE_PLUGIN_ROOT}/scripts/rfc-summary.sh")"
+result="$(sh "${CLAUDE_PLUGIN_ROOT}/scripts/bw" rfc-summary)"
 ```
+
+Outside Claude Code, `${CLAUDE_PLUGIN_ROOT}` is not substituted; use the directory two levels above this SKILL.md.
 
 `$result` is a JSON object `{"rfcs": [...], "warnings": [...]}`. Extract:
 
@@ -36,7 +38,7 @@ rfcs="$(printf '%s' "$result" | jq -c '.rfcs')"
 warnings="$(printf '%s' "$result" | jq -r '.warnings[]?')"
 ```
 
-`$rfcs` is a JSON array sorted ascending by `created` then by `rfc` identifier. Iterate it with `printf '%s' "$rfcs" | jq -c '.[]'` to grab each row as an object for step 3's grouping. Print any per-file `$warnings` (incomplete frontmatter, unrecognized status) so the user sees them before the rendered summary. If the script exits non-zero, show the error and stop: either `.error` from `$result` (`jq -r .error`), or the message it wrote to stderr (for example, that bash >= 4 is required). A missing `docs/rfcs/` cannot be the cause here, because step 1 already checked for it.
+`$rfcs` is a JSON array sorted ascending by `created` then by `rfc` identifier. Iterate it with `printf '%s' "$rfcs" | jq -c '.[]'` to grab each row as an object for step 3's grouping. Print any per-file `$warnings` (incomplete frontmatter, unrecognized status) so the user sees them before the rendered summary. If the script exits non-zero, show the error and stop: either `.error` from `$result` (`jq -r .error`), or the message it wrote to stderr (for example, that Python 3.11 or newer is required). A missing `docs/rfcs/` cannot be the cause here, because step 1 already checked for it.
 
 ### 3. Filter and group
 
@@ -94,4 +96,4 @@ This is one line; it provides the next-step hint without bloating the output. Do
 
 - **Read-only.** This skill does not write, edit, or commit. If asked to "fix" something it surfaces, decline and point at the appropriate mutation skill (`/rfc-approve`, `/rfc-drop`, `/rfc-implement`).
 - **No agent spawn.** The skill runs in the main conversation. Listing RFC frontmatter is mechanical; there is no domain reasoning to delegate.
-- **Frontmatter contract.** This skill assumes every `docs/rfcs/*.md` file has the frontmatter shape defined in `docs/rfc-process.md` §"Required YAML frontmatter". If parsing yields an empty `rfc` or `status` for a file, print `Warning: <filename> — frontmatter incomplete; skipping.` and continue. Do not abort the whole listing on one malformed file.
+- **Frontmatter contract.** This skill assumes every `docs/rfcs/*.md` file has the frontmatter shape defined in the `rfc-process` skill §"Required YAML frontmatter". If parsing yields an empty `rfc` or `status` for a file, print `Warning: <filename> — frontmatter incomplete; skipping.` and continue. Do not abort the whole listing on one malformed file.

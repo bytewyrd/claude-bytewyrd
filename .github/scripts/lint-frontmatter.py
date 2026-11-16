@@ -56,7 +56,7 @@ def trailing_comments(node, fm_lines):
             if isinstance(value_node, yaml.ScalarNode):
                 if value_node.style is None and value_node.value != "":
                     end = value_node.end_mark
-                    rest = fm_lines[end.line][end.column:] if end.line < len(fm_lines) else ""
+                    rest = fm_lines[end.line][end.column :] if end.line < len(fm_lines) else ""
                     if rest.lstrip().startswith("#"):
                         yield end.line, key_node.value
             else:
@@ -95,7 +95,12 @@ def lint(path):
     for key_node, _ in node.value:
         line = first_line + key_node.start_mark.line
         if key_node.value in first_seen:
-            problems.append((line, f'duplicate key "{key_node.value}" (first on line {first_seen[key_node.value]}); YAML keeps only the last value'))
+            problems.append(
+                (
+                    line,
+                    f'duplicate key "{key_node.value}" (first on line {first_seen[key_node.value]}); YAML keeps only the last value',
+                )
+            )
         else:
             first_seen[key_node.value] = line
     for key in REQUIRED_STRING_KEYS:

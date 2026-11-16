@@ -70,10 +70,6 @@ If your skill takes arguments:
 
 Iterate. Each Claude Code restart re-reads `skills/`, so your edit-cycle is: edit → restart → invoke → observe → repeat.
 
-## Update the agent delegation table
-
-If the skill changes how agents are delegated (e.g., it spawns a new specialist), update the **Agent delegation** table in `CLAUDE.md` so future sessions know the skill exists.
-
 ## Update the README skills table
 
 Add a row to the **Skills** table in `README.md` with the trigger and a one-line summary. The table is the user's first stop for discovering what the plugin can do.

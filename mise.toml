@@ -1,9 +1,5 @@
-# bootstrap-content-version: bytewyrd/mise.toml@ebf354bf:e3b0c44298fc
-# mise.toml — tool version pins (managed by /sync)
-# Add language-specific tools as needed; non-Rust languages use mise.
-# Rust is managed via rust-toolchain.toml + rustup (not mise).
-
 [tools]
 shellcheck = "0.11.0"
 shfmt = "3.14.1"
 "aqua:rhysd/actionlint" = "1.7.12"
+"aqua:astral-sh/uv" = "0.13.4"

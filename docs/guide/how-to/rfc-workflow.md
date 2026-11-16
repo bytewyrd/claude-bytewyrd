@@ -15,7 +15,7 @@ Use this when you have a raw thought that is not yet ready to become a full RFC.
 Nothing is designed at this stage — the braindump is a lightweight parking lot. Ideas stay there until you are ready to promote one to a full RFC with `/rfc-new`.
 
 ```
-/bytewyrd:rfc-braindump Add a --dry-run flag to the sync skill so teams can preview changes before applying
+/bytewyrd:rfc-braindump Add a --json flag to the drift skill so teams can parse its findings
 ```
 
 The skill asks one clarifying question if your idea is too vague, then confirms the entry added.
@@ -31,7 +31,7 @@ Creates a new RFC, runs agent review, runs consensus review, fixes any critical 
 If you do not pass a description, the skill lists any existing braindump entries so you can promote one directly.
 
 ```
-/bytewyrd:rfc-new Add a --dry-run flag to the sync skill
+/bytewyrd:rfc-new Add a --json flag to the drift skill
 ```
 
 What happens under the hood (you do not need to manage this):

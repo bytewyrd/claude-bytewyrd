@@ -1,8 +1,9 @@
 ---
 name: docs-review
-description: Run a scoped documentation review against the codebase. The skill instructs the main agent to spawn the docs-agent subagent on Sonnet, with a seven-phase protocol that audits docs/guide/** and README.md for drift (broken examples, stale references, workflow drift) and coverage gaps against the current code. Respects strict ownership — never touches ARCHITECTURE.md, CONTRIBUTING.md, BEST_PRACTICES.md, project-brief.md, or rfcs/. Use after a feature lands, when /sync reports the docs-agent has improved, or any time the user-facing docs may be out of step with the code. Triggered by "/docs-review [scope-hint]".
+description: Run a scoped documentation review against the codebase. The skill instructs the main agent to spawn the docs-agent subagent on Sonnet, with a seven-phase protocol that audits docs/guide/** and README.md for drift (broken examples, stale references, workflow drift) and coverage gaps against the current code. Respects strict ownership — never touches ARCHITECTURE.md, CONTRIBUTING.md, BEST_PRACTICES.md, project-brief.md, or rfcs/. Use after a feature lands, when the docs-agent has improved, or any time the user-facing docs may be out of step with the code. Triggered by "/docs-review [scope-hint]".
 argument-hint: "[scope-hint]"
 disable-model-invocation: true
+compatibility: "Claude Code only: relies on Claude Code subagents, AskUserQuestion or ~/.claude paths. Helper scripts need git, jq and python3 >= 3.11."
 ---
 
 # /docs-review — Scoped Documentation Review
@@ -51,12 +52,12 @@ When the subagent finishes (Phase 7), present the structured report to the user 
 After presenting the report (whether the review ran successfully or the user cancelled), delete the sentinel file if it exists:
 
 ```bash
-rm -f .bytewyrd/last-feature-engineer-stop
+sh "${CLAUDE_PLUGIN_ROOT}/scripts/bw" state-touch --rm last-feature-engineer-stop
 ```
 
-This prevents the `SessionStart compact` hook from re-echoing the reminder after the review has been completed or explicitly skipped. If the user wants to dismiss the reminder manually (without running `/docs-review`), they can run `rm -f .bytewyrd/last-feature-engineer-stop` directly.
+Outside Claude Code, `${CLAUDE_PLUGIN_ROOT}` is not substituted; use the directory two levels above this SKILL.md.
 
-The `SubagentStop` hook that wrote this sentinel is temporarily removed until PR 1 of RFC `2026-11-09-scaffold-and-drift` re-adds it safely, so the sentinel exists only if an earlier plugin version wrote it.
+This prevents the `SessionStart compact` hook from re-echoing the reminder after the review has been completed or explicitly skipped. If the user wants to dismiss the reminder manually (without running `/docs-review`), they can run `rm -f .bytewyrd/last-feature-engineer-stop` directly.
 
 ---
 
@@ -181,7 +182,7 @@ Do not edit the report after returning it. The parent decides what to do with th
 
 ## Constraints (inherited from the agent definition; restated here for clarity)
 
-- **Ownership boundary first.** Never edit `docs/ARCHITECTURE.md`, `docs/CONTRIBUTING.md`, `docs/BEST_PRACTICES.md`, `docs/project-brief.md`, `docs/rfcs/**`, `docs/rfc-process.md`, or `docs/rfc-braindump.md`. `README.md` **is** in scope — it is bootstrap-once (written by `/sync` at project creation, then project-owned) and may drift as the plugin evolves. If a finding seems to require editing one of the off-limits files, surface the boundary violation in the plan with a suggested split.
+- **Ownership boundary first.** Never edit `docs/ARCHITECTURE.md`, `docs/CONTRIBUTING.md`, `docs/BEST_PRACTICES.md`, `docs/project-brief.md`, `docs/rfcs/**`, or `docs/rfc-braindump.md`. `README.md` **is** in scope — it is project-owned and may drift as the plugin evolves. If a finding seems to require editing one of the off-limits files, surface the boundary violation in the plan with a suggested split.
 - **Trust the codebase.** When code and docs disagree, the code is the spec; the doc gets updated. Never edit code from this skill.
 - **One commit per finding.** Bundling unrelated findings into one commit destroys reviewability.
 - **Respect the scope.** Do not audit files outside the resolved scope. Mention adjacent-scope drift in recommended follow-ups.
@@ -193,5 +194,5 @@ Do not edit the report after returning it. The parent decides what to do with th
 - Updating `docs/CONTRIBUTING.md` — owned by changes to dev workflow or quality gates. The agent that made the workflow change updates it.
 - Capturing a session learning — use `/best-practices-extract` (writes to `docs/BEST_PRACTICES.md`).
 - Creating or updating an RFC — use `/rfc-new`, `/rfc-read-feedback`, `/rfc-implement`.
-- Updating project identity (name, description, problem) — use `/sync` Step 2.
+- Updating project identity (name, description, problem) — owned by the project's maintainers.
 - General-purpose docs writing outside `docs/guide/**` and `README.md` — use the `documentation-writer` agent directly.

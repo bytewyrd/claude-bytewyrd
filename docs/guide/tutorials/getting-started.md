@@ -5,7 +5,7 @@ This tutorial takes you from a clean machine to a working `claude-bytewyrd` setu
 By the end you will have:
 
 1. The plugin installed at user scope.
-2. A project bootstrapped with the bytewyrd conventions (RFC docs, agent table, best-practices file).
+2. A project seeded with the bytewyrd files: `AGENTS.md`, a `CLAUDE.md` that imports it, a PR template, and a CI workflow.
 3. A Draft RFC drafted by `rfc-architect`, reviewed by independent critic agents.
 4. The same RFC approved by you and implemented by `feature-engineer`.
 
@@ -13,11 +13,12 @@ By the end you will have:
 
 - [Claude Code](https://docs.claude.com/claude-code) installed and authenticated.
 - [git](https://git-scm.com/) on your `PATH`.
-- An empty (or near-empty) project directory where you can experiment.
+- [Python](https://www.python.org/) 3.11 or newer, on your `PATH` or named in `BYTEWYRD_PYTHON`. The plugin's commands and hooks run on it; check yours with `python3 --version`.
+- [jq](https://jqlang.org/), which the RFC and best-practices skills use to read their helper scripts' output. See [Requirements](../installation.md#requirements).
+- An empty (or near-empty) project directory where you can experiment. Make it a git repository (`git init`) and commit what is in it: `/bytewyrd:scaffold --apply` refuses a dirty working tree.
 
-Optional but recommended — the plugin will warn you at session start if these are missing and you can fix them later:
+Optional — nothing checks for these at session start:
 
-- The `github`, `context7`, and `code-review` companion plugins from `claude-plugins-official`.
 - The Exa MCP server (web search) and Firefox MCP (UI verification).
 - The [GitHub CLI](https://cli.github.com/) (`gh`).
 
@@ -26,34 +27,57 @@ Optional but recommended — the plugin will warn you at session start if these 
 From any terminal:
 
 ```bash
+claude plugin marketplace add anthropics/claude-plugins-official
 claude plugin marketplace add bytewyrd/claude-bytewyrd
 claude plugin install bytewyrd@bytewyrd
+claude plugin install github@claude-plugins-official
+claude plugin install context7@claude-plugins-official
+claude plugin install code-review@claude-plugins-official
 ```
 
-Restart Claude Code if it is already running. The plugin is now available in every project you open.
+The `claude plugin` commands never register the official marketplace on their own, so that command comes first. bytewyrd depends on `github`, `context7` and `code-review` from it, and Claude Code doesn't load bytewyrd unless all three are installed and enabled. The last three commands install them explicitly, so that updates keep them resolved.
 
-## Step 2 — Bootstrap your project
+Restart Claude Code if it is already running. The plugin is now available in every project you open. See [Installation](../installation.md) for project scope, following a branch or tag, and upgrading from 0.2.x.
+
+## Step 2 — Seed your project
 
 Open Claude Code in your project directory. In the session, run:
 
 ```
-/bytewyrd:sync
+/bytewyrd:scaffold
 ```
 
-`/sync` is idempotent — safe to re-run any time the plugin updates. On the first run, it asks for the project name and a one-line description (used in `docs/project-brief.md`), then creates or updates:
+This is a dry run: it lists what it would create and writes nothing. It asks you no questions, and the project name comes from your repository. It prints something like:
 
-- `CLAUDE.md` — operating rules for Claude in this project.
-- `README.md` — bootstrap landing page (written once, then project-owned).
-- `docs/ARCHITECTURE.md`, `docs/CONTRIBUTING.md`, `docs/BEST_PRACTICES.md` — internal docs scaffolds.
-- `docs/rfc-process.md` — the full RFC workflow, including any project-specific extensions.
-- `docs/rfcs/` — directory for future RFCs.
-- `.claude/settings.json` — permissions, hooks, and MCP-server allow-lists.
-- `.github/PULL_REQUEST_TEMPLATE.md` and `.github/workflows/ci.yml` — PR template and starter CI workflow.
-- `.gitignore` and `mise.toml` — sensible defaults; merged additively if you already maintain them.
+```
+bytewyrd scaffold: /path/to/myapp
+would create  AGENTS.md
+would create  CLAUDE.md
+would create  .github/PULL_REQUEST_TEMPLATE.md
+would create  .github/workflows/ci.yml
+dry run: 4 to create, 0 skipped; re-run with --apply to write
+```
 
-If anything is missing or out of date, `/sync` shows a categorized summary (additions, fast-forward updates, conflicts) and asks you to approve before writing.
+When the list looks right, write the files:
+
+```
+/bytewyrd:scaffold --apply
+```
+
+`--apply` refuses to run on a dirty working tree (it exits with code 3), so commit or stash your work first, or add `--allow-dirty`. It creates only the files that are missing and skips any that exist:
+
+- `AGENTS.md` — guidance for people and coding agents: the project name, the languages scaffold found with their build and test commands, and links to the RFC process and the plugin's always-on rules.
+- `CLAUDE.md` — imports `@AGENTS.md` and adds Claude Code specifics, including the plugin install commands for new collaborators.
+- `.github/PULL_REQUEST_TEMPLATE.md` — a pull request template.
+- `.github/workflows/ci.yml` — one job per language it found, each calling the plugin's reusable workflow at a pinned commit, or a no-op job when it found none.
+
+Each file starts with a stamp line that names its template and the plugin commit. Review and commit them: from then on they belong to your project, and the plugin never edits them. After a plugin update, `/bytewyrd:drift` shows which of them differ from the new templates. It only reports; you decide what to change. See [Seed and check a repository with scaffold and drift](../how-to/scaffold-and-drift.md) for the details.
+
+Nothing else is seeded. The RFC process and the best-practices library stay in the plugin as the `rfc-process` and `best-practices` skills, which Claude reads at runtime, so your project keeps no copy of them.
 
 ## Step 3 — Author your first RFC
+
+RFCs live in `docs/rfcs/`, and a repository opts in to the RFC process by having that directory. Create it before your first RFC: `mkdir -p docs/rfcs`.
 
 Pick a small, concrete change you actually want to make to your project. RFCs work best for design decisions, not trivial cleanup. Examples that fit:
 
@@ -156,6 +180,6 @@ You now have the full loop. Here is the rest of the skill surface, organized by 
 **Housekeeping**
 
 - `/git-branch-cleanup` — prune stale local branches (no remote, merged PRs, abandoned remotes) and clean up orphaned worktrees.
-- `/sync` — re-run any time the plugin updates to pull in new conventions, templates, or settings without overwriting your project-owned content.
+- `/bytewyrd:drift` — run it after the plugin updates. It is read-only: it compares the files `/bytewyrd:scaffold` seeded with the plugin's current templates and lists anything out of date, plus anything 0.2.x left behind, each with a one-line fix for you to review and run.
 
 For task-specific recipes, see the [how-to guides](../how-to). For the full skill and agent surface, see the [reference section](../reference).

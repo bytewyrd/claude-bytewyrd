@@ -1,4 +1,3 @@
-# bootstrap-content-version: bytewyrd/.github/workflows/ci.yml@bc393baf:e3b0c44298fc
 
 # Required checks: the job names below (lint, validate, test) are the checks
 # the branch ruleset is meant to require. A renamed job leaves its old name
@@ -11,7 +10,8 @@
 # PR. GitHub still refreshes that image every week, so the lint tools that
 # decide pass/fail (shellcheck, shfmt, actionlint) are downloaded at pinned
 # versions and checked against their sha256 instead of being taken from the
-# image.
+# image. The Python dev tools come from uv.lock, which pins each by hash,
+# installed by uv at UV_VERSION.
 
 name: CI
 
@@ -31,7 +31,13 @@ concurrency:
 
 env:
   PYTHON_VERSION: "3.13"
-  PYYAML_VERSION: "6.0.3"
+  # uv, which installs the dev group as uv.lock pins it. Bump deliberately,
+  # together with mise.toml's pin, which lint checks this against: newer
+  # releases can read and write uv.lock differently.
+  UV_VERSION: "0.13.4"
+  # uv builds its environments from setup-python's interpreter, never from a
+  # Python it downloads.
+  UV_PYTHON_PREFERENCE: only-system
   NODE_VERSION: "24"
   # Claude Code CLI used by the validate job. Bump deliberately: newer releases
   # can add validation checks.
@@ -45,7 +51,7 @@ jobs:
     env:
       # Shell files held to shellcheck and shfmt, as git pathspecs. Formatting
       # style comes from .editorconfig.
-      SHELL_FILES: scripts/*.sh scripts/_lib/*.bash hooks/pre-commit/*.sh tests/run.sh tests/scripts/helpers.bash
+      SHELL_FILES: scripts/bw tests/run.sh tests/scripts/helpers.bash
       # sha256 values are the digests GitHub records for these release assets.
       SHELLCHECK_VERSION: "0.11.0"
       SHELLCHECK_SHA256: "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
@@ -62,28 +68,26 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install PyYAML
-        run: python -m pip install --disable-pip-version-check "pyyaml==${PYYAML_VERSION}"
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
+
+      - name: Install the dev tools from uv.lock
+        run: uv sync --locked
 
       - name: JSON manifests parse
         run: |
-          for f in .claude-plugin/plugin.json .claude-plugin/marketplace.json hooks/hooks.json bootstrap-manifest.json; do
+          for f in .claude-plugin/plugin.json .claude-plugin/marketplace.json hooks/hooks.json; do
             jq -e . "$f" > /dev/null || { echo "::error file=$f::$f is not valid JSON"; exit 1; }
           done
 
-      - name: bootstrap-manifest.json is current
-        run: scripts/build-manifest.sh --check
-
       - name: Agent and skill frontmatter is strict YAML
-        run: python .github/scripts/lint-frontmatter.py agents/*.md skills/*/SKILL.md .claude/skills/*/SKILL.md
-
-      - name: Relative Markdown links resolve
-        run: python .github/scripts/check-links.py
+        run: uv run --no-sync python .github/scripts/lint-frontmatter.py agents/*.md skills/*/SKILL.md .claude/skills/*/SKILL.md
 
       - name: The lang-ci workflows pass their checks
         run: |
           w=.github/workflows
-          test "$(printf '%s\n' "$w"/lang-ci*)" = "$(printf '.github/workflows/lang-ci-%s.yml\n' go js python ruby rust)"  # a language without its file, or another lang-ci file
           for f in "$w"/lang-ci-*.yml; do
             l=${f#"$w"/lang-ci-}; l=${l%.yml}
             test "$(sed '1,/^jobs:$/d' "$f" | grep -E '^  [^ #]')" = "  $l:"  # a job not named by the file's id, or a second job
@@ -101,11 +105,42 @@ jobs:
           grep -qx CHECKSUMS tests/fixtures/lang-ci/ruby/Gemfile.lock  # no CHECKSUMS section
           grep -qE '^  rake \([0-9.]+\) sha256=[0-9a-f]{64}$' tests/fixtures/lang-ci/ruby/Gemfile.lock  # a CHECKSUMS entry without its hash
 
+      # scripts/_vendor/yaml/ is the lib/yaml/ of the sdist that uv.lock pins,
+      # unmodified, next to its LICENSE. The script checks the sdist's size and
+      # sha256 against uv.lock before reading anything from it, then compares
+      # the files both ways.
+      - name: The vendored PyYAML matches the sdist uv.lock pins
+        run: python3 .github/scripts/vendor-pyyaml.py --check
+
+      # load_frontmatter in scripts/bytewyrd/frontmatter.py parses YAML only
+      # through its alias-refusing, size-capped loader, and nothing else may
+      # parse it. git grep exits 1 when nothing matches, so a match or an
+      # error fails.
+      - name: Only load_frontmatter loads YAML
+        run: |
+          rc=0
+          git grep -nE 'yaml\.(load|safe_load|full_load|unsafe_load)\(|Loader=' -- scripts skills hooks ':!scripts/bytewyrd/frontmatter.py' ':!scripts/_vendor' || rc=$?
+          test "$rc" = 1
+
       - name: CI's lint tool versions match mise.toml
         run: |
           grep -qxF "shellcheck = \"$SHELLCHECK_VERSION\"" mise.toml
           grep -qxF "shfmt = \"$SHFMT_VERSION\"" mise.toml
           grep -qxF "\"aqua:rhysd/actionlint\" = \"$ACTIONLINT_VERSION\"" mise.toml
+          grep -qxF "\"aqua:astral-sh/uv\" = \"$UV_VERSION\"" mise.toml
+
+      # ruff's rules and file set are in pyproject.toml, which keeps it off
+      # scripts/_vendor, the bats submodules and Markdown.
+      - name: Python code passes ruff
+        run: uv run --no-sync ruff check
+
+      - name: Python code is ruff-formatted
+        run: uv run --no-sync ruff format --check
+
+      # pyproject.toml holds mypy's settings too: --strict on scripts/bytewyrd,
+      # with the old-syntax bootstrap exempt from annotations.
+      - name: The bytewyrd package passes mypy --strict
+        run: uv run --no-sync mypy
 
       - name: Install shellcheck, shfmt and actionlint
         run: |
@@ -146,6 +181,10 @@ jobs:
           actionlint -version
           actionlint -config-file .github/actionlint.yaml .github/workflows/*.yml
 
+      # Last, so a broken link no longer skips the steps above it.
+      - name: Relative Markdown links resolve
+        run: python .github/scripts/check-links.py
+
   validate:
     name: validate
     runs-on: ubuntu-26.04
@@ -182,17 +221,32 @@ jobs:
           submodules: recursive
           persist-credentials: false
 
-      # PyYAML lets the ci.yml rendering tests parse their output instead of
-      # skipping.
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        id: py
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install PyYAML
-        run: python -m pip install --disable-pip-version-check "pyyaml==${PYYAML_VERSION}"
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
 
+      # pytest, and PyYAML, which lets the ci.yml rendering tests parse their
+      # output instead of skipping.
+      - name: Install the dev tools from uv.lock
+        run: uv sync --locked
+
+      # uv run puts the environment's python3, which has PyYAML, first on
+      # PATH. BYTEWYRD_PYTHON makes scripts/bw run the interpreter set up above.
       - name: Run the bats suite
-        run: tests/run.sh
+        env:
+          BYTEWYRD_PYTHON: ${{ steps.py.outputs.python-path }}
+        run: uv run --no-sync tests/run.sh
+
+      - name: Run pytest
+        env:
+          BYTEWYRD_PYTHON: ${{ steps.py.outputs.python-path }}
+        run: uv run --no-sync pytest -q tests/py tests/e2e
 
   # Not required checks: the ruleset requires only lint, validate and test.
   # One job per lang-ci-<id>.yml runs that file on its fixture; they are
@@ -221,3 +275,136 @@ jobs:
     uses: ./.github/workflows/lang-ci-rust.yml
     with:
       directory: tests/fixtures/lang-ci/rust
+
+  # bats and pytest on the oldest supported Python under Linux and the latest
+  # 3.x under macOS, each with the dev tools from uv.lock. They include PyYAML,
+  # since under CI ci-lint.bats and rfc-set-status.bats fail without it.
+  compat:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-26.04
+            python: "3.11"
+          - os: macos-15
+            python: "3.x"
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        id: py
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
+      - run: uv sync --locked
+      - env:
+          BYTEWYRD_PYTHON: ${{ steps.py.outputs.python-path }}
+        run: |
+          uv run --no-sync tests/run.sh
+          uv run --no-sync pytest -q tests/py tests/e2e
+
+  # bats at every commit of the pull request, and the caller template's pin.
+  # A bats run takes about a minute, so 120 minutes cover about 100 commits.
+  history:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        id: py
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
+      # Once, at HEAD: the commits before uv.lock have none.
+      - run: uv sync --locked
+      - name: bats passes at every commit, and no port commit edits tests/scripts
+        env:
+          BYTEWYRD_PYTHON: ${{ steps.py.outputs.python-path }}
+        run: |
+          # HEAD's environment stays first on PATH at every commit, so older
+          # commits still get pytest and PyYAML.
+          export PATH="$PWD/.venv/bin:$PATH"
+          base=$(git merge-base origin/main HEAD); h=$(git rev-parse HEAD); bad=0
+          for c in $(git rev-list --reverse "$base..HEAD"); do
+            git checkout -q --recurse-submodules "$c"
+            if ! tests/run.sh > "$RUNNER_TEMP/bats-$c.log" 2>&1; then
+              echo "::group::bats fails at $c"; cat "$RUNNER_TEMP/bats-$c.log"; echo "::endgroup::"; bad=1
+            fi
+          done
+          git checkout -q --recurse-submodules "$h"
+          for c in $(git rev-list --grep='^refactor(scripts): port ' "$base..HEAD"); do git diff --quiet "$c^" "$c" -- tests/scripts || { echo "::error::$c edits tests/scripts"; bad=1; }; done
+          exit "$bad"
+      - name: The caller template pins a main commit that has every lang-ci file
+        if: ${{ !cancelled() }}
+        run: |
+          tpl=templates/scaffold/ci-caller.yml.tpl
+          pin=$(sed -n 's|^@@job@@     uses: bytewyrd/claude-bytewyrd/\.github/workflows/lang-ci-@@job_language@@\.yml@\([0-9a-f]\{40\}\)$|\1|p' "$tpl")
+          test "$(grep -c 'uses:' "$tpl")" = 1
+          test "${#pin}" = 40
+          git merge-base --is-ancestor "$pin" origin/main
+          for f in .github/workflows/lang-ci-*.yml; do git cat-file -e "$pin:$f"; done
+      - name: No lang-ci change is waiting for its pin bump
+        if: ${{ !cancelled() }}
+        run: |
+          tpl=templates/scaffold/ci-caller.yml.tpl
+          pin=$(sed -n 's|^@@job@@     uses: bytewyrd/claude-bytewyrd/\.github/workflows/lang-ci-@@job_language@@\.yml@\([0-9a-f]\{40\}\)$|\1|p' "$tpl")
+          if ! git diff --quiet "$pin" HEAD -- '.github/workflows/lang-ci*'; then
+            if git diff --quiet origin/main HEAD -- "$tpl"; then
+              echo "::warning::the lang-ci files differ from the pinned $pin; bump the pin after this merges"
+            else
+              echo "::error::the new pin $pin does not match this commit's lang-ci files"; exit 1
+            fi
+          fi
+
+  # Installs the plugin into a temporary HOME, from this checkout and as an
+  # update of an install of main, and fails on any plugin load error.
+  install-check:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: curl -fsSL https://claude.ai/install.sh | bash -s "$CLAUDE_CODE_VERSION"
+      - name: Install from this checkout
+        run: |
+          CLAUDE="$HOME/.local/bin/claude"
+          HOME=$(mktemp -d)
+          export HOME
+          "$CLAUDE" plugin marketplace add anthropics/claude-plugins-official
+          "$CLAUDE" plugin marketplace add "$GITHUB_WORKSPACE"
+          "$CLAUDE" plugin install bytewyrd@bytewyrd
+          "$CLAUDE" plugin list --json | jq -e 'all(.[]; (.errors // []) | length == 0)'
+      # A local clone can't stand in for the update: Claude Code loads a
+      # local-path marketplace's plugin in place, with no update step.
+      - name: Update an install of main
+        run: |
+          CLAUDE="$HOME/.local/bin/claude"
+          HOME=$(mktemp -d)
+          export HOME
+          ref=${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}
+          "$CLAUDE" plugin marketplace add anthropics/claude-plugins-official
+          "$CLAUDE" plugin marketplace add bytewyrd/claude-bytewyrd
+          for dep in github context7 code-review; do "$CLAUDE" plugin install "$dep@claude-plugins-official"; done
+          "$CLAUDE" plugin install bytewyrd@bytewyrd
+          # marketplace add refuses a source that differs from the marketplace's
+          # extraKnownMarketplaces entry, so the entry gets the ref first.
+          jq --arg ref "$ref" '.extraKnownMarketplaces.bytewyrd.source.ref = $ref' "$HOME/.claude/settings.json" > "$RUNNER_TEMP/settings.json"
+          mv "$RUNNER_TEMP/settings.json" "$HOME/.claude/settings.json"
+          "$CLAUDE" plugin marketplace add "bytewyrd/claude-bytewyrd#$ref"
+          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 "$CLAUDE" plugin update bytewyrd@bytewyrd
+          "$CLAUDE" plugin list --json | jq -e 'all(.[]; (.errors // []) | length == 0)'

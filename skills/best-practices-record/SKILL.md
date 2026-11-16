@@ -1,6 +1,7 @@
 ---
 name: best-practices-record
 description: Use when the user wants to capture a single best practice into the global cross-project pool at ~/.claude/BEST_PRACTICES.md — typically after seeing a pattern repeat across projects, or learning a stack-level lesson that future projects should ship with from day one.
+compatibility: "Claude Code only: relies on Claude Code subagents, AskUserQuestion or ~/.claude paths. Helper scripts need git, jq and python3 >= 3.11."
 ---
 
 # Record Best Practice
@@ -161,9 +162,9 @@ defined in the shared `TRIAGE-AND-LIFT.md` procedure.
 
 | File | Scope | Source | Path of entries from here |
 |---|---|---|---|
-| `~/.claude/BEST_PRACTICES.md` (this file) | Cross-project | User statement OR project promotion | `/best-practices-sync` lifts vetted subset into `skills/sync/SKILL.md` |
+| `~/.claude/BEST_PRACTICES.md` (this file) | Cross-project | User statement OR project promotion | `/best-practices-sync` lifts vetted subset into `skills/best-practices/references/<stack>.md` |
 | `<project>/docs/BEST_PRACTICES.md` | Per-project | Session extraction | Generalizable entries may be promoted here via `/best-practices-extract`'s prompt |
-| `skills/sync/SKILL.md` (bootstrap content) | Distributed | `/best-practices-sync` from this file | Renders into every new project's starter `docs/BEST_PRACTICES.md` at `/sync` time |
+| `skills/best-practices/references/<stack>.md` (plugin-internal) | Distributed | `/best-practices-sync` from this file | Read at runtime by the `best-practices` skill; projects get no copy |
 
 Project-specific entries (those that fail any portability question) never reach this file by
 design — they live only in the source project's `## Project-Specific` section.
