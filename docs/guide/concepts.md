@@ -24,42 +24,21 @@ The [agent delegation table in CLAUDE.md](../../CLAUDE.md) maps task types to ag
 
 ## The hook system
 
-The plugin ships hooks that fire automatically during Claude Code's session lifecycle. Hooks run outside Claude's context — they are shell scripts, not agent tasks.
+The plugin ships three hooks that fire automatically during Claude Code's session lifecycle. Hooks run outside Claude's context — they are shell commands, not agent tasks. Every one exits 0, so none of them blocks a session.
 
-**`SessionStart` — requirement check**
+**`SessionStart` — always-on rules**
 
-Fires at the start of every Claude Code session. Runs `scripts/check-requirements.sh`, which probes for:
-
-- Companion plugins (GitHub, Context7, code-review)
-- MCP servers (Exa, Firefox DevTools)
-- CLI tools (`git`, `gh`)
-
-If all checks pass, the hook is silent. When something soft is missing, it emits a warning bundle but lets the session continue. Hard failures (`git` missing, a stale plugin reference in settings) block the session with a remediation command.
-
-Individual soft warnings can be silenced with `BYTEWYRD_SKIP_WARN`. See [Suppress session-start warnings](how-to/suppress-session-warnings.md).
-
-**`SessionStart` — compact reminder**
-
-A second `SessionStart` hook checks whether a `feature-engineer` agent finished in the last 24 hours without a subsequent `/docs-review` run. If so, it re-surfaces the reminder to check whether `docs/guide/**` needs updating. This reminder survives context compaction (where the original terminal output would be lost).
+Fires when a session starts, after `/clear`, and after a compaction. Prints [`hooks/always-on-rules.json`](../../hooks/always-on-rules.json), which adds five short workflow conventions to Claude's context: evidence, decisions, design, git, and long-running processes. It also points Claude at the `best-practices` skill. This hook needs no Python.
 
 **`SubagentStop` — feature-engineer reminder**
 
-> **Temporarily removed** until PR 1 of RFC `2026-11-09-scaffold-and-drift` re-adds it safely: it wrote its sentinel through `.bytewyrd`, which a committed symlink can point outside the repository. Until then the compact reminder above fires only for a sentinel that an earlier plugin version wrote in the last 24 hours. See the [Hooks reference](reference/hooks.md).
+Fires whenever a `bytewyrd:feature-engineer` subagent finishes. Runs an `echo` that carries a reminder: if the implemented feature affects user-visible behavior, ask the user to run `/docs-review`. Then runs `scripts/bw state-touch last-feature-engineer-stop`, which creates a sentinel file (`.bytewyrd/last-feature-engineer-stop`) that the compact reminder below reads. `state-touch` is the only writer into `.bytewyrd/`. It refuses to write through a symlink, and it adds a `.gitignore` there so git ignores the folder.
 
-Fires whenever a `bytewyrd:feature-engineer` subagent finishes. Prints a reminder to run `/docs-review` if the implemented feature affects user-visible behavior. Also creates a sentinel file (`.bytewyrd/last-feature-engineer-stop`) that the compact `SessionStart` hook reads.
+**`SessionStart` — compact reminder**
 
-**Plugin-checkout hooks (project-local)**
+Fires when a session starts from a compaction. Runs `scripts/bw compact-reminder`, which checks whether a `feature-engineer` agent finished in the last 24 hours without a later `/docs-review` run. If so, it prints a reminder that Claude should ask you to run `/docs-review` against the implemented files. `/docs-review` removes the sentinel when it finishes. The sentinel is a file, not conversation text, so this reminder survives context compaction.
 
-> *These hooks are relevant only if you are contributing to this plugin repository. Consumer projects do not receive them.*
-
-This repository's own checkout registers additional hooks in `.claude/settings.json` that are not distributed to consumer projects:
-
-- **`PreCompact`** — blocks context compaction until `/best-practices-extract` runs this session (see [the best-practices lifecycle](#the-best-practices-lifecycle) below)
-- **`Stop`** — prints a session-end documentation checklist when Claude Code stops
-- **`PostToolUse`** — reminds you to check `docs/guide/**` for drift after a `git commit` or GitHub file push
-- **`SessionStart`** (two additional) — bootstrap version check (notices when `docs/BEST_PRACTICES.md` is behind the plugin's sync content) and precompact sentinel reset (re-arms the PreCompact gate for each new session)
-
-These hooks fire only in sessions run inside this plugin checkout. Consumer projects do not receive them.
+The two hooks that run `scripts/bw` need Python 3.11 or newer. Without it they print one line to stderr and the session carries on. See [Requirements](installation.md#requirements).
 
 For full hook details, see [Hooks reference](reference/hooks.md).
 
